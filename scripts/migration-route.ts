@@ -13,7 +13,11 @@
  *
  * ── Replit Secrets required ───────────────────────────────────────────────────
  *   NEW_DATABASE_URL      – new app Neon connection string
- *   BLOB_READ_WRITE_TOKEN – Vercel Blob token  (Vercel → Settings → Env Vars)
+ *   R2_ACCOUNT_ID         – Cloudflare account ID
+ *   R2_ACCESS_KEY_ID      – R2 API token Access Key ID
+ *   R2_SECRET_ACCESS_KEY  – R2 API token Secret Access Key
+ *   R2_BUCKET_NAME        – R2 bucket name
+ *   R2_PUBLIC_URL         – R2 public bucket URL (e.g. https://pub-xxx.r2.dev)
  *   MIGRATION_SECRET      – any random string, e.g. "migrate-abc123"
  *                           (protects the endpoint from unauthorised calls)
  *
@@ -43,8 +47,38 @@
 
 import type { Express, Request, Response } from "express";
 import { neon } from "@neondatabase/serverless";
-import { put } from "@vercel/blob";
+import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 import { objectStorageClient } from "./objectStorage";
+
+// ── R2 upload helper ─────────────────────────────────────────────────────────
+
+let _r2Client: S3Client | null = null;
+
+function getR2Client(): S3Client {
+  if (!_r2Client) {
+    const accountId = process.env.R2_ACCOUNT_ID;
+    const accessKeyId = process.env.R2_ACCESS_KEY_ID;
+    const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY;
+    if (!accountId || !accessKeyId || !secretAccessKey) {
+      throw new Error("R2 credentials are not set (R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY).");
+    }
+    _r2Client = new S3Client({
+      region: "auto",
+      endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
+      credentials: { accessKeyId, secretAccessKey },
+    });
+  }
+  return _r2Client;
+}
+
+async function uploadToR2(key: string, body: Buffer, contentType: string): Promise<string> {
+  const bucket = process.env.R2_BUCKET_NAME;
+  const publicUrl = process.env.R2_PUBLIC_URL?.replace(/\/$/, "");
+  if (!bucket) throw new Error("R2_BUCKET_NAME is not set.");
+  if (!publicUrl) throw new Error("R2_PUBLIC_URL is not set.");
+  await getR2Client().send(new PutObjectCommand({ Bucket: bucket, Key: key, Body: body, ContentType: contentType }));
+  return `${publicUrl}/${key}`;
+}
 
 // ── Progress state (in-memory; resets on server restart) ─────────────────────
 
@@ -130,14 +164,18 @@ function mimeType(filename: string): string {
 
 async function runMigration(dryRun: boolean): Promise<void> {
   const NEW_DB_URL = process.env.NEW_DATABASE_URL;
-  const BLOB_TOKEN = process.env.BLOB_READ_WRITE_TOKEN;
   const OLD_DB_URL = process.env.DATABASE_URL;
   const BUCKET_ID  = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID;
 
   if (!NEW_DB_URL)  throw new Error("NEW_DATABASE_URL secret is not set");
-  if (!BLOB_TOKEN)  throw new Error("BLOB_READ_WRITE_TOKEN secret is not set");
   if (!OLD_DB_URL)  throw new Error("DATABASE_URL is not set");
   if (!BUCKET_ID)   throw new Error("DEFAULT_OBJECT_STORAGE_BUCKET_ID is not set");
+
+  // Validate R2 env vars up front so we fail fast before touching any files
+  const r2Vars = ["R2_ACCOUNT_ID", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY", "R2_BUCKET_NAME", "R2_PUBLIC_URL"];
+  for (const v of r2Vars) {
+    if (!process.env[v]) throw new Error(`${v} is not set in Replit Secrets.`);
+  }
 
   // Use the same objectStorageClient the rest of the server uses — it is already
   // authenticated via the Replit sidecar at http://127.0.0.1:1106.
@@ -189,8 +227,13 @@ async function runMigration(dryRun: boolean): Promise<void> {
 
       // 1. Check new DB ────────────────────────────────────────────────────────
       const [newRow] = await newSql`SELECT url FROM videos WHERE id = ${video.id}` as any[];
-      if (newRow?.url?.includes("blob.vercel-storage")) {
-        addLog(`${prefix} SKIP  id=${video.id} — already on Vercel Blob`);
+      const currentUrl = newRow?.url ?? "";
+      const r2Domain = (process.env.R2_PUBLIC_URL ?? "").replace(/\/$/, "");
+      const alreadyMigrated = r2Domain
+        ? currentUrl.startsWith(r2Domain)
+        : currentUrl.includes(".r2.dev/") || currentUrl.includes("r2.cloudflarestorage.com");
+      if (alreadyMigrated) {
+        addLog(`${prefix} SKIP  id=${video.id} — already on R2`);
         state.skipped++;
         continue;
       }
@@ -232,20 +275,16 @@ async function runMigration(dryRun: boolean): Promise<void> {
         continue;
       }
 
-      // 5. Upload to Vercel Blob ────────────────────────────────────────────────
+      // 5. Upload to Cloudflare R2 ─────────────────────────────────────────────
       let newVideoUrl: string;
       try {
-        const blob = await put(`videos/${filename}`, videoBuffer, {
-          access: "public",
-          contentType: mimeType(filename),
-          token: BLOB_TOKEN,
-        });
+        const url = await uploadToR2(`videos/${filename}`, videoBuffer, mimeType(filename));
 
         // 6. Verify upload returned a valid URL ──────────────────────────────────
-        if (!blob?.url || !blob.url.startsWith("https://")) {
-          throw new Error(`Blob upload returned invalid URL: "${blob?.url}"`);
+        if (!url.startsWith("https://")) {
+          throw new Error(`R2 upload returned invalid URL: "${url}"`);
         }
-        newVideoUrl = blob.url;
+        newVideoUrl = url;
         addLog(
           `${prefix} OK    id=${video.id} ${filename}` +
           ` (${(videoBuffer.length / 1024 / 1024).toFixed(1)} MB)`
@@ -264,14 +303,8 @@ async function runMigration(dryRun: boolean): Promise<void> {
         try {
           const [thumbContents] = await bucket.file(thumbGcsName).download();
           const thumbFilename = thumbGcsName.split("/").pop()!;
-          const thumbBlob = await put(`thumbnails/${thumbFilename}`, thumbContents as Buffer, {
-            access: "public",
-            contentType: mimeType(thumbFilename),
-            token: BLOB_TOKEN,
-          });
-          if (thumbBlob?.url?.startsWith("https://")) {
-            newThumbUrl = thumbBlob.url;
-          }
+          const thumbUrl = await uploadToR2(`thumbnails/${thumbFilename}`, thumbContents as Buffer, mimeType(thumbFilename));
+          if (thumbUrl.startsWith("https://")) newThumbUrl = thumbUrl;
         } catch (err: any) {
           addLog(`${prefix} THUMB_FAIL id=${video.id} — ${err.message} (video will still be updated)`);
           // non-fatal: keep old thumbnail URL, continue to DB update

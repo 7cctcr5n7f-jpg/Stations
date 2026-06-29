@@ -1,8 +1,8 @@
 export const dynamic = "force-dynamic"
 
-import { put } from "@vercel/blob"
 import { type NextRequest, NextResponse } from "next/server"
 import { sql, mapVideo } from "@/lib/db"
+import { uploadToR2 } from "@/lib/r2"
 
 export const runtime = "nodejs"
 export const maxDuration = 60
@@ -23,19 +23,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ message: "Title is required" }, { status: 400 })
     }
 
-    // Upload to Vercel Blob (public store) with a unique pathname
+    // Upload to Cloudflare R2
     const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_")
-    const pathname = `videos/${Date.now()}-${safeName}`
-    const blob = await put(pathname, file, {
-      access: "public",
-      contentType: file.type || "video/mp4",
-    })
+    const key = `videos/${Date.now()}-${safeName}`
+    const videoUrl = await uploadToR2(key, await file.arrayBuffer() as any, file.type || "video/mp4")
 
     const rows = await sql`
       INSERT INTO videos (title, url, body_part, secondary_muscle, equipment)
       VALUES (
         ${title},
-        ${blob.url},
+        ${videoUrl},
         ${bodyPart},
         ${secondaryMuscle === "none" ? null : secondaryMuscle},
         ${equipment}

@@ -15,15 +15,50 @@
  *
  * Required environment variables (add to Replit Secrets):
  *   NEW_DATABASE_URL      — new Neon connection string
- *   BLOB_READ_WRITE_TOKEN — Vercel Blob token
+ *   R2_ACCOUNT_ID         — Cloudflare account ID
+ *   R2_ACCESS_KEY_ID      — R2 API token Access Key ID
+ *   R2_SECRET_ACCESS_KEY  — R2 API token Secret Access Key
+ *   R2_BUCKET_NAME        — R2 bucket name
+ *   R2_PUBLIC_URL         — R2 public bucket URL (e.g. https://pub-xxx.r2.dev)
  */
 
 import type { Express } from "express";
 import { Pool, neonConfig } from "@neondatabase/serverless";
 import ws from "ws";
+import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 import { AppStorageService } from "./appStorage";
 
 neonConfig.webSocketConstructor = ws;
+
+// ── R2 upload helper ─────────────────────────────────────────────────────────
+
+let _r2Client: S3Client | null = null;
+
+function getR2Client(): S3Client {
+  if (!_r2Client) {
+    const accountId = process.env.R2_ACCOUNT_ID;
+    const accessKeyId = process.env.R2_ACCESS_KEY_ID;
+    const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY;
+    if (!accountId || !accessKeyId || !secretAccessKey) {
+      throw new Error("R2 credentials are not set (R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY).");
+    }
+    _r2Client = new S3Client({
+      region: "auto",
+      endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
+      credentials: { accessKeyId, secretAccessKey },
+    });
+  }
+  return _r2Client;
+}
+
+async function uploadToR2(key: string, body: Buffer, contentType: string): Promise<string> {
+  const bucket = process.env.R2_BUCKET_NAME;
+  const publicUrl = process.env.R2_PUBLIC_URL?.replace(/\/$/, "");
+  if (!bucket) throw new Error("R2_BUCKET_NAME is not set.");
+  if (!publicUrl) throw new Error("R2_PUBLIC_URL is not set.");
+  await getR2Client().send(new PutObjectCommand({ Bucket: bucket, Key: key, Body: body, ContentType: contentType }));
+  return `${publicUrl}/${key}`;
+}
 
 // ── MIME helper ──────────────────────────────────────────────────────────────
 
@@ -135,17 +170,20 @@ async function runMigration(dryRun: boolean) {
   resetState(dryRun);
 
   const NEW_DB_URL = process.env.NEW_DATABASE_URL;
-  const BLOB_TOKEN = process.env.BLOB_READ_WRITE_TOKEN;
 
   if (!NEW_DB_URL) {
     state.status = "error";
     addLog("ERROR: NEW_DATABASE_URL is not set in Replit Secrets.");
     return;
   }
-  if (!BLOB_TOKEN) {
-    state.status = "error";
-    addLog("ERROR: BLOB_READ_WRITE_TOKEN is not set in Replit Secrets.");
-    return;
+  // Validate R2 env vars up front so we fail fast before touching any files
+  const r2Vars = ["R2_ACCOUNT_ID", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY", "R2_BUCKET_NAME", "R2_PUBLIC_URL"];
+  for (const v of r2Vars) {
+    if (!process.env[v]) {
+      state.status = "error";
+      addLog(`ERROR: ${v} is not set in Replit Secrets.`);
+      return;
+    }
   }
 
   if (dryRun) {
@@ -198,8 +236,12 @@ async function runMigration(dryRun: boolean) {
           [video.id]
         );
         const newUrl = newRows[0]?.url ?? "";
-        if (newUrl.includes("blob.vercel-storage")) {
-          addLog(`${prefix} SKIP  — already on Vercel Blob`);
+        const r2Domain = (process.env.R2_PUBLIC_URL ?? "").replace(/\/$/, "");
+        const alreadyMigrated = r2Domain
+          ? newUrl.startsWith(r2Domain)
+          : newUrl.includes(".r2.dev/") || newUrl.includes("r2.cloudflarestorage.com");
+        if (alreadyMigrated) {
+          addLog(`${prefix} SKIP  — already on R2`);
           state.skipped++;
           continue;
         }
@@ -238,21 +280,16 @@ async function runMigration(dryRun: boolean) {
           continue;
         }
 
-        // Step 4 — upload to Vercel Blob
+        // Step 4 — upload to Cloudflare R2
         let newVideoUrl: string;
         try {
-          const { put } = await import("@vercel/blob");
-          const blob = await put(`videos/${filename}`, videoBuffer, {
-            access: "public",
-            contentType: mimeType(filename),
-            token: BLOB_TOKEN,
-          });
+          const url = await uploadToR2(`videos/${filename}`, videoBuffer, mimeType(filename));
 
           // Step 5 — verify the upload returned a valid URL
-          if (!blob?.url?.startsWith("https://")) {
-            throw new Error(`Upload returned invalid URL: ${blob?.url}`);
+          if (!url.startsWith("https://")) {
+            throw new Error(`Upload returned invalid URL: ${url}`);
           }
-          newVideoUrl = blob.url;
+          newVideoUrl = url;
           addLog(`${prefix} OK    — ${filename} (${(videoBuffer.length / 1024 / 1024).toFixed(1)} MB)`);
         } catch (err: any) {
           addLog(`${prefix} FAIL  — upload error: ${err.message}`);
@@ -274,15 +311,8 @@ async function runMigration(dryRun: boolean) {
               stream.on("error", reject);
             });
             const thumbFilename = thumbKey.split("/").pop()!;
-            const { put } = await import("@vercel/blob");
-            const thumbBlob = await put(`thumbnails/${thumbFilename}`, thumbBuffer, {
-              access: "public",
-              contentType: mimeType(thumbFilename),
-              token: BLOB_TOKEN,
-            });
-            if (thumbBlob?.url?.startsWith("https://")) {
-              newThumbUrl = thumbBlob.url;
-            }
+            const thumbUrl = await uploadToR2(`thumbnails/${thumbFilename}`, thumbBuffer, mimeType(thumbFilename));
+            if (thumbUrl.startsWith("https://")) newThumbUrl = thumbUrl;
           } catch (err: any) {
             addLog(`${prefix} THUMB_FAIL — ${err.message} (continuing)`);
             // non-fatal — keep old thumbnail URL
