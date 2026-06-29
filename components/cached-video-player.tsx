@@ -1,3 +1,5 @@
+"use client"
+
 import { useState, useEffect, useRef } from "react";
 import { AlertTriangle, Wifi, WifiOff } from "lucide-react";
 import { enhancedVideoCache } from "./enhanced-video-cache";

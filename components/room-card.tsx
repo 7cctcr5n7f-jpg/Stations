@@ -1,3 +1,5 @@
+"use client"
+
 import { Card, CardContent } from "@/components/ui/card";
 import { getRoomColorClasses } from "@/lib/utils";
 import type { Room } from "@shared/schema";

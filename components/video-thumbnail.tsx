@@ -1,3 +1,5 @@
+"use client"
+
 import { useState, useRef, useEffect } from "react";
 import { AlertTriangle, Play, Pause } from "lucide-react";
 

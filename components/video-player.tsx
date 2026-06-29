@@ -1,9 +1,9 @@
-import { useRef, useEffect, useState } from "react";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { ZoomIn, ZoomOut, Download, CheckCircle, Play } from "lucide-react";
-import { videoCacheManager } from "@/lib/video-cache";
-import logoPath from "@assets/10Rounds Logos_RGB-08_1750068981660.png";
+"use client"
+
+import { useRef, useEffect, useState } from "react"
+import { Play } from "lucide-react"
+
+const logoPath = "/logo.png"
 
 interface VideoPlayerProps {
   assignment: {
