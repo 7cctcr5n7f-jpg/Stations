@@ -5,21 +5,28 @@
  * authenticated. It will:
  *   1. List every file in Replit Object Storage (videos + thumbnails)
  *   2. Upload each one to Vercel Blob
- *   3. Update both databases (old Replit Neon + new app Neon) to point at the new Blob URLs
- *   4. Skip files that already have a Blob URL in the database (safe to re-run)
+ *   3. Update ONLY the new app Neon database to point at the new Blob URLs
+ *      — the old Replit database is never touched so it remains a clean rollback
+ *   4. Skip files that already have a Blob URL in the new database (safe to re-run)
  *   5. Print a full migration report
  *
  * ── Prerequisites (install in Replit) ────────────────────────────────────────
  *   npm install @replit/object-storage @vercel/blob @neondatabase/serverless
  *
  * ── Environment variables required in Replit Secrets ─────────────────────────
- *   NEW_DATABASE_URL  → the new app Neon connection string
+ *   NEW_DATABASE_URL      → the new app Neon connection string
  *   BLOB_READ_WRITE_TOKEN → Vercel Blob token (copy from your Vercel project env vars)
  *
  * ── Usage ────────────────────────────────────────────────────────────────────
- *   node scripts/migrate-object-storage-to-blob.mjs
+ *   node scripts/migrate-object-storage-to-blob.mjs            # live run
+ *   node scripts/migrate-object-storage-to-blob.mjs --dry-run  # preview only, no writes
  *
  *   Re-run safely at any time — already-migrated files are detected and skipped.
+ *
+ * ── Rollback ─────────────────────────────────────────────────────────────────
+ *   The old Replit database is never modified. If something goes wrong, simply
+ *   re-run the data migration script (migrate-data.mjs) from the new database
+ *   to restore it from the old one.
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
@@ -29,9 +36,14 @@ import { neon } from "@neondatabase/serverless";
 
 // ── Config ───────────────────────────────────────────────────────────────────
 
-const OLD_DB_URL = process.env.DATABASE_URL;        // Replit's existing Neon DB
-const NEW_DB_URL = process.env.NEW_DATABASE_URL;    // Your new app Neon DB
+const OLD_DB_URL  = process.env.DATABASE_URL;        // Replit's existing Neon DB — READ ONLY
+const NEW_DB_URL  = process.env.NEW_DATABASE_URL;    // New app Neon DB — the only one we write to
 const BLOB_TOKEN  = process.env.BLOB_READ_WRITE_TOKEN;
+const DRY_RUN     = process.argv.includes("--dry-run");
+
+if (DRY_RUN) {
+  console.log("DRY RUN mode — no files will be uploaded and no database rows will be updated.\n");
+}
 
 if (!OLD_DB_URL) {
   console.error("ERROR: DATABASE_URL is not set (the existing Replit Neon connection).");
@@ -131,7 +143,6 @@ const report = {
   thumbnailSuccess: 0,
   thumbnailFailed: 0,
   thumbnailSkipped: 0,
-  dbOldUpdated: 0,
   dbNewUpdated: 0,
   errors: [],
 };
@@ -201,8 +212,15 @@ async function main() {
       return { id: video.id, status: "missing" };
     }
 
+    const filename = videoKey.split("/").pop();
+
+    if (DRY_RUN) {
+      console.log(`${prefix} DRY   id=${video.id} would upload: ${videoKey}`);
+      report.videoSuccess++;
+      return { id: video.id, status: "dry_run" };
+    }
+
     try {
-      const filename = videoKey.split("/").pop();
       const buffer = await downloadFromObjectStorage(videoKey);
       newVideoUrl = await uploadToBlob(buffer, `videos/${filename}`, mimeType(filename));
       report.videoSuccess++;
@@ -227,27 +245,17 @@ async function main() {
       } catch (err) {
         console.warn(`${prefix} THUMB_FAIL id=${video.id} — ${err.message}`);
         report.thumbnailFailed++;
-        // Keep old thumbnail URL — don't block on this
+        // Non-fatal — keep old thumbnail URL and continue
       }
     } else {
       report.thumbnailSkipped++;
     }
 
-    // ── Update both databases ───────────────────────────────────────────────
+    // ── Update ONLY the new app database ───────────────────────────────────
+    // The old Replit database is never modified — it is your rollback point.
+    // If you need to re-run the data migration from scratch, the old DB is
+    // untouched and still holds the original /public-objects/ URLs.
     try {
-      // Update old Replit Neon DB (so the Replit app also uses Blob URLs)
-      await oldSql`
-        UPDATE videos
-        SET url = ${newVideoUrl}, thumbnail_url = ${newThumbUrl}
-        WHERE id = ${video.id}
-      `;
-      report.dbOldUpdated++;
-    } catch (err) {
-      console.warn(`${prefix} DB_OLD_FAIL id=${video.id} — ${err.message}`);
-    }
-
-    try {
-      // Update new app Neon DB
       await newSql`
         UPDATE videos
         SET url = ${newVideoUrl}, thumbnail_url = ${newThumbUrl}
@@ -255,7 +263,8 @@ async function main() {
       `;
       report.dbNewUpdated++;
     } catch (err) {
-      console.warn(`${prefix} DB_NEW_FAIL id=${video.id} — ${err.message}`);
+      console.warn(`${prefix} DB_FAIL id=${video.id} — ${err.message}`);
+      report.errors.push({ id: video.id, type: "db_update_failed", error: err.message });
     }
 
     return { id: video.id, status: "ok", newVideoUrl };
@@ -265,16 +274,17 @@ async function main() {
   console.log("\n" + "=".repeat(60));
   console.log("  MIGRATION REPORT");
   console.log("=".repeat(60));
+  if (DRY_RUN) console.log("  *** DRY RUN — no files uploaded, no database rows changed ***");
   console.log(`  Total videos found:        ${report.totalVideos}`);
   console.log(`  Already migrated (skipped):${report.alreadyMigrated}`);
-  console.log(`  Videos migrated OK:        ${report.videoSuccess}`);
+  console.log(`  Videos ${DRY_RUN ? "would migrate" : "migrated"} OK:        ${report.videoSuccess}`);
   console.log(`  Videos missing in storage: ${report.videoMissing}`);
   console.log(`  Videos failed:             ${report.videoFailed}`);
-  console.log(`  Thumbnails migrated OK:    ${report.thumbnailSuccess}`);
+  console.log(`  Thumbnails ${DRY_RUN ? "would migrate" : "migrated"} OK:    ${report.thumbnailSuccess}`);
   console.log(`  Thumbnails failed:         ${report.thumbnailFailed}`);
   console.log(`  Thumbnails skipped:        ${report.thumbnailSkipped}`);
-  console.log(`  Old DB records updated:    ${report.dbOldUpdated}`);
-  console.log(`  New DB records updated:    ${report.dbNewUpdated}`);
+  console.log(`  New DB records updated:    ${DRY_RUN ? 0 : report.dbNewUpdated}`);
+  console.log(`  Old DB (Replit):           untouched — use as rollback if needed`);
 
   if (report.errors.length > 0) {
     console.log(`\n  Errors (${report.errors.length}):`);
