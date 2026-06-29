@@ -36,9 +36,10 @@ import { neon } from "@neondatabase/serverless";
 
 // ── Config ───────────────────────────────────────────────────────────────────
 
-const OLD_DB_URL  = process.env.DATABASE_URL;        // Replit's existing Neon DB — READ ONLY
-const NEW_DB_URL  = process.env.NEW_DATABASE_URL;    // New app Neon DB — the only one we write to
+const OLD_DB_URL  = process.env.DATABASE_URL;                    // Replit Neon DB — READ ONLY
+const NEW_DB_URL  = process.env.NEW_DATABASE_URL;                // New app Neon DB — only one we write to
 const BLOB_TOKEN  = process.env.BLOB_READ_WRITE_TOKEN;
+const BUCKET_ID   = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID; // Already set in Replit Secrets
 const DRY_RUN     = process.argv.includes("--dry-run");
 
 if (DRY_RUN) {
@@ -57,19 +58,39 @@ if (!BLOB_TOKEN) {
   console.error("ERROR: BLOB_READ_WRITE_TOKEN is not set. Add it to Replit Secrets.");
   process.exit(1);
 }
+if (!BUCKET_ID) {
+  console.error("ERROR: DEFAULT_OBJECT_STORAGE_BUCKET_ID is not set.");
+  console.error("  This should already exist as a Replit Secret in your project.");
+  process.exit(1);
+}
 
-// Concurrency limit — Replit Object Storage can be slow; keep this low to
-// avoid hammering it and hitting rate limits.
+// Concurrency limit — keep low to avoid hammering Object Storage.
 const CONCURRENCY = 3;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 const oldSql = neon(OLD_DB_URL);
 const newSql = neon(NEW_DB_URL);
-const storage = new Client();
+
+// The @replit/object-storage Client must be initialised with the bucket ID
+// before any operations are performed. This mirrors how the existing Replit
+// app initialises storage using the DEFAULT_OBJECT_STORAGE_BUCKET_ID secret.
+let bucket;
+async function getStorage() {
+  if (!bucket) {
+    const client = new Client();
+    const result = await client.init(BUCKET_ID);
+    if (!result.ok) {
+      throw new Error(`Failed to init Object Storage bucket '${BUCKET_ID}': ${result.error?.message ?? "unknown error"}`);
+    }
+    bucket = result.value;
+  }
+  return bucket;
+}
 
 /** Download a file from Replit Object Storage and return it as a Buffer. */
 async function downloadFromObjectStorage(key) {
+  const storage = await getStorage();
   const result = await storage.downloadAsBytes(key);
   if (!result.ok) {
     throw new Error(`Object Storage download failed for '${key}': ${result.error?.message ?? "unknown error"}`);
@@ -160,21 +181,24 @@ async function main() {
   report.totalVideos = videos.length;
   console.log(`  Found ${report.totalVideos} videos.`);
 
-  // 2. List all keys in Replit Object Storage for reference
-  console.log("\nListing Replit Object Storage contents...");
+  // 2. Initialise the bucket and list all keys for existence checks
+  console.log("\nConnecting to Replit Object Storage...");
   let storageKeys = new Set();
   try {
+    const storage = await getStorage();
+    console.log(`  Bucket '${BUCKET_ID}' initialised successfully.`);
     const listing = await storage.list();
     if (listing.ok) {
       storageKeys = new Set(listing.value.map((o) => o.key));
       console.log(`  Object Storage contains ${storageKeys.size} objects.`);
     } else {
-      console.warn("  WARNING: Could not list Object Storage:", listing.error?.message);
-      console.warn("  Will attempt downloads anyway.");
+      console.warn("  WARNING: Could not list objects:", listing.error?.message);
+      console.warn("  Will attempt downloads anyway — missing files will be reported.");
     }
   } catch (err) {
-    console.warn("  WARNING: list() failed:", err.message);
-    console.warn("  Will attempt downloads anyway.");
+    console.error("  ERROR connecting to Object Storage:", err.message);
+    console.error("  Check that DEFAULT_OBJECT_STORAGE_BUCKET_ID is set correctly.");
+    process.exit(1);
   }
 
   // 3. Process each video
