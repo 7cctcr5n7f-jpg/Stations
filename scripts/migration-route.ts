@@ -170,119 +170,128 @@ async function runMigration(dryRun: boolean) {
     addLog(`WARNING: Could not list bucket (will attempt downloads anyway): ${err.message}`);
   }
 
-  // 3. Process each video with concurrency = 3
-  const CONCURRENCY = 3;
-  let idx = 0;
+  // 3. Process each video strictly one at a time.
+  //    Each video completes its full cycle (download → upload → verify → DB update)
+  //    before the next video begins. A failure on one video is logged and skipped;
+  //    the loop always continues to the next video.
+  for (let i = 0; i < videos.length; i++) {
+    const video = videos[i];
+    const prefix = `[${i + 1}/${state.total}]`;
+    state.processed = i + 1;
 
-  async function worker() {
-    while (idx < videos.length) {
-      const video = videos[idx++];
-      const prefix = `[${state.processed + 1}/${state.total}]`;
-      state.processed++;
+    try {
+      // ── Step 1: Check if already migrated in new DB ───────────────────────
+      const [newRow] = await newSql`SELECT url FROM videos WHERE id = ${video.id}`;
+      if (newRow?.url?.includes("blob.vercel-storage")) {
+        addLog(`${prefix} SKIP  id=${video.id} — already on Blob`);
+        state.skipped++;
+        continue;
+      }
 
+      // ── Step 2: Resolve the GCS object name from the DB path ──────────────
+      const videoGcsName = urlToGcsName(video.url, pubPrefix);
+      if (!videoGcsName) {
+        addLog(`${prefix} SKIP  id=${video.id} — not an Object Storage path: ${video.url}`);
+        state.skipped++;
+        continue;
+      }
+
+      // ── Step 3: Confirm the file exists in Object Storage ─────────────────
+      if (knownKeys.size > 0 && !knownKeys.has(videoGcsName)) {
+        addLog(`${prefix} MISS  id=${video.id} — not found in bucket: ${videoGcsName}`);
+        state.missing++;
+        state.errors.push({ id: video.id, type: "missing", message: videoGcsName });
+        continue; // log and move on
+      }
+
+      const filename = videoGcsName.split("/").pop()!;
+
+      if (dryRun) {
+        addLog(`${prefix} DRY   id=${video.id} would upload: ${videoGcsName}`);
+        state.succeeded++;
+        continue;
+      }
+
+      // ── Step 4: Download from Replit Object Storage ───────────────────────
+      let videoBuffer: Buffer;
       try {
-        // Check if already migrated in new DB
-        const [newRow] = await newSql`SELECT url FROM videos WHERE id = ${video.id}`;
-        if (newRow?.url?.includes("blob.vercel-storage")) {
-          addLog(`${prefix} SKIP  id=${video.id} — already on Blob`);
-          state.skipped++;
-          continue;
+        const [contents] = await bucket.file(videoGcsName).download();
+        videoBuffer = contents;
+      } catch (err: any) {
+        addLog(`${prefix} FAIL  id=${video.id} — download error: ${err.message}`);
+        state.failed++;
+        state.errors.push({ id: video.id, type: "download_failed", message: err.message });
+        continue; // log and move on
+      }
+
+      // ── Step 5: Upload to Vercel Blob ─────────────────────────────────────
+      let newVideoUrl: string;
+      try {
+        const blob = await put(`videos/${filename}`, videoBuffer, {
+          access: "public",
+          contentType: mimeType(filename),
+          token: BLOB_TOKEN,
+        });
+
+        // ── Step 6: Verify the upload returned a valid URL ────────────────
+        if (!blob?.url || !blob.url.startsWith("https://")) {
+          throw new Error(`Blob upload returned invalid URL: ${blob?.url}`);
         }
+        newVideoUrl = blob.url;
+        addLog(`${prefix} OK    id=${video.id} ${filename} (${(videoBuffer.length / 1024 / 1024).toFixed(1)} MB) → ${newVideoUrl}`);
+      } catch (err: any) {
+        addLog(`${prefix} FAIL  id=${video.id} — upload error: ${err.message}`);
+        state.failed++;
+        state.errors.push({ id: video.id, type: "upload_failed", message: err.message });
+        continue; // log and move on
+      }
 
-        // Resolve GCS object name
-        const videoGcsName = urlToGcsName(video.url, pubPrefix);
-        if (!videoGcsName) {
-          addLog(`${prefix} SKIP  id=${video.id} — not an Object Storage path: ${video.url}`);
-          state.skipped++;
-          continue;
-        }
-
-        // Check existence
-        if (knownKeys.size > 0 && !knownKeys.has(videoGcsName)) {
-          addLog(`${prefix} MISS  id=${video.id} — not in bucket: ${videoGcsName}`);
-          state.missing++;
-          state.errors.push({ id: video.id, type: "missing", message: videoGcsName });
-          continue;
-        }
-
-        const filename = videoGcsName.split("/").pop()!;
-
-        if (dryRun) {
-          addLog(`${prefix} DRY   id=${video.id} would upload: ${videoGcsName}`);
-          state.succeeded++;
-          continue;
-        }
-
-        // Download from GCS via objectStorageClient
-        let videoBuffer: Buffer;
+      // ── Step 7: Migrate thumbnail (non-fatal — never blocks the video) ────
+      let newThumbUrl = video.thumbnail_url;
+      const thumbGcsName = urlToGcsName(video.thumbnail_url, pubPrefix);
+      if (thumbGcsName) {
         try {
-          const [contents] = await bucket.file(videoGcsName).download();
-          videoBuffer = contents;
-        } catch (err: any) {
-          addLog(`${prefix} FAIL  id=${video.id} download error: ${err.message}`);
-          state.failed++;
-          state.errors.push({ id: video.id, type: "download_failed", message: err.message });
-          continue;
-        }
-
-        // Upload to Vercel Blob
-        let newVideoUrl: string;
-        try {
-          const blob = await put(`videos/${filename}`, videoBuffer, {
+          const [thumbContents] = await bucket.file(thumbGcsName).download();
+          const thumbFilename = thumbGcsName.split("/").pop()!;
+          const thumbBlob = await put(`thumbnails/${thumbFilename}`, thumbContents, {
             access: "public",
-            contentType: mimeType(filename),
+            contentType: mimeType(thumbFilename),
             token: BLOB_TOKEN,
           });
-          newVideoUrl = blob.url;
-          state.succeeded++;
-          addLog(`${prefix} OK    id=${video.id} ${filename} (${(videoBuffer.length / 1024 / 1024).toFixed(1)} MB)`);
-        } catch (err: any) {
-          addLog(`${prefix} FAIL  id=${video.id} blob upload error: ${err.message}`);
-          state.failed++;
-          state.errors.push({ id: video.id, type: "upload_failed", message: err.message });
-          continue;
-        }
-
-        // Migrate thumbnail (non-fatal)
-        let newThumbUrl = video.thumbnail_url;
-        const thumbGcsName = urlToGcsName(video.thumbnail_url, pubPrefix);
-        if (thumbGcsName) {
-          try {
-            const [thumbContents] = await bucket.file(thumbGcsName).download();
-            const thumbFilename = thumbGcsName.split("/").pop()!;
-            const thumbBlob = await put(`thumbnails/${thumbFilename}`, thumbContents, {
-              access: "public",
-              contentType: mimeType(thumbFilename),
-              token: BLOB_TOKEN,
-            });
+          if (thumbBlob?.url?.startsWith("https://")) {
             newThumbUrl = thumbBlob.url;
-          } catch (err: any) {
-            addLog(`${prefix} THUMB_FAIL id=${video.id}: ${err.message}`);
-            // non-fatal — keep old thumbnail URL
           }
-        }
-
-        // Update ONLY the new database — old DB is never touched
-        try {
-          await newSql`
-            UPDATE videos
-            SET url = ${newVideoUrl}, thumbnail_url = ${newThumbUrl}
-            WHERE id = ${video.id}
-          `;
-          state.dbUpdated++;
         } catch (err: any) {
-          addLog(`${prefix} DB_FAIL id=${video.id}: ${err.message}`);
-          state.errors.push({ id: video.id, type: "db_update_failed", message: err.message });
+          addLog(`${prefix} THUMB_FAIL id=${video.id} — ${err.message} (continuing)`);
+          // non-fatal: keep old thumbnail URL, do not skip the video
         }
-      } catch (err: any) {
-        addLog(`${prefix} ERROR id=${video.id}: ${err.message}`);
-        state.failed++;
-        state.errors.push({ id: video.id, type: "unexpected", message: err.message });
       }
+
+      // ── Step 8: Update ONLY the new database ─────────────────────────────
+      // The old Replit database is NEVER modified — it is your rollback point.
+      try {
+        await newSql`
+          UPDATE videos
+          SET url = ${newVideoUrl}, thumbnail_url = ${newThumbUrl}
+          WHERE id = ${video.id}
+        `;
+        state.succeeded++;
+        state.dbUpdated++;
+      } catch (err: any) {
+        // DB update failed after a successful upload — log it but count as failed
+        // so it will be retried on the next run (the old URL is still in the new DB).
+        addLog(`${prefix} DB_FAIL id=${video.id} — ${err.message}`);
+        state.failed++;
+        state.errors.push({ id: video.id, type: "db_update_failed", message: err.message });
+      }
+
+    } catch (err: any) {
+      // Catch-all: unexpected error — log and continue to the next video
+      addLog(`${prefix} ERROR id=${video.id} — unexpected: ${err.message}`);
+      state.failed++;
+      state.errors.push({ id: video.id, type: "unexpected", message: err.message });
     }
   }
-
-  await Promise.all(Array.from({ length: CONCURRENCY }, worker));
 
   addLog(`--- Migration ${dryRun ? "DRY RUN " : ""}complete ---`);
   addLog(`Total: ${state.total} | Skipped: ${state.skipped} | OK: ${state.succeeded} | Missing: ${state.missing} | Failed: ${state.failed} | DB updated: ${state.dbUpdated}`);
