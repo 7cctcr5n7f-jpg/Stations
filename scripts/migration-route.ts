@@ -1,58 +1,65 @@
 /**
- * migration-route.ts
+ * server/migration-route.ts
  *
- * Drop this file into your Replit project's server/ directory, then register
- * the route in server/routes.ts. It adds two endpoints:
+ * Registers two HTTP endpoints inside the running Express server:
  *
- *   GET  /api/migrate/status   — see progress without starting anything
- *   POST /api/migrate/start    — start (or resume) the migration
+ *   POST /api/migrate/start   { secret, dryRun? }  — start / resume migration
+ *   GET  /api/migrate/status  ?secret=…            — poll live progress
  *
- * The route reuses objectStorageClient from server/objectStorage.ts, which
- * authenticates via Replit's sidecar at http://127.0.0.1:1106 — the same
- * auth path the rest of the application uses. This is why a standalone node
- * script cannot connect: the sidecar is only reachable from within the
- * running server process.
+ * Authentication uses objectStorageClient from ./objectStorage, which
+ * authenticates via Replit's internal sidecar at http://127.0.0.1:1106.
+ * That sidecar is only reachable from within the running server process —
+ * which is why a standalone `node` script cannot connect to Object Storage.
  *
- * ── Setup ────────────────────────────────────────────────────────────────────
- * 1. Copy this file to server/migration-route.ts in your Replit project.
+ * ── Replit Secrets required ───────────────────────────────────────────────────
+ *   NEW_DATABASE_URL      – new app Neon connection string
+ *   BLOB_READ_WRITE_TOKEN – Vercel Blob token  (Vercel → Settings → Env Vars)
+ *   MIGRATION_SECRET      – any random string, e.g. "migrate-abc123"
+ *                           (protects the endpoint from unauthorised calls)
  *
- * 2. Add two Replit Secrets:
- *      NEW_DATABASE_URL      – your new Neon connection string
- *      BLOB_READ_WRITE_TOKEN – Vercel Blob token (Vercel → Settings → Env Vars)
- *      MIGRATION_SECRET      – any random string, e.g. "migrate-abc123"
- *                              (protects the endpoint from unauthorised calls)
+ * ── Usage (from Replit Shell) ─────────────────────────────────────────────────
+ *   # Dry run — lists what would be uploaded, no writes at all:
+ *   curl -X POST http://localhost:5000/api/migrate/start \
+ *     -H "Content-Type: application/json" \
+ *     -d '{"secret":"YOUR_MIGRATION_SECRET","dryRun":true}'
  *
- * 3. In server/routes.ts, add near the top of registerRoutes():
- *      import { registerMigrationRoutes } from './migration-route';
- *      registerMigrationRoutes(app);
+ *   # Poll progress (run in a second terminal while migration is running):
+ *   curl "http://localhost:5000/api/migrate/status?secret=YOUR_MIGRATION_SECRET"
  *
- * 4. Start / restart the Replit server, then from the Replit Shell run:
- *
- *      # Dry run — no uploads, no DB writes:
- *      curl -X POST http://localhost:5000/api/migrate/start \
- *        -H "Content-Type: application/json" \
- *        -d '{"secret":"YOUR_MIGRATION_SECRET","dryRun":true}'
- *
- *      # Live run:
- *      curl -X POST http://localhost:5000/api/migrate/start \
- *        -H "Content-Type: application/json" \
- *        -d '{"secret":"YOUR_MIGRATION_SECRET","dryRun":false}'
- *
- *      # Check progress while running:
- *      curl http://localhost:5000/api/migrate/status?secret=YOUR_MIGRATION_SECRET
+ *   # Live run:
+ *   curl -X POST http://localhost:5000/api/migrate/start \
+ *     -H "Content-Type: application/json" \
+ *     -d '{"secret":"YOUR_MIGRATION_SECRET","dryRun":false}'
  *
  * ── Safety ────────────────────────────────────────────────────────────────────
- * - The old Replit database is NEVER modified — it remains your rollback point.
- * - Only the new Neon database (NEW_DATABASE_URL) is updated.
- * - Already-migrated files are detected and skipped — safe to re-run.
+ *   - The old Replit database (DATABASE_URL) is NEVER modified.
+ *   - Only NEW_DATABASE_URL is updated with new Blob URLs.
+ *   - Already-migrated videos are detected and skipped — safe to re-run.
+ *   - Each video is fully processed (download → upload → verify → DB write)
+ *     before the next begins. Failures are logged and skipped; the loop
+ *     never aborts early.
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-import type { Express } from "express";
+import type { Express, Request, Response } from "express";
 import { neon } from "@neondatabase/serverless";
 import { put } from "@vercel/blob";
+import { objectStorageClient } from "./objectStorage";
 
-// ── Live progress state (in-memory, reset on server restart) ─────────────────
+// ── Progress state (in-memory; resets on server restart) ─────────────────────
+
+interface VideoRow {
+  id: number;
+  title: string;
+  url: string;
+  thumbnail_url: string | null;
+}
+
+interface MigrationError {
+  id: number;
+  type: string;
+  message: string;
+}
 
 interface MigrationState {
   status: "idle" | "running" | "done" | "failed";
@@ -66,8 +73,8 @@ interface MigrationState {
   failed: number;
   missing: number;
   dbUpdated: number;
-  errors: Array<{ id: number; type: string; message: string }>;
-  log: string[]; // last 100 lines
+  errors: MigrationError[];
+  log: string[]; // rolling last-100 lines
 }
 
 const state: MigrationState = {
@@ -86,25 +93,30 @@ const state: MigrationState = {
   log: [],
 };
 
-function addLog(line: string) {
+function addLog(line: string): void {
   console.log(`[migration] ${line}`);
   state.log.push(line);
   if (state.log.length > 100) state.log.shift();
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// ── Path helpers ──────────────────────────────────────────────────────────────
 
-/** Convert a /public-objects/... DB path to a GCS object name within the bucket. */
-function urlToGcsName(url: string, publicPrefix: string): string | null {
-  // DB stores paths like /public-objects/uploads/123.mp4
-  // GCS stores them at:  public/uploads/123.mp4  (under the public/ prefix)
-  if (!url || !url.startsWith("/public-objects/")) return null;
-  const filePath = url.slice("/public-objects/".length); // e.g. uploads/123.mp4
-  return `${publicPrefix}/${filePath}`; // e.g. public/uploads/123.mp4
+/**
+ * Convert a DB path like /public-objects/uploads/123.mp4
+ * to the GCS object name inside the bucket: public/uploads/123.mp4
+ *
+ * routes.ts stores videos at  public/uploads/…
+ * and thumbnails at           public/thumbnails/…
+ * The DB records the serving path as /public-objects/uploads/…
+ */
+function dbPathToGcsName(dbPath: string): string | null {
+  if (!dbPath || !dbPath.startsWith("/public-objects/")) return null;
+  // /public-objects/uploads/123.mp4  →  public/uploads/123.mp4
+  return "public/" + dbPath.slice("/public-objects/".length);
 }
 
 function mimeType(filename: string): string {
-  const ext = filename.split(".").pop()?.toLowerCase() ?? "";
+  const ext = (filename.split(".").pop() ?? "").toLowerCase();
   const map: Record<string, string> = {
     mp4: "video/mp4", mov: "video/quicktime", webm: "video/webm",
     avi: "video/x-msvideo", mkv: "video/x-matroska",
@@ -114,117 +126,113 @@ function mimeType(filename: string): string {
   return map[ext] ?? "application/octet-stream";
 }
 
-/** Parse the bucket name out of PRIVATE_OBJECT_DIR (format: /bucket-name/path). */
-function parseBucketFromPrivateDir(privateDir: string): string {
-  // e.g. /replit-objstore-abc123/private  →  replit-objstore-abc123
-  return privateDir.replace(/^\//, "").split("/")[0];
-}
-
-/** The public prefix inside the bucket where videos are stored. */
-function publicPrefix(privateDir: string): string {
-  // Replit stores public objects at <bucket>/public/...
-  // privateDir is the private path, but public objects go under <bucket>/public
-  const bucket = parseBucketFromPrivateDir(privateDir);
-  return "public"; // objects are stored as public/uploads/... and public/thumbnails/...
-}
-
 // ── Core migration logic ──────────────────────────────────────────────────────
 
-async function runMigration(dryRun: boolean) {
+async function runMigration(dryRun: boolean): Promise<void> {
   const NEW_DB_URL = process.env.NEW_DATABASE_URL;
   const BLOB_TOKEN = process.env.BLOB_READ_WRITE_TOKEN;
   const OLD_DB_URL = process.env.DATABASE_URL;
-  const PRIVATE_DIR = process.env.PRIVATE_OBJECT_DIR;
-  const BUCKET_ID = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID;
+  const BUCKET_ID  = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID;
 
-  if (!NEW_DB_URL) throw new Error("NEW_DATABASE_URL secret is not set");
-  if (!BLOB_TOKEN) throw new Error("BLOB_READ_WRITE_TOKEN secret is not set");
-  if (!OLD_DB_URL) throw new Error("DATABASE_URL is not set");
-  if (!PRIVATE_DIR) throw new Error("PRIVATE_OBJECT_DIR is not set");
-  if (!BUCKET_ID) throw new Error("DEFAULT_OBJECT_STORAGE_BUCKET_ID is not set");
+  if (!NEW_DB_URL)  throw new Error("NEW_DATABASE_URL secret is not set");
+  if (!BLOB_TOKEN)  throw new Error("BLOB_READ_WRITE_TOKEN secret is not set");
+  if (!OLD_DB_URL)  throw new Error("DATABASE_URL is not set");
+  if (!BUCKET_ID)   throw new Error("DEFAULT_OBJECT_STORAGE_BUCKET_ID is not set");
 
-  // Import objectStorageClient from the existing module — this is the key:
-  // it authenticates via the sidecar at http://127.0.0.1:1106, which only
-  // works inside the running server process.
-  const { objectStorageClient } = await import("./objectStorage");
+  // Use the same objectStorageClient the rest of the server uses — it is already
+  // authenticated via the Replit sidecar at http://127.0.0.1:1106.
   const bucket = objectStorageClient.bucket(BUCKET_ID);
-  const pubPrefix = publicPrefix(PRIVATE_DIR);
 
   const oldSql = neon(OLD_DB_URL);
   const newSql = neon(NEW_DB_URL);
 
-  // 1. Fetch all videos from the old DB (read-only)
-  addLog(`Fetching video records from old database...`);
-  const videos = await oldSql`SELECT id, title, url, thumbnail_url FROM videos ORDER BY id`;
+  // ── Step A: Load all video records from the old DB (read-only) ─────────────
+  addLog("Fetching video records from old database...");
+  const videos = await oldSql`
+    SELECT id, title, url, thumbnail_url FROM videos ORDER BY id
+  ` as VideoRow[];
   state.total = videos.length;
   addLog(`Found ${state.total} videos to process.`);
 
-  // 2. List all GCS objects for fast existence checks
-  addLog(`Listing Object Storage contents...`);
+  // ── Step B: List all objects in the bucket for fast existence checks ────────
+  addLog("Listing Replit Object Storage contents...");
   const knownKeys = new Set<string>();
   try {
-    const [files] = await bucket.getFiles({ prefix: pubPrefix });
+    const [files] = await bucket.getFiles({ prefix: "public/" });
     files.forEach((f) => knownKeys.add(f.name));
-    addLog(`Object Storage contains ${knownKeys.size} objects under '${pubPrefix}/'.`);
+    addLog(`Object Storage contains ${knownKeys.size} objects under 'public/'.`);
   } catch (err: any) {
-    addLog(`WARNING: Could not list bucket (will attempt downloads anyway): ${err.message}`);
+    addLog(`WARNING: Could not list bucket — will attempt downloads anyway: ${err.message}`);
   }
 
-  // 3. Process each video strictly one at a time.
-  //    Each video completes its full cycle (download → upload → verify → DB update)
-  //    before the next video begins. A failure on one video is logged and skipped;
-  //    the loop always continues to the next video.
+  // ── Step C: Process each video one at a time ───────────────────────────────
+  //
+  // For each video the steps are:
+  //   1. Check new DB  — skip if URL already points to blob.vercel-storage
+  //   2. Resolve path  — derive the GCS object name from the stored DB path
+  //   3. Check exists  — confirm the key is present in the bucket listing
+  //   4. Download      — fetch bytes from Object Storage
+  //   5. Upload        — PUT to Vercel Blob
+  //   6. Verify        — confirm the returned URL is a valid https:// address
+  //   7. Thumbnail     — attempt thumbnail migration (non-fatal)
+  //   8. Update new DB — write the Blob URL to NEW_DATABASE_URL only
+  //
+  // A failure at any step logs the error, increments state.failed, and
+  // continues to the next video. The loop never aborts early.
+
   for (let i = 0; i < videos.length; i++) {
     const video = videos[i];
     const prefix = `[${i + 1}/${state.total}]`;
     state.processed = i + 1;
 
     try {
-      // ── Step 1: Check if already migrated in new DB ───────────────────────
-      const [newRow] = await newSql`SELECT url FROM videos WHERE id = ${video.id}`;
+
+      // 1. Check new DB ────────────────────────────────────────────────────────
+      const [newRow] = await newSql`SELECT url FROM videos WHERE id = ${video.id}` as any[];
       if (newRow?.url?.includes("blob.vercel-storage")) {
-        addLog(`${prefix} SKIP  id=${video.id} — already on Blob`);
+        addLog(`${prefix} SKIP  id=${video.id} — already on Vercel Blob`);
         state.skipped++;
         continue;
       }
 
-      // ── Step 2: Resolve the GCS object name from the DB path ──────────────
-      const videoGcsName = urlToGcsName(video.url, pubPrefix);
+      // 2. Resolve GCS object name ─────────────────────────────────────────────
+      const videoGcsName = dbPathToGcsName(video.url);
       if (!videoGcsName) {
         addLog(`${prefix} SKIP  id=${video.id} — not an Object Storage path: ${video.url}`);
         state.skipped++;
         continue;
       }
 
-      // ── Step 3: Confirm the file exists in Object Storage ─────────────────
+      // 3. Confirm the file exists ─────────────────────────────────────────────
       if (knownKeys.size > 0 && !knownKeys.has(videoGcsName)) {
         addLog(`${prefix} MISS  id=${video.id} — not found in bucket: ${videoGcsName}`);
         state.missing++;
         state.errors.push({ id: video.id, type: "missing", message: videoGcsName });
-        continue; // log and move on
+        continue;
       }
 
       const filename = videoGcsName.split("/").pop()!;
 
+      // Dry run stops here — nothing is written ────────────────────────────────
       if (dryRun) {
-        addLog(`${prefix} DRY   id=${video.id} would upload: ${videoGcsName}`);
+        addLog(`${prefix} DRY   id=${video.id} — would upload: ${videoGcsName}`);
         state.succeeded++;
         continue;
       }
 
-      // ── Step 4: Download from Replit Object Storage ───────────────────────
+      // 4. Download from Replit Object Storage ─────────────────────────────────
       let videoBuffer: Buffer;
       try {
         const [contents] = await bucket.file(videoGcsName).download();
-        videoBuffer = contents;
+        videoBuffer = contents as Buffer;
       } catch (err: any) {
         addLog(`${prefix} FAIL  id=${video.id} — download error: ${err.message}`);
         state.failed++;
         state.errors.push({ id: video.id, type: "download_failed", message: err.message });
-        continue; // log and move on
+        continue;
       }
 
-      // ── Step 5: Upload to Vercel Blob ─────────────────────────────────────
+      // 5. Upload to Vercel Blob ────────────────────────────────────────────────
       let newVideoUrl: string;
       try {
         const blob = await put(`videos/${filename}`, videoBuffer, {
@@ -233,27 +241,30 @@ async function runMigration(dryRun: boolean) {
           token: BLOB_TOKEN,
         });
 
-        // ── Step 6: Verify the upload returned a valid URL ────────────────
+        // 6. Verify upload returned a valid URL ──────────────────────────────────
         if (!blob?.url || !blob.url.startsWith("https://")) {
-          throw new Error(`Blob upload returned invalid URL: ${blob?.url}`);
+          throw new Error(`Blob upload returned invalid URL: "${blob?.url}"`);
         }
         newVideoUrl = blob.url;
-        addLog(`${prefix} OK    id=${video.id} ${filename} (${(videoBuffer.length / 1024 / 1024).toFixed(1)} MB) → ${newVideoUrl}`);
+        addLog(
+          `${prefix} OK    id=${video.id} ${filename}` +
+          ` (${(videoBuffer.length / 1024 / 1024).toFixed(1)} MB)`
+        );
       } catch (err: any) {
-        addLog(`${prefix} FAIL  id=${video.id} — upload error: ${err.message}`);
+        addLog(`${prefix} FAIL  id=${video.id} — upload/verify error: ${err.message}`);
         state.failed++;
         state.errors.push({ id: video.id, type: "upload_failed", message: err.message });
-        continue; // log and move on
+        continue;
       }
 
-      // ── Step 7: Migrate thumbnail (non-fatal — never blocks the video) ────
-      let newThumbUrl = video.thumbnail_url;
-      const thumbGcsName = urlToGcsName(video.thumbnail_url, pubPrefix);
+      // 7. Migrate thumbnail (non-fatal — never blocks the video) ──────────────
+      let newThumbUrl = video.thumbnail_url ?? null;
+      const thumbGcsName = video.thumbnail_url ? dbPathToGcsName(video.thumbnail_url) : null;
       if (thumbGcsName) {
         try {
           const [thumbContents] = await bucket.file(thumbGcsName).download();
           const thumbFilename = thumbGcsName.split("/").pop()!;
-          const thumbBlob = await put(`thumbnails/${thumbFilename}`, thumbContents, {
+          const thumbBlob = await put(`thumbnails/${thumbFilename}`, thumbContents as Buffer, {
             access: "public",
             contentType: mimeType(thumbFilename),
             token: BLOB_TOKEN,
@@ -262,13 +273,14 @@ async function runMigration(dryRun: boolean) {
             newThumbUrl = thumbBlob.url;
           }
         } catch (err: any) {
-          addLog(`${prefix} THUMB_FAIL id=${video.id} — ${err.message} (continuing)`);
-          // non-fatal: keep old thumbnail URL, do not skip the video
+          addLog(`${prefix} THUMB_FAIL id=${video.id} — ${err.message} (video will still be updated)`);
+          // non-fatal: keep old thumbnail URL, continue to DB update
         }
       }
 
-      // ── Step 8: Update ONLY the new database ─────────────────────────────
-      // The old Replit database is NEVER modified — it is your rollback point.
+      // 8. Update ONLY the new database ────────────────────────────────────────
+      // The old Replit database (DATABASE_URL) is NEVER modified.
+      // It remains your rollback point throughout the migration.
       try {
         await newSql`
           UPDATE videos
@@ -278,32 +290,45 @@ async function runMigration(dryRun: boolean) {
         state.succeeded++;
         state.dbUpdated++;
       } catch (err: any) {
-        // DB update failed after a successful upload — log it but count as failed
-        // so it will be retried on the next run (the old URL is still in the new DB).
+        // Blob upload succeeded but DB write failed — count as failed so the
+        // video will be retried on the next run (old URL still in new DB).
         addLog(`${prefix} DB_FAIL id=${video.id} — ${err.message}`);
         state.failed++;
         state.errors.push({ id: video.id, type: "db_update_failed", message: err.message });
       }
 
     } catch (err: any) {
-      // Catch-all: unexpected error — log and continue to the next video
+      // Catch-all for unexpected errors — always continue to the next video
       addLog(`${prefix} ERROR id=${video.id} — unexpected: ${err.message}`);
       state.failed++;
       state.errors.push({ id: video.id, type: "unexpected", message: err.message });
     }
   }
 
-  addLog(`--- Migration ${dryRun ? "DRY RUN " : ""}complete ---`);
-  addLog(`Total: ${state.total} | Skipped: ${state.skipped} | OK: ${state.succeeded} | Missing: ${state.missing} | Failed: ${state.failed} | DB updated: ${state.dbUpdated}`);
+  // ── Summary ──────────────────────────────────────────────────────────────────
+  addLog("────────────────────────────────────────────────────────────");
+  addLog(`Migration ${dryRun ? "DRY RUN " : ""}complete`);
+  addLog(`Total    : ${state.total}`);
+  addLog(`Skipped  : ${state.skipped}  (already on Blob or not an Object Storage path)`);
+  addLog(`Succeeded: ${state.succeeded}`);
+  addLog(`Missing  : ${state.missing}  (key not found in bucket)`);
+  addLog(`Failed   : ${state.failed}`);
+  addLog(`DB updated: ${state.dbUpdated}`);
+  addLog(`Old DB (DATABASE_URL): untouched — rollback point preserved`);
+  if (state.errors.length > 0) {
+    addLog(`Errors (${state.errors.length}):`);
+    state.errors.forEach((e) => addLog(`  id=${e.id} [${e.type}] ${e.message}`));
+  }
+  addLog("────────────────────────────────────────────────────────────");
 }
 
 // ── Route registration ────────────────────────────────────────────────────────
 
-export function registerMigrationRoutes(app: Express) {
+export function registerMigrationRoutes(app: Express): void {
   const MIGRATION_SECRET = process.env.MIGRATION_SECRET;
 
-  function checkSecret(req: any, res: any): boolean {
-    const provided = req.body?.secret ?? req.query?.secret;
+  function checkSecret(req: Request, res: Response): boolean {
+    const provided = (req.body as any)?.secret ?? req.query?.secret;
     if (!MIGRATION_SECRET) {
       res.status(500).json({ error: "MIGRATION_SECRET is not set on the server" });
       return false;
@@ -315,23 +340,24 @@ export function registerMigrationRoutes(app: Express) {
     return true;
   }
 
-  // GET /api/migrate/status — check progress
-  app.get("/api/migrate/status", (req, res) => {
+  // GET /api/migrate/status — poll current progress
+  app.get("/api/migrate/status", (req: Request, res: Response) => {
     if (!checkSecret(req, res)) return;
     res.json(state);
   });
 
-  // POST /api/migrate/start — kick off (or resume) migration
-  app.post("/api/migrate/start", async (req, res) => {
+  // POST /api/migrate/start — start or resume the migration
+  app.post("/api/migrate/start", (req: Request, res: Response) => {
     if (!checkSecret(req, res)) return;
 
     if (state.status === "running") {
-      return res.json({ message: "Migration already running", state });
+      res.json({ message: "Migration already running", state });
+      return;
     }
 
-    const dryRun = req.body?.dryRun === true;
+    const dryRun = (req.body as any)?.dryRun === true;
 
-    // Reset counters
+    // Reset all counters
     Object.assign(state, {
       status: "running",
       dryRun,
@@ -342,22 +368,22 @@ export function registerMigrationRoutes(app: Express) {
       errors: [], log: [],
     });
 
-    addLog(`Starting migration${dryRun ? " (DRY RUN)" : ""}...`);
+    addLog(`Starting migration${dryRun ? " (DRY RUN — no files will be uploaded)" : ""}...`);
     res.json({ message: `Migration started${dryRun ? " (dry run)" : ""}`, state });
 
-    // Run async — don't block the HTTP response
+    // Run asynchronously so the HTTP response is returned immediately.
+    // Poll GET /api/migrate/status to follow progress.
     runMigration(dryRun)
       .then(() => {
         state.status = "done";
         state.finishedAt = new Date().toISOString();
-        addLog("Migration finished successfully.");
       })
-      .catch((err) => {
+      .catch((err: Error) => {
         state.status = "failed";
         state.finishedAt = new Date().toISOString();
-        addLog(`Migration failed: ${err.message}`);
+        addLog(`Fatal error: ${err.message}`);
       });
   });
 
-  console.log("[migration] Routes registered: GET/POST /api/migrate/status|start");
+  console.log("[migration] Registered: POST /api/migrate/start  GET /api/migrate/status");
 }
