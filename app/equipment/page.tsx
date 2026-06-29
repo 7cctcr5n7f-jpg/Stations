@@ -11,7 +11,8 @@ import type { Room, Video } from "@shared/schema";
 
 export default function EquipmentView() {
   const [currentDate, setCurrentDate] = useState(new Date().toISOString().split('T')[0]);
-  const [, setLocation] = useLocation();
+  const router = useRouter();
+  const setLocation = (path: string) => router.push(path);
 
   // Generate consistent colors for equipment (more prominent)
   const getEquipmentColor = (equipment: string) => {

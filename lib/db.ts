@@ -1,15 +1,27 @@
-import { neon } from "@neondatabase/serverless"
+import { neon, type NeonQueryFunction } from "@neondatabase/serverless"
 import type { Room, Video, Schedule, RoomAssignment } from "@/lib/shared/schema"
 
-const databaseUrl = process.env.DATABASE_URL
+// Lazily initialize the Neon client on first use. Initializing at module load
+// breaks `next build` page-data collection, where DATABASE_URL is not present.
+let _sql: NeonQueryFunction<false, false> | null = null
 
-if (!databaseUrl) {
-  // Surfaced clearly during development if the integration env var is missing.
-  console.error("[v0] DATABASE_URL is not set. Connect the Neon integration.")
+function getSql(): NeonQueryFunction<false, false> {
+  if (!_sql) {
+    const databaseUrl = process.env.DATABASE_URL
+    if (!databaseUrl) {
+      throw new Error("DATABASE_URL is not set. Connect the Neon integration.")
+    }
+    _sql = neon(databaseUrl)
+  }
+  return _sql
 }
 
 // Tagged-template SQL client. Use as: await sql`SELECT * FROM rooms`
-export const sql = neon(databaseUrl || "")
+// Also supports sql.query(text, params) via the underlying Neon client.
+export const sql = ((...args: any[]) => (getSql() as any)(...args)) as NeonQueryFunction<false, false>
+
+// Forward the `.query()` helper used for parameterized, non-tagged queries.
+;(sql as any).query = (...args: any[]) => (getSql() as any).query(...args)
 
 // ---- Row mappers (snake_case DB columns -> camelCase domain objects) ----
 

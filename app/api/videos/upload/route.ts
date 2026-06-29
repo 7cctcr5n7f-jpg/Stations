@@ -1,3 +1,5 @@
+export const dynamic = "force-dynamic"
+
 import { put } from "@vercel/blob"
 import { type NextRequest, NextResponse } from "next/server"
 import { sql, mapVideo } from "@/lib/db"
