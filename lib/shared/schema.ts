@@ -32,6 +32,10 @@ export interface Schedule {
   displayEquipment?: string | null
   zoomLevel?: string | null
   verticalPosition?: string | null
+  sets?: number | null
+  restTime?: number | null
+  isActive?: boolean | null
+  heartRateZone?: string | null
 }
 
 export interface RoomAssignment {

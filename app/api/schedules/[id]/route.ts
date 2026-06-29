@@ -15,6 +15,10 @@ const FIELD_MAP: Record<string, string> = {
   displayEquipment: "display_equipment",
   zoomLevel: "zoom_level",
   verticalPosition: "vertical_position",
+  sets: "sets",
+  restTime: "rest_time",
+  isActive: "is_active",
+  heartRateZone: "heart_rate_zone",
 }
 
 // Fields that are stored as text in the DB

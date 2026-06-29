@@ -51,6 +51,10 @@ export async function POST(request: NextRequest) {
       displayEquipment = null,
       zoomLevel = "1",
       verticalPosition = "0",
+      sets = 1,
+      restTime = 0,
+      isActive = true,
+      heartRateZone = null,
     } = body
 
     if (!roomId || !videoId || !scheduleDate) {
@@ -62,9 +66,12 @@ export async function POST(request: NextRequest) {
 
     const rows = await sql`
       INSERT INTO schedules
-        (room_id, video_id, schedule_date, reps, position, display_title, display_equipment, zoom_level, vertical_position)
+        (room_id, video_id, schedule_date, reps, position, display_title, display_equipment,
+         zoom_level, vertical_position, sets, rest_time, is_active, heart_rate_zone)
       VALUES
-        (${roomId}, ${videoId}, ${scheduleDate}, ${String(reps)}, ${position}, ${displayTitle}, ${displayEquipment}, ${String(zoomLevel)}, ${String(verticalPosition)})
+        (${roomId}, ${videoId}, ${scheduleDate}, ${String(reps)}, ${position},
+         ${displayTitle}, ${displayEquipment}, ${String(zoomLevel)}, ${String(verticalPosition)},
+         ${sets}, ${restTime}, ${isActive}, ${heartRateZone})
       RETURNING *
     `
     return NextResponse.json(mapSchedule(rows[0]), { status: 201 })

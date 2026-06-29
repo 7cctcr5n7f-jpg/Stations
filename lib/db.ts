@@ -64,6 +64,10 @@ export function mapSchedule(row: any): Schedule {
     displayEquipment: row.display_equipment ?? null,
     zoomLevel: row.zoom_level ?? null,
     verticalPosition: row.vertical_position ?? null,
+    sets: row.sets ?? 1,
+    restTime: row.rest_time ?? 0,
+    isActive: row.is_active ?? true,
+    heartRateZone: row.heart_rate_zone ?? null,
   }
 }
 
