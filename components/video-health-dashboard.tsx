@@ -151,7 +151,7 @@ export default function VideoHealthDashboard() {
   }
 
   const healthPercentage = health ? Math.round((health.valid / health.total) * 100) : 0;
-  const hasIssues = health && (health.missing > 0 || health.corrupt > 0 || health.invalid > 0);
+  const hasIssues = health && (health.missing > 0 || health.invalid > 0);
 
   return (
     <div className="space-y-6">
@@ -203,33 +203,25 @@ export default function VideoHealthDashboard() {
             </div>
           </CardTitle>
           <CardDescription>
-            Monitor and maintain your video library health
+            Monitor your Cloudflare R2 video library
           </CardDescription>
         </CardHeader>
         <CardContent>
           {health ? (
             <div className="space-y-4">
               {/* Overall Health */}
-              <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+              <div className="grid grid-cols-3 gap-4">
                 <div className="text-center">
                   <div className="text-2xl font-bold text-green-600">{health.valid}</div>
-                  <div className="text-sm text-gray-600">Valid</div>
+                  <div className="text-sm text-gray-600">Reachable</div>
                 </div>
                 <div className="text-center">
                   <div className="text-2xl font-bold text-red-600">{health.missing}</div>
-                  <div className="text-sm text-gray-600">Missing</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-yellow-600">{health.corrupt}</div>
-                  <div className="text-sm text-gray-600">Corrupt</div>
+                  <div className="text-sm text-gray-600">Unreachable</div>
                 </div>
                 <div className="text-center">
                   <div className="text-2xl font-bold text-red-600">{health.invalid}</div>
-                  <div className="text-sm text-gray-600">Invalid</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-2xl font-bold">{formatFileSize(health.totalFileSize)}</div>
-                  <div className="text-sm text-gray-600">Total Size</div>
+                  <div className="text-sm text-gray-600">Invalid URL</div>
                 </div>
               </div>
 
@@ -252,28 +244,35 @@ export default function VideoHealthDashboard() {
                 </div>
               </div>
 
-              {/* Issues Alert */}
-              {hasIssues && (
+              {/* Status alert */}
+              {hasIssues ? (
                 <Alert>
                   <AlertTriangle className="h-4 w-4" />
                   <AlertDescription>
-                    {health.missing + health.corrupt + health.invalid} videos have issues and may cause loading errors in rooms.
+                    {health.missing + health.invalid} videos have issues and may not play in rooms.
                   </AlertDescription>
                 </Alert>
-              )}
+              ) : health.total > 0 ? (
+                <Alert>
+                  <CheckCircle className="h-4 w-4 text-green-600" />
+                  <AlertDescription className="text-green-700">
+                    All {health.total} videos are reachable on Cloudflare R2.
+                  </AlertDescription>
+                </Alert>
+              ) : null}
 
               {/* Problem Videos */}
               {health.details && health.details.length > 0 && (
                 <div className="space-y-2">
-                  <h4 className="font-medium text-red-600">Videos with Issues:</h4>
+                  <h4 className="font-medium text-red-600">Videos with Issues ({health.details.length}):</h4>
                   <div className="space-y-2 max-h-60 overflow-y-auto">
                     {health.details.map((video) => (
                       <div key={video.id} className="flex items-center justify-between p-3 border rounded-lg bg-red-50">
-                        <div className="flex items-center space-x-3">
+                        <div className="flex items-center gap-3">
                           {getStatusIcon(video.status)}
                           <div>
                             <div className="font-medium">{video.title}</div>
-                            <div className="text-sm text-gray-600">{video.error}</div>
+                            <div className="text-sm text-gray-500 truncate max-w-sm">{video.url}</div>
                           </div>
                         </div>
                         {getStatusBadge(video.status)}
