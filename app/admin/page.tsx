@@ -29,7 +29,7 @@ import {
 } from "lucide-react";
 import { getIntensityStyle, INTENSITY_LEVELS } from "@/lib/intensity";
 const tenRoundsLogo = "/logo.png";
-import { getRoomColorClasses, formatTimeAgo, getDayOfWeek, capitalizeFirst } from "@/lib/utils";
+import { getRoomColorClasses, formatTimeAgo, formatTimeAgoShort, getDayOfWeek, capitalizeFirst } from "@/lib/utils";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { videoCacheManager } from "@/lib/video-cache";
@@ -1364,17 +1364,20 @@ export default function TrainerDashboard() {
                               )}
                             </td>
 
-                            {/* Last Used */}
-                            <td className="p-2">
+                            {/* Last Used — single line: clock · 35d · ×7 */}
+                            <td className="p-2 whitespace-nowrap">
                               <div className="flex items-center gap-1 text-[10px] text-gray-500">
                                 <Clock className="h-3 w-3 shrink-0 text-gray-400" />
-                                <span className="tabular-nums">{formatTimeAgo(video.lastUsed)}</span>
+                                <span className="tabular-nums">{formatTimeAgoShort(video.lastUsed)}</span>
+                                {(video.timesUsed ?? 0) > 0 && (
+                                  <>
+                                    <span className="text-gray-300">·</span>
+                                    <span className="tabular-nums rounded-full bg-gray-100 px-1.5 py-px text-gray-500 font-medium text-[9px]">
+                                      ×{video.timesUsed}
+                                    </span>
+                                  </>
+                                )}
                               </div>
-                              {(video.timesUsed ?? 0) > 0 && (
-                                <span className="mt-0.5 inline-flex tabular-nums rounded-full bg-gray-100 px-1.5 text-gray-500 font-medium text-[9px]">
-                                  ×{video.timesUsed}
-                                </span>
-                              )}
                             </td>
 
                             {/* Scheduled */}
