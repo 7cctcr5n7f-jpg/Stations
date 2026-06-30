@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { QueryClientProvider, useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { queryClient as sharedQueryClient } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -52,7 +53,7 @@ interface RoomWithAssignments extends Room {
 
 const VALID_TABS = ["liveview", "library", "schedule", "cache", "dictionary"] as const;
 
-export function TrainerDashboard() {
+function TrainerDashboardInner() {
   const router = useRouter();
   const setLocation = (path: string) => router.push(path);
   // Persist the selected tab to the URL hash so it survives re-renders,
@@ -2600,5 +2601,13 @@ export function TrainerDashboard() {
         </div>
       )}
     </div>
+  );
+}
+
+export function TrainerDashboard() {
+  return (
+    <QueryClientProvider client={sharedQueryClient}>
+      <TrainerDashboardInner />
+    </QueryClientProvider>
   );
 }
