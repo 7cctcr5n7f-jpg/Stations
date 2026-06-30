@@ -14,7 +14,8 @@ export async function GET() {
           v.last_used,
           MAX(CASE WHEN s.schedule_date < CURRENT_DATE THEN s.schedule_date::timestamp ELSE NULL END)
         ) AS computed_last_used,
-        MIN(CASE WHEN s.schedule_date >= CURRENT_DATE THEN s.schedule_date ELSE NULL END) AS next_scheduled
+        MIN(CASE WHEN s.schedule_date >= CURRENT_DATE THEN s.schedule_date ELSE NULL END) AS next_scheduled,
+        COUNT(s.id) AS times_used
       FROM videos v
       LEFT JOIN schedules s ON s.video_id = v.id
       GROUP BY v.id

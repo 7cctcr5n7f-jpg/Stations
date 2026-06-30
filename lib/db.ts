@@ -51,6 +51,21 @@ export function mapVideo(row: any): Video {
     nextScheduled: row.next_scheduled
       ? (typeof row.next_scheduled === "string" ? row.next_scheduled : new Date(row.next_scheduled).toISOString().split("T")[0])
       : null,
+    timesUsed: row.times_used != null ? Number(row.times_used) : 0,
+    movementPattern: row.movement_pattern ?? null,
+    intensity: row.intensity ?? null,
+    exerciseType: row.exercise_type ?? null,
+    explosive: row.explosive ?? false,
+    weightRequired: row.weight_required ?? false,
+    spaceRequirement: row.space_requirement ?? null,
+    boxingType: row.boxing_type ?? null,
+    aiConfidence: row.ai_confidence != null ? Number(row.ai_confidence) : null,
+    aiGeneratedAt: row.ai_generated_at
+      ? (typeof row.ai_generated_at === "string" ? row.ai_generated_at : new Date(row.ai_generated_at).toISOString())
+      : null,
+    manualFields: Array.isArray(row.manual_fields)
+      ? row.manual_fields
+      : (row.manual_fields ? JSON.parse(row.manual_fields) : []),
   }
 }
 

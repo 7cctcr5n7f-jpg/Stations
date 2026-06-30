@@ -9,6 +9,10 @@ export interface Room {
   isActive: boolean
 }
 
+export type Intensity = "Low" | "Medium" | "High"
+export type SpaceRequirement = "Stationary" | "Small" | "Large"
+export type ExerciseType = "Strength" | "Cardio" | "Conditioning" | "Skill" | "Mobility"
+
 export interface Video {
   id: number
   title: string
@@ -20,6 +24,19 @@ export interface Video {
   thumbnailUrl?: string | null
   lastUsed?: string | null
   nextScheduled?: string | null
+  timesUsed?: number
+  // AI-generated / trainer-editable metadata
+  movementPattern?: string | null
+  intensity?: Intensity | null
+  exerciseType?: ExerciseType | string | null
+  explosive?: boolean
+  weightRequired?: boolean
+  spaceRequirement?: SpaceRequirement | string | null
+  boxingType?: string | null
+  aiConfidence?: number | null
+  aiGeneratedAt?: string | null
+  // Names of fields a trainer has manually set; the AI generator must not overwrite these
+  manualFields?: string[]
 }
 
 export interface Schedule {

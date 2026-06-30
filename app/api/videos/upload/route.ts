@@ -15,6 +15,16 @@ export async function POST(request: NextRequest) {
     const bodyPart = (formData.get("bodyPart") as string) || ""
     const secondaryMuscle = (formData.get("secondaryMuscle") as string) || ""
     const equipment = (formData.get("equipment") as string) || ""
+    // Optional AI-reviewed metadata from the upload modal.
+    const movementPattern = (formData.get("movementPattern") as string) || null
+    const intensity = (formData.get("intensity") as string) || null
+    const exerciseType = (formData.get("exerciseType") as string) || null
+    const explosive = formData.get("explosive") === "true"
+    const weightRequired = formData.get("weightRequired") === "true"
+    const spaceRequirement = (formData.get("spaceRequirement") as string) || null
+    const boxingType = (formData.get("boxingType") as string) || null
+    const aiConfidenceRaw = formData.get("aiConfidence") as string | null
+    const aiConfidence = aiConfidenceRaw ? Number(aiConfidenceRaw) : null
 
     if (!file) {
       return NextResponse.json({ message: "No video file provided" }, { status: 400 })

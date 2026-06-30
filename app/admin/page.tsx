@@ -22,8 +22,10 @@ import EnhancedCacheDashboard from "@/components/enhanced-cache-dashboard";
 import { 
   Dumbbell, LogOut, TrendingUp, Play, Video as VideoIcon, Calendar, 
   DoorOpen, Plus, Trash2, Edit, Clock, CheckCircle, Download, Wifi, WifiOff,
-  Monitor, ZoomIn, ZoomOut, Save, ChevronsUpDown, ChevronUp, ChevronDown, GripVertical, X, Copy
+  Monitor, ZoomIn, ZoomOut, Save, ChevronsUpDown, ChevronUp, ChevronDown, GripVertical, X, Copy,
+  Sparkles, AlertCircle, Loader2
 } from "lucide-react";
+import { getIntensityStyle, INTENSITY_LEVELS } from "@/lib/intensity";
 const tenRoundsLogo = "/logo.png";
 import { getRoomColorClasses, formatTimeAgo, getDayOfWeek, capitalizeFirst } from "@/lib/utils";
 import { apiRequest } from "@/lib/queryClient";
@@ -65,7 +67,15 @@ export default function TrainerDashboard() {
     search: "",
     lastUsed: "",
     scheduled: "",
+    intensity: "",
+    needsReview: false,
   });
+  // AI metadata generation progress
+  const [aiProgress, setAiProgress] = useState<{
+    running: boolean;
+    processed: number;
+    total: number;
+  } | null>(null);
   const [currentDate, setCurrentDate] = useState(new Date().toISOString().split('T')[0]);
 
   // Auto-update current date at midnight only if user is on today's date
@@ -462,6 +472,20 @@ export default function TrainerDashboard() {
     }
     
     if (videoFilters.search && !video.title.toLowerCase().includes(videoFilters.search.toLowerCase())) return false;
+
+    // Intensity filter (derived heart-rate zone)
+    if (videoFilters.intensity) {
+      if (videoFilters.intensity === "unset") {
+        if (video.intensity) return false;
+      } else if (video.intensity !== videoFilters.intensity) {
+        return false;
+      }
+    }
+
+    // Needs Review filter (no AI metadata yet or low confidence)
+    if (videoFilters.needsReview) {
+      if (!(video.aiConfidence == null || video.aiConfidence < 70)) return false;
+    }
     
     // Last Used filter
     if (videoFilters.lastUsed) {
@@ -562,6 +586,50 @@ export default function TrainerDashboard() {
       });
     },
   });
+
+  // ---- AI metadata generation ----
+  // A video "needs review" when it has no AI metadata yet or the model was unsure.
+  const videoNeedsReview = (video: Video) =>
+    video.aiConfidence == null || video.aiConfidence < 70;
+
+  const runAiMetadata = async () => {
+    if (aiProgress?.running) return;
+    try {
+      // Get the initial count of videos that still need metadata.
+      const countRes = await apiRequest("GET", "/api/videos/ai-metadata");
+      const { needsReview } = await countRes.json();
+      if (!needsReview || needsReview === 0) {
+        toast({ title: "All exercises already have AI metadata", description: "Nothing to process." });
+        return;
+      }
+
+      const total = needsReview;
+      setAiProgress({ running: true, processed: 0, total });
+      toast({ title: "AI metadata started", description: `Processing ${total} exercises...` });
+
+      let processed = 0;
+      let done = false;
+      let safety = 0;
+      while (!done && safety < 500) {
+        safety++;
+        const res = await apiRequest("POST", "/api/videos/ai-metadata", { mode: "fill", batchSize: 8 });
+        const data = await res.json();
+        processed += data.processedCount ?? 0;
+        done = data.done || (data.processedCount ?? 0) === 0;
+        setAiProgress({ running: !done, processed: Math.min(processed, total), total });
+        // Refresh the table as batches complete so trainers see progress live.
+        queryClient.invalidateQueries({ queryKey: ["/api/videos"] });
+      }
+
+      setAiProgress({ running: false, processed: total, total });
+      toast({ title: "AI metadata complete", description: `Processed ${processed} exercises.` });
+      setTimeout(() => setAiProgress(null), 4000);
+    } catch (error) {
+      console.error("[v0] AI metadata run failed:", error);
+      setAiProgress(null);
+      toast({ title: "AI metadata failed", description: "Please try again.", variant: "destructive" });
+    }
+  };
 
   // Handle new custom entries for inline editing
   const handleNewPrimaryMuscle = async (newMuscle: string) => {
@@ -859,7 +927,20 @@ export default function TrainerDashboard() {
               <CardHeader className="pb-4">
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-xl font-semibold">Video Library</CardTitle>
-                  <div className="flex space-x-2">
+                  <div className="flex items-center space-x-2">
+
+                    <Button
+                      onClick={runAiMetadata}
+                      disabled={aiProgress?.running}
+                      className="bg-blue-600 hover:bg-blue-700"
+                    >
+                      {aiProgress?.running ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      ) : (
+                        <Sparkles className="mr-2 h-4 w-4" />
+                      )}
+                      AI Complete Metadata
+                    </Button>
 
                     <Button 
                       onClick={() => setIsSimpleBulkUploadModalOpen(true)}
@@ -871,10 +952,30 @@ export default function TrainerDashboard() {
 
                   </div>
                 </div>
+                {aiProgress && (
+                  <div className="mt-3">
+                    <div className="flex items-center justify-between text-xs text-gray-600 mb-1">
+                      <span>
+                        {aiProgress.running ? "Generating AI metadata..." : "AI metadata complete"}
+                      </span>
+                      <span>
+                        {aiProgress.processed} / {aiProgress.total}
+                      </span>
+                    </div>
+                    <div className="h-2 w-full overflow-hidden rounded-full bg-gray-200">
+                      <div
+                        className="h-full rounded-full bg-blue-600 transition-all duration-500"
+                        style={{
+                          width: `${aiProgress.total ? Math.round((aiProgress.processed / aiProgress.total) * 100) : 0}%`,
+                        }}
+                      />
+                    </div>
+                  </div>
+                )}
               </CardHeader>
               <CardContent className="space-y-6">
                 {/* Search Filter */}
-                <div className="mb-4">
+                <div className="mb-4 flex flex-wrap items-center gap-3">
                   <Input
                     type="text"
                     placeholder="Search videos..."
@@ -882,6 +983,33 @@ export default function TrainerDashboard() {
                     onChange={(e) => setVideoFilters(prev => ({ ...prev, search: e.target.value }))}
                     className="max-w-md"
                   />
+                  <Select
+                    value={videoFilters.intensity || "all"}
+                    onValueChange={(value) =>
+                      setVideoFilters(prev => ({ ...prev, intensity: value === "all" ? "" : value }))
+                    }
+                  >
+                    <SelectTrigger className="h-9 w-40 text-xs">
+                      <SelectValue placeholder="All intensities" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All intensities</SelectItem>
+                      {INTENSITY_LEVELS.map((level) => (
+                        <SelectItem key={level} value={level}>{level} intensity</SelectItem>
+                      ))}
+                      <SelectItem value="unset">Intensity unset</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    type="button"
+                    variant={videoFilters.needsReview ? "default" : "outline"}
+                    size="sm"
+                    className={videoFilters.needsReview ? "bg-amber-500 hover:bg-amber-600" : ""}
+                    onClick={() => setVideoFilters(prev => ({ ...prev, needsReview: !prev.needsReview }))}
+                  >
+                    <AlertCircle className="mr-2 h-4 w-4" />
+                    Needs Review
+                  </Button>
                 </div>
                 
                 
@@ -935,6 +1063,9 @@ export default function TrainerDashboard() {
                         </th>
                         <th className="text-left p-3 text-xs font-medium text-gray-900 w-28">Last Used</th>
                         <th className="text-left p-3 text-xs font-medium text-gray-900 w-28">Scheduled</th>
+                        <th className="text-center p-3 text-xs font-medium text-gray-900 w-20">Times Used</th>
+                        <th className="text-left p-3 text-xs font-medium text-gray-900 w-32">Intensity</th>
+                        <th className="text-left p-3 text-xs font-medium text-gray-900 w-40">Movement</th>
                         <th className="text-right p-3 text-xs font-medium text-gray-900 w-24">Actions</th>
                       </tr>
                       {/* Column Filters */}
@@ -1017,6 +1148,9 @@ export default function TrainerDashboard() {
                           </Select>
                         </th>
                         <th className="p-1"></th>
+                        <th className="p-1"></th>
+                        <th className="p-1"></th>
+                        <th className="p-1"></th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-200">
@@ -1033,7 +1167,20 @@ export default function TrainerDashboard() {
                               />
                             </td>
                             <td className="p-3">
-                              <span className="text-xs text-gray-900">{video.title}</span>
+                              <div className="flex flex-col gap-1">
+                                <span className="text-xs text-gray-900">{video.title}</span>
+                                {videoNeedsReview(video) ? (
+                                  <span className="inline-flex w-fit items-center gap-1 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800">
+                                    <AlertCircle className="h-3 w-3" />
+                                    Needs Review
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex w-fit items-center gap-1 rounded bg-green-50 px-1.5 py-0.5 text-[10px] font-medium text-green-700">
+                                    <CheckCircle className="h-3 w-3" />
+                                    AI {video.aiConfidence}%
+                                  </span>
+                                )}
+                              </div>
                             </td>
                             <td className="p-3">
                               <div className="flex flex-wrap gap-1">
@@ -1186,6 +1333,75 @@ export default function TrainerDashboard() {
                                 </span>
                               ) : (
                                 <span className="text-xs text-gray-400">Not scheduled</span>
+                              )}
+                            </td>
+                            {/* Times Used */}
+                            <td className="p-3 text-center">
+                              <span className="text-xs font-medium text-gray-700">{video.timesUsed ?? 0}</span>
+                            </td>
+                            {/* Intensity (drives heart-rate zone) */}
+                            <td className="p-3">
+                              <Select
+                                value={video.intensity ?? "unset"}
+                                onValueChange={(value) =>
+                                  updateVideoInlineMutation.mutate({
+                                    videoId: video.id,
+                                    field: "intensity",
+                                    value: value === "unset" ? "" : value,
+                                  })
+                                }
+                              >
+                                <SelectTrigger className="h-7 w-[110px] text-xs">
+                                  <span className="flex items-center gap-1.5">
+                                    <span className={`h-2.5 w-2.5 rounded-full ${getIntensityStyle(video.intensity).dot}`} />
+                                    {video.intensity ?? "Unset"}
+                                  </span>
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {INTENSITY_LEVELS.map((level) => (
+                                    <SelectItem key={level} value={level}>{level}</SelectItem>
+                                  ))}
+                                  <SelectItem value="unset">Unset</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </td>
+                            {/* Movement pattern (inline editable) */}
+                            <td className="p-3">
+                              {inlineEditingField?.videoId === video.id && inlineEditingField?.field === 'movementPattern' ? (
+                                <Input
+                                  autoFocus
+                                  defaultValue={video.movementPattern ?? ""}
+                                  className="h-7 text-xs"
+                                  onBlur={(e) => {
+                                    updateVideoInlineMutation.mutate({
+                                      videoId: video.id,
+                                      field: "movementPattern",
+                                      value: e.target.value.trim(),
+                                    });
+                                    setInlineEditingField(null);
+                                  }}
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter" && !e.nativeEvent.isComposing) {
+                                      (e.target as HTMLInputElement).blur();
+                                    } else if (e.key === "Escape") {
+                                      setInlineEditingField(null);
+                                    }
+                                  }}
+                                />
+                              ) : (
+                                <div
+                                  className={`cursor-pointer rounded px-2 py-1 transition-colors ${
+                                    video.movementPattern
+                                      ? "bg-gray-100 text-gray-800 hover:bg-gray-200"
+                                      : "bg-gray-50 text-gray-400 border border-gray-200 hover:bg-gray-100"
+                                  }`}
+                                  onClick={() => setInlineEditingField({ videoId: video.id, field: 'movementPattern' })}
+                                  title="Click to edit movement pattern"
+                                >
+                                  <span className="text-[10px] font-medium">
+                                    {video.movementPattern || "Click to set"}
+                                  </span>
+                                </div>
                               )}
                             </td>
                             <td className="p-3">

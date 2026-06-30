@@ -12,7 +12,26 @@ const columnMap: Record<string, string> = {
   secondaryMuscle: "secondary_muscle",
   thumbnailUrl: "thumbnail_url",
   lastUsed: "last_used",
+  movementPattern: "movement_pattern",
+  intensity: "intensity",
+  exerciseType: "exercise_type",
+  explosive: "explosive",
+  weightRequired: "weight_required",
+  spaceRequirement: "space_requirement",
+  boxingType: "boxing_type",
 }
+
+// Metadata fields that, when edited by a trainer, should be recorded in
+// manual_fields so the AI generator never overwrites them.
+const AI_MANAGED_FIELDS = new Set([
+  "movementPattern",
+  "intensity",
+  "exerciseType",
+  "explosive",
+  "weightRequired",
+  "spaceRequirement",
+  "boxingType",
+])
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -24,19 +43,36 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       body = { [body.field]: body.value }
     }
 
+    // Allow callers (the AI generator) to bypass manual-field tracking.
+    const skipManualTracking = body && body.__aiGenerated === true
+    if (body && typeof body === "object") delete body.__aiGenerated
+
     const sets: string[] = []
     const values: any[] = []
+    const editedManualFields: string[] = []
     let i = 1
     for (const [key, value] of Object.entries(body)) {
       const col = columnMap[key]
       if (!col) continue
       sets.push(`${col} = $${i++}`)
       values.push(value)
+      if (!skipManualTracking && AI_MANAGED_FIELDS.has(key)) {
+        editedManualFields.push(key)
+      }
     }
 
     if (sets.length === 0) {
       const rows = await sql`SELECT * FROM videos WHERE id = ${Number(id)}`
       return NextResponse.json(rows[0] ? mapVideo(rows[0]) : {})
+    }
+
+    // Merge newly edited metadata fields into manual_fields so AI won't overwrite them.
+    if (editedManualFields.length > 0) {
+      const jsonArray = JSON.stringify(editedManualFields)
+      sets.push(
+        `manual_fields = (SELECT to_jsonb(array(SELECT DISTINCT jsonb_array_elements_text(COALESCE(manual_fields, '[]'::jsonb) || $${i++}::jsonb))))`,
+      )
+      values.push(jsonArray)
     }
 
     values.push(Number(id))
