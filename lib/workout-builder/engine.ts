@@ -65,8 +65,16 @@ function isBoxingRound(cfg: RoundConfig): boolean {
   return false
 }
 
+// Does this video use dedicated boxing equipment (BOXING gloves, W.BAG, pads)?
+// These are the videos that belong at the boxing stations.
+function hasBoxingEquipment(v: Video): boolean {
+  const tokens = equipmentTokens(v)
+  return tokens.some((t) => t.includes("boxing") || t.includes("w.bag") || t === "bag" || t.includes("pad"))
+}
+
 // Is this exercise a boxing/striking movement?
 function isBoxingExercise(v: Video): boolean {
+  if (hasBoxingEquipment(v)) return true
   if (v.boxingType && norm(v.boxingType)) return true
   const text = [norm(v.exerciseType), norm(v.movementPattern), norm(v.bodyPart), norm(v.equipment)].join(" ")
   return /box|punch|jab|cross|hook|uppercut|strik|bag|pad|spar/.test(text)
@@ -265,14 +273,22 @@ function makeExercise(sc: ScoredCandidate, cfg: RoundConfig): RoundExercise {
 
 // ---- candidate filtering (hard rules) --------------------------------------
 
-function passesHardRules(video: Video, cfg: RoundConfig, limits: Record<string, number>, usedEquipmentCounts: Record<string, number>): boolean {
+function passesHardRules(
+  video: Video,
+  cfg: RoundConfig,
+  limits: Record<string, number>,
+  usedEquipmentCounts: Record<string, number>,
+  ignoreAllowed = false,
+): boolean {
   // Core-only stations
   if (cfg.coreOnly && !isCore(video)) return false
 
   const tokens = equipmentTokens(video)
 
-  // Allowed equipment whitelist (if set, video must use only allowed)
-  if (cfg.allowedEquipment.length) {
+  // Allowed equipment whitelist (if set, video must use only allowed).
+  // Skipped for the lead boxing exercise — a boxing station must use boxing
+  // equipment even if a whitelist was set for the secondary movement.
+  if (!ignoreAllowed && cfg.allowedEquipment.length) {
     const allowed = cfg.allowedEquipment.map(norm)
     if (!tokens.every((t) => allowed.includes(t))) return false
   }
@@ -375,10 +391,25 @@ export function generateWorkout(input: EngineInput): WorkoutDraft {
     }
 
     let scored1 = scoreAll(pool1)
-    // On boxing rounds, prefer an actual boxing exercise for the first slot.
+    // Boxing stations should use videos tagged with boxing equipment
+    // (BOXING gloves / W.BAG / pads) for the lead exercise. Build a dedicated
+    // pool of unused boxing-equipment videos, bypassing the allowed-equipment
+    // whitelist (which may have been set for the secondary movement). Only fall
+    // back to a generic boxing-style movement, then any candidate, if none exist.
     if (boxingRound) {
-      const boxers = scored1.filter((s) => isBoxingExercise(s.video))
-      if (boxers.length) scored1 = boxers
+      const boxingPool = videos.filter(
+        (v) =>
+          !usedVideoIds.has(v.id) &&
+          hasBoxingEquipment(v) &&
+          passesHardRules(v, cfg, limits, usedEquipmentCounts, /* ignoreAllowed */ true),
+      )
+      if (boxingPool.length) {
+        scored1 = scoreAll(boxingPool)
+      } else {
+        const boxers = scored1.filter((s) => isBoxingExercise(s.video))
+        if (boxers.length) scored1 = boxers
+        roundWarnings.push("No boxing-equipment video available — used closest boxing-style movement")
+      }
     }
     const ex1 = makeExercise(scored1[0], cfg)
     commit(ex1.video)
