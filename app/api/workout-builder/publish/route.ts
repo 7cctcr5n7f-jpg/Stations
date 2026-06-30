@@ -22,7 +22,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ message: "date and rounds are required" }, { status: 400 })
     }
 
-    const filled = rounds.filter((r) => r.videoId)
+    const filled = rounds.filter((r) => r.exercises && r.exercises.length > 0)
     if (filled.length === 0) {
       return NextResponse.json({ message: "No filled rounds to publish" }, { status: 400 })
     }
@@ -34,16 +34,22 @@ export async function POST(request: NextRequest) {
 
     const created = []
     for (const r of filled) {
-      const rows = await sql`
-        INSERT INTO schedules
-          (room_id, video_id, schedule_date, reps, position, display_title, display_equipment,
-           zoom_level, vertical_position, sets, rest_time, is_active, heart_rate_zone)
-        VALUES
-          (${r.roomId}, ${r.videoId}, ${date}, ${String(r.reps ?? "0")}, ${1},
-           ${null}, ${null}, ${"1"}, ${"0"}, ${1}, ${0}, ${true}, ${r.heartRate ?? null})
-        RETURNING *
-      `
-      created.push(mapSchedule(rows[0]))
+      // Each exercise in the round becomes its own schedule row, ordered by
+      // position (1, 2, ...). A dropset round simply has a single exercise.
+      let position = 1
+      for (const ex of r.exercises) {
+        const rows = await sql`
+          INSERT INTO schedules
+            (room_id, video_id, schedule_date, reps, position, display_title, display_equipment,
+             zoom_level, vertical_position, sets, rest_time, is_active, heart_rate_zone)
+          VALUES
+            (${r.roomId}, ${ex.videoId}, ${date}, ${String(ex.reps ?? "0")}, ${position},
+             ${null}, ${null}, ${"1"}, ${"0"}, ${1}, ${0}, ${true}, ${ex.heartRate ?? null})
+          RETURNING *
+        `
+        created.push(mapSchedule(rows[0]))
+        position++
+      }
     }
 
     // Broadcast a change for every affected room so live displays refresh

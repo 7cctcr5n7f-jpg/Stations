@@ -36,6 +36,7 @@ export async function POST(request: NextRequest) {
     ])
 
     const rooms = roomRows.map(mapRoom)
+    const roomNumberById = new Map(rooms.map((r) => [r.id, r.number]))
 
     // If no round configs exist yet, fall back to one config per room so the
     // builder still produces something the trainer can review.
@@ -43,6 +44,7 @@ export async function POST(request: NextRequest) {
     if (configs.length === 0) {
       configs = rooms.map((r) => ({
         roomId: r.id,
+        roomNumber: r.number,
         stationName: r.name,
         stationRole: r.description ?? null,
         preferredEquipment: [],
@@ -54,6 +56,9 @@ export async function POST(request: NextRequest) {
         availableSpace: null,
         coreOnly: false,
       }))
+    } else {
+      // Attach room numbers so the engine can apply boxing-round rules.
+      configs = configs.map((c) => ({ ...c, roomNumber: roomNumberById.get(c.roomId) }))
     }
 
     // Build locked map by roomId

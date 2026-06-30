@@ -20,7 +20,7 @@ const polishSchema = z.object({
 })
 
 export async function polishExplanations(draft: WorkoutDraft): Promise<WorkoutDraft> {
-  const filled = draft.rounds.filter((r) => r.video)
+  const filled = draft.rounds.filter((r) => r.exercises.length > 0)
   if (filled.length === 0) return draft
 
   const context = {
@@ -29,10 +29,14 @@ export async function polishExplanations(draft: WorkoutDraft): Promise<WorkoutDr
     facts: draft.summary,
     rounds: filled.map((r) => ({
       roomId: r.roomId,
-      exercise: r.video?.title,
-      bodyPart: r.video?.bodyPart,
-      equipment: r.video?.equipment,
-      heartRate: r.heartRate,
+      dropset: r.dropset,
+      boxingRound: r.isBoxingRound,
+      exercises: r.exercises.map((e) => ({
+        exercise: e.video.title,
+        bodyPart: e.video.bodyPart,
+        equipment: e.video.equipment,
+        heartRate: e.heartRate,
+      })),
       reasons: r.reasons,
     })),
   }

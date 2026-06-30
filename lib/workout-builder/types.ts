@@ -16,6 +16,7 @@ export interface WeeklyTemplate {
 
 export interface RoundConfig {
   roomId: number
+  roomNumber?: number
   stationName: string | null
   stationRole: string | null
   preferredEquipment: string[]
@@ -40,19 +41,37 @@ export interface BuilderSettings {
   weeklyChallenge: Record<string, unknown>
 }
 
+// A single exercise within a round. A round normally has two exercises,
+// or one when the engine proposes a dropset (or a single boxing block).
+export interface RoundExercise {
+  videoId: number
+  video: Video
+  heartRate: HeartRate | null
+  reps: number | null
+  score: number // 0-100 for this individual pick
+  reasons: string[]
+  warnings: string[]
+  isBoxing: boolean
+  gloveCompatible: boolean
+}
+
 // A single generated round in a workout draft.
 export interface GeneratedRound {
   roomId: number
   roomNumber: number
   roomName: string
-  videoId: number | null
-  video: Video | null
-  heartRate: HeartRate | null
-  reps: number | null
+  exercises: RoundExercise[]
+  // True when this round is a boxing station (members keep gloves on).
+  isBoxingRound: boolean
+  // True when gloves are on for this round (a boxing exercise is present),
+  // so any second exercise must be glove-compatible.
+  glovesOn: boolean
+  // True when the round is a single-exercise dropset instead of two exercises.
+  dropset: boolean
   locked: boolean
-  score: number // 0-100 for this individual pick
-  reasons: string[] // human-readable explanation bullets
-  warnings: string[] // constraint issues (e.g. "no candidate matched, relaxed rule")
+  score: number // 0-100 round average
+  reasons: string[] // round-level explanation bullets
+  warnings: string[]
 }
 
 export interface WorkoutDraft {
