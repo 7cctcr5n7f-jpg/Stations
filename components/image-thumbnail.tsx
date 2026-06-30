@@ -46,6 +46,8 @@ export default function ImageThumbnail({
           src={thumbnailSrc}
           alt={video.title}
           className="w-full h-full object-cover"
+          loading="lazy"
+          decoding="async"
           onError={() => setThumbError(true)}
         />
       ) : (

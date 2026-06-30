@@ -1110,6 +1110,38 @@ export default function TrainerDashboard() {
                       <SelectItem value="unset">Unset</SelectItem>
                     </SelectContent>
                   </Select>
+                  <Select
+                    value={videoFilters.lastUsed || "all"}
+                    onValueChange={(value) =>
+                      setVideoFilters(prev => ({ ...prev, lastUsed: value === "all" ? "" : value }))
+                    }
+                  >
+                    <SelectTrigger className="h-8 w-32 text-xs">
+                      <SelectValue placeholder="Last Used" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Any time</SelectItem>
+                      <SelectItem value="today">Today</SelectItem>
+                      <SelectItem value="week">This week</SelectItem>
+                      <SelectItem value="month">This month</SelectItem>
+                      <SelectItem value="never">Never used</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Select
+                    value={videoFilters.scheduled || "all"}
+                    onValueChange={(value) =>
+                      setVideoFilters(prev => ({ ...prev, scheduled: value === "all" ? "" : value }))
+                    }
+                  >
+                    <SelectTrigger className="h-8 w-34 text-xs">
+                      <SelectValue placeholder="Scheduled" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All schedules</SelectItem>
+                      <SelectItem value="scheduled">Scheduled</SelectItem>
+                      <SelectItem value="unscheduled">Not scheduled</SelectItem>
+                    </SelectContent>
+                  </Select>
                   <button
                     type="button"
                     onClick={() => setVideoFilters(prev => ({ ...prev, needsReview: !prev.needsReview }))}
@@ -1155,8 +1187,9 @@ export default function TrainerDashboard() {
                             />
                           </div>
                         </th>
-                        <th className="text-left p-2 font-medium text-gray-500 uppercase tracking-wide text-[10px] w-28">Usage</th>
-                        <th className="text-left p-2 font-medium text-gray-500 uppercase tracking-wide text-[10px] w-24">Intensity</th>
+                        <th className="text-left p-2 font-medium text-gray-500 uppercase tracking-wide text-[10px] w-24">Last Used</th>
+                        <th className="text-left p-2 font-medium text-gray-500 uppercase tracking-wide text-[10px] w-28">Scheduled</th>
+                        <th className="text-center p-2 font-medium text-gray-500 uppercase tracking-wide text-[10px] w-10">Int.</th>
                         <th className="text-left p-2 font-medium text-gray-500 uppercase tracking-wide text-[10px] w-28">Movement</th>
                         <th className="w-8 p-2"></th>
                       </tr>
@@ -1331,31 +1364,35 @@ export default function TrainerDashboard() {
                               )}
                             </td>
 
-                            {/* Usage: last used + scheduled + count */}
+                            {/* Last Used */}
                             <td className="p-2">
-                              <div className="space-y-0.5">
-                                <div className="flex items-center gap-1 text-[10px] text-gray-500">
-                                  <Clock className="h-3 w-3 shrink-0" />
-                                  <span>{formatTimeAgo(video.lastUsed)}</span>
-                                </div>
-                                <div className="flex items-center gap-1 text-[10px]">
-                                  <CalendarDays className="h-3 w-3 shrink-0 text-gray-400" />
-                                  {video.nextScheduled ? (
-                                    <span className="text-green-600 font-medium">
-                                      {new Date(video.nextScheduled + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}
-                                    </span>
-                                  ) : (
-                                    <span className="text-gray-400">–</span>
-                                  )}
-                                  <span className="ml-1 tabular-nums rounded-full bg-gray-100 px-1.5 py-0 text-gray-500 font-medium text-[9px]">
-                                    ×{video.timesUsed ?? 0}
-                                  </span>
-                                </div>
+                              <div className="flex items-center gap-1 text-[10px] text-gray-500">
+                                <Clock className="h-3 w-3 shrink-0 text-gray-400" />
+                                <span className="tabular-nums">{formatTimeAgo(video.lastUsed)}</span>
                               </div>
+                              {(video.timesUsed ?? 0) > 0 && (
+                                <span className="mt-0.5 inline-flex tabular-nums rounded-full bg-gray-100 px-1.5 text-gray-500 font-medium text-[9px]">
+                                  ×{video.timesUsed}
+                                </span>
+                              )}
                             </td>
 
-                            {/* Intensity dot + select */}
+                            {/* Scheduled */}
                             <td className="p-2">
+                              {video.nextScheduled ? (
+                                <div className="flex items-center gap-1 text-[10px]">
+                                  <CalendarDays className="h-3 w-3 shrink-0 text-green-500" />
+                                  <span className="text-green-600 font-medium tabular-nums">
+                                    {new Date(video.nextScheduled + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                                  </span>
+                                </div>
+                              ) : (
+                                <span className="text-[10px] text-gray-300">–</span>
+                              )}
+                            </td>
+
+                            {/* Intensity — colour circle only, click to change */}
+                            <td className="p-2 text-center">
                               <Select
                                 value={video.intensity ?? "unset"}
                                 onValueChange={(value) =>
@@ -1366,17 +1403,30 @@ export default function TrainerDashboard() {
                                   })
                                 }
                               >
-                                <SelectTrigger className={`h-6 w-24 border text-[10px] font-medium px-1.5 ${intensityStyle.badge}`}>
-                                  <span className="flex items-center gap-1.5">
-                                    <span className={`h-2 w-2 rounded-full shrink-0 ${intensityStyle.dot}`} />
-                                    {video.intensity ?? "Unset"}
-                                  </span>
+                                <SelectTrigger
+                                  className="h-5 w-5 rounded-full border-0 p-0 shadow-none ring-0 focus:ring-1 focus:ring-offset-0 mx-auto"
+                                  title={video.intensity ?? "Unset — click to set intensity"}
+                                  style={{ background: "transparent" }}
+                                >
+                                  <span
+                                    className={`block h-4 w-4 rounded-full mx-auto transition-transform hover:scale-110 ${intensityStyle.dot} ${!video.intensity ? "opacity-30" : ""}`}
+                                  />
                                 </SelectTrigger>
                                 <SelectContent>
                                   {INTENSITY_LEVELS.map((level) => (
-                                    <SelectItem key={level} value={level}>{level}</SelectItem>
+                                    <SelectItem key={level} value={level}>
+                                      <span className="flex items-center gap-2">
+                                        <span className={`h-2.5 w-2.5 rounded-full ${getIntensityStyle(level).dot}`} />
+                                        {level}
+                                      </span>
+                                    </SelectItem>
                                   ))}
-                                  <SelectItem value="unset">Unset</SelectItem>
+                                  <SelectItem value="unset">
+                                    <span className="flex items-center gap-2">
+                                      <span className="h-2.5 w-2.5 rounded-full bg-gray-300" />
+                                      Unset
+                                    </span>
+                                  </SelectItem>
                                 </SelectContent>
                               </Select>
                             </td>
