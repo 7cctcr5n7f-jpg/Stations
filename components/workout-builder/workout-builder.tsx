@@ -71,6 +71,7 @@ function scoreColor(score: number): string {
   return "text-red-600";
 }
 
+// pickerTarget replaced the old pickerRoomId — ensure no stale bundle uses the old name
 export function WorkoutBuilder() {
   const { toast } = useToast();
   const [date, setDate] = useState(() => new Date().toISOString().split("T")[0]);
