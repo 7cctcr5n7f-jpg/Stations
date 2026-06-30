@@ -39,13 +39,27 @@ export async function POST(request: NextRequest) {
     const videoUrl = await uploadToR2(key, await file.arrayBuffer() as any, file.type || "video/mp4")
 
     const rows = await sql`
-      INSERT INTO videos (title, url, body_part, secondary_muscle, equipment)
+      INSERT INTO videos (
+        title, url, body_part, secondary_muscle, equipment,
+        movement_pattern, intensity, exercise_type, explosive,
+        weight_required, space_requirement, boxing_type,
+        ai_confidence, ai_generated_at
+      )
       VALUES (
         ${title},
         ${videoUrl},
         ${bodyPart},
         ${secondaryMuscle === "none" ? null : secondaryMuscle},
-        ${equipment}
+        ${equipment},
+        ${movementPattern},
+        ${intensity},
+        ${exerciseType},
+        ${explosive},
+        ${weightRequired},
+        ${spaceRequirement},
+        ${boxingType},
+        ${aiConfidence},
+        ${aiConfidence != null ? new Date().toISOString() : null}
       )
       RETURNING *
     `

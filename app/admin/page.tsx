@@ -1756,6 +1756,10 @@ export default function TrainerDashboard() {
                               <td className="p-2">
                                 <div className="flex items-center space-x-2">
                                   <GripVertical className="h-3 w-3 text-gray-400 cursor-move" />
+                                  <span
+                                    className={`h-2.5 w-2.5 shrink-0 rounded-full ${getIntensityStyle(assignment.video.intensity).dot}`}
+                                    title={`Heart-rate zone: ${getIntensityStyle(assignment.video.intensity).label}`}
+                                  />
                                   <div className="font-medium text-gray-900 truncate text-xs">
                                     {assignment.video.title}
                                   </div>
