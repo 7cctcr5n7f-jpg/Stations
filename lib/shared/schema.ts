@@ -62,6 +62,20 @@ export interface RoomAssignment {
   videoId: number
 }
 
+// Exercise Dictionary — AI knowledge base for studio-specific abbreviations/terms
+export interface DictionaryEntry {
+  id: number
+  alias: string        // abbreviation or alternate name, e.g. "HK"
+  canonical: string    // resolved canonical term, e.g. "Hook"
+  category: string     // Punch | Equipment | Exercise | Modifier | Category | Format | Defence | BoxingDrill
+  tags: string[]       // free-form tags for filtering
+  notes: string | null // optional trainer notes
+  createdAt: string | null
+  updatedAt: string | null
+}
+
+export type InsertDictionaryEntry = Omit<DictionaryEntry, "id" | "createdAt" | "updatedAt">
+
 // Insert helper types
 export type InsertRoom = Omit<Room, "id">
 export type InsertVideo = Omit<Video, "id">

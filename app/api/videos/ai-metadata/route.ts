@@ -1,13 +1,11 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { sql, mapVideo } from "@/lib/db"
-import { generateExerciseMetadata } from "@/lib/ai/exercise-metadata"
+import { generateExerciseMetadata, type DictionaryGlossaryEntry } from "@/lib/ai/exercise-metadata"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 // Each AI call takes a couple of seconds; allow a generous batch window.
 export const maxDuration = 60
-
-const CONFIDENCE_THRESHOLD = 70
 
 // Metadata key -> DB column (used to preserve trainer-edited "manual" fields).
 const FIELD_TO_COLUMN: Record<string, string> = {
@@ -20,6 +18,19 @@ const FIELD_TO_COLUMN: Record<string, string> = {
   boxingType: "boxing_type",
 }
 
+/** Load the full exercise dictionary as a flat glossary for the AI prompt. */
+async function loadGlossary(): Promise<DictionaryGlossaryEntry[]> {
+  try {
+    const rows = await sql`
+      SELECT alias, canonical, category FROM exercise_dictionary ORDER BY lower(alias)
+    `
+    return rows.map((r: any) => ({ alias: r.alias, canonical: r.canonical, category: r.category }))
+  } catch {
+    // Table may not exist on first run — non-fatal, AI falls back to general knowledge
+    return []
+  }
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}))
@@ -29,12 +40,14 @@ export async function POST(req: NextRequest) {
       : undefined
     const batchSize: number = Math.min(Math.max(Number(body.batchSize) || 8, 1), 15)
 
+    // Load the exercise dictionary once for the whole batch
+    const glossary = await loadGlossary()
+
     // Determine which videos to process this batch.
     let batch: any[]
     let totalMatching = 0
 
     if (mode === "regenerate" && ids && ids.length > 0) {
-      // Regenerate overwrites everything (except manual fields) for the given ids.
       batch = await sql`
         SELECT * FROM videos
         WHERE id = ANY(${ids}::int[])
@@ -45,9 +58,6 @@ export async function POST(req: NextRequest) {
       `
       totalMatching = countRows[0]?.c ?? 0
     } else {
-      // Fill mode: only videos that have never been AI-processed. Targeting
-      // ai_generated_at IS NULL (rather than low confidence) guarantees the
-      // batch loop terminates; low-confidence rows can be fixed via Regenerate.
       batch = await sql`
         SELECT * FROM videos
         WHERE ai_generated_at IS NULL
@@ -61,19 +71,36 @@ export async function POST(req: NextRequest) {
 
     const processed: any[] = []
     const errors: { id: number; error: string }[] = []
+    // Accumulate unknown terms across the whole batch, keyed by term for dedup
+    const unknownTermMap: Record<string, { term: string; videoIds: number[]; videoTitles: string[] }> = {}
 
     for (const row of batch) {
       try {
-        const meta = await generateExerciseMetadata({
-          id: row.id,
-          title: row.title,
-          bodyPart: row.body_part,
-          equipment: row.equipment,
-          secondaryMuscle: row.secondary_muscle,
-        })
+        const result = await generateExerciseMetadata(
+          {
+            id: row.id,
+            title: row.title,
+            bodyPart: row.body_part,
+            equipment: row.equipment,
+            secondaryMuscle: row.secondary_muscle,
+          },
+          glossary,
+        )
 
-        // Respect manually edited fields — never overwrite them. For a manual
-        // field we write back the existing DB value so the column list stays fixed.
+        const { metadata: meta, unknownTerms } = result
+
+        // Accumulate unknown terms for the batch response
+        for (const term of unknownTerms) {
+          if (!unknownTermMap[term]) {
+            unknownTermMap[term] = { term, videoIds: [], videoTitles: [] }
+          }
+          if (!unknownTermMap[term].videoIds.includes(row.id)) {
+            unknownTermMap[term].videoIds.push(row.id)
+            unknownTermMap[term].videoTitles.push(row.title)
+          }
+        }
+
+        // Respect manually edited fields — never overwrite them.
         const manualFields: string[] = Array.isArray(row.manual_fields)
           ? row.manual_fields
           : row.manual_fields
@@ -90,7 +117,6 @@ export async function POST(req: NextRequest) {
           boxingType: meta.boxingType,
         }
 
-        // Resolve each column's final value, keeping manual edits intact.
         const v = (key: string) =>
           manualFields.includes(key) ? row[FIELD_TO_COLUMN[key]] : aiValues[key]
 
@@ -116,6 +142,7 @@ export async function POST(req: NextRequest) {
     }
 
     const remaining = Math.max(totalMatching - processed.length, 0)
+    const unknownTerms = Object.values(unknownTermMap)
 
     return NextResponse.json({
       processedCount: processed.length,
@@ -123,6 +150,8 @@ export async function POST(req: NextRequest) {
       errors,
       remaining,
       done: processed.length === 0 || remaining === 0,
+      unknownTerms,       // [ { term, videoIds, videoTitles } ]
+      glossarySize: glossary.length,
     })
   } catch (error: any) {
     console.error("[v0] /api/videos/ai-metadata error:", error?.message)
@@ -130,7 +159,6 @@ export async function POST(req: NextRequest) {
   }
 }
 
-// GET returns how many videos still need AI metadata (fill mode count).
 export async function GET() {
   try {
     const rows = await sql`

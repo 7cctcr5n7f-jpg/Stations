@@ -19,11 +19,13 @@ import VideoHealthDashboard from "@/components/video-health-dashboard";
 import VideoThumbnail from "@/components/video-thumbnail";
 import ImageThumbnail from "@/components/image-thumbnail";
 import EnhancedCacheDashboard from "@/components/enhanced-cache-dashboard";
+import { ExerciseDictionary } from "@/components/exercise-dictionary";
+import { UnknownTermsBanner, UnknownTermsReviewDialog, type UnknownTerm } from "@/components/unknown-terms-review";
 import { 
   Dumbbell, LogOut, TrendingUp, Play, Video as VideoIcon, Calendar, 
   DoorOpen, Plus, Trash2, Edit, Clock, CheckCircle, Download, Wifi, WifiOff,
   Monitor, ZoomIn, ZoomOut, Save, ChevronsUpDown, ChevronUp, ChevronDown, GripVertical, X, Copy,
-  Sparkles, AlertCircle, Loader2, Search, CalendarDays
+  Sparkles, AlertCircle, Loader2, Search, CalendarDays, BookOpen
 } from "lucide-react";
 import { getIntensityStyle, INTENSITY_LEVELS } from "@/lib/intensity";
 const tenRoundsLogo = "/logo.png";
@@ -48,7 +50,7 @@ interface RoomWithAssignments extends Room {
   assignments: Array<Schedule & { video: Video }>;
 }
 
-const VALID_TABS = ["liveview", "library", "schedule", "cache"] as const;
+const VALID_TABS = ["liveview", "library", "schedule", "cache", "dictionary"] as const;
 
 export default function TrainerDashboard() {
   const router = useRouter();
@@ -105,6 +107,9 @@ export default function TrainerDashboard() {
     processed: number;
     total: number;
   } | null>(null);
+  // Unknown abbreviations surfaced by the AI dictionary lookup
+  const [unknownTerms, setUnknownTerms] = useState<UnknownTerm[]>([]);
+  const [showTermsReview, setShowTermsReview] = useState(false);
   const [currentDate, setCurrentDate] = useState(new Date().toISOString().split('T')[0]);
 
   // Auto-update current date at midnight only if user is on today's date
@@ -639,6 +644,8 @@ export default function TrainerDashboard() {
       let processed = 0;
       let done = false;
       let safety = 0;
+      // Accumulate unknown terms across all batches (deduped by term string)
+      const allUnknownMap: Record<string, UnknownTerm> = {};
       while (!done && safety < 500) {
         safety++;
         const res = await apiRequest("POST", "/api/videos/ai-metadata", { mode: "fill", batchSize: 8 });
@@ -646,8 +653,31 @@ export default function TrainerDashboard() {
         processed += data.processedCount ?? 0;
         done = data.done || (data.processedCount ?? 0) === 0;
         setAiProgress({ running: !done, processed: Math.min(processed, total), total });
+        // Merge unknown terms from this batch
+        if (Array.isArray(data.unknownTerms)) {
+          for (const t of data.unknownTerms as UnknownTerm[]) {
+            if (!allUnknownMap[t.term]) {
+              allUnknownMap[t.term] = { term: t.term, videoIds: [], videoTitles: [] };
+            }
+            for (const id of t.videoIds) {
+              if (!allUnknownMap[t.term].videoIds.includes(id)) {
+                allUnknownMap[t.term].videoIds.push(id);
+              }
+            }
+            for (const title of t.videoTitles) {
+              if (!allUnknownMap[t.term].videoTitles.includes(title)) {
+                allUnknownMap[t.term].videoTitles.push(title);
+              }
+            }
+          }
+        }
         // Refresh the table as batches complete so trainers see progress live.
         queryClient.invalidateQueries({ queryKey: ["/api/videos"] });
+      }
+
+      const collectedTerms = Object.values(allUnknownMap);
+      if (collectedTerms.length > 0) {
+        setUnknownTerms(collectedTerms);
       }
 
       setAiProgress({ running: false, processed: total, total });
@@ -946,6 +976,10 @@ export default function TrainerDashboard() {
               <VideoIcon className="mr-2 h-4 w-4" />
               Cache
             </TabsTrigger>
+            <TabsTrigger value="dictionary" className="flex items-center">
+              <BookOpen className="mr-2 h-4 w-4" />
+              Dictionary
+            </TabsTrigger>
           </TabsList>
 
 
@@ -1002,6 +1036,23 @@ export default function TrainerDashboard() {
                   </div>
                 )}
               </CardHeader>
+              {unknownTerms.length > 0 && (
+                <div className="px-6 pb-2">
+                  <UnknownTermsBanner
+                    terms={unknownTerms}
+                    onReview={() => setShowTermsReview(true)}
+                  />
+                </div>
+              )}
+              {showTermsReview && unknownTerms.length > 0 && (
+                <UnknownTermsReviewDialog
+                  terms={unknownTerms}
+                  onDismiss={() => {
+                    setShowTermsReview(false);
+                    setUnknownTerms([]);
+                  }}
+                />
+              )}
               <CardContent className="space-y-6">
                 {/* Toolbar: search + filters */}
                 <div className="flex flex-wrap items-center gap-2">
@@ -1923,6 +1974,15 @@ export default function TrainerDashboard() {
           <TabsContent value="cache" className="space-y-6">
             <EnhancedCacheDashboard />
             <CacheManager />
+          </TabsContent>
+
+          {/* Exercise Dictionary Tab */}
+          <TabsContent value="dictionary" className="space-y-6">
+            <Card>
+              <CardContent className="pt-6">
+                <ExerciseDictionary />
+              </CardContent>
+            </Card>
           </TabsContent>
 
 
