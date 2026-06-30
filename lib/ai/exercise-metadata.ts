@@ -142,9 +142,6 @@ export async function generateExerciseMetadata(
       "Always use the provided Exercise Dictionary to resolve abbreviations before guessing.\n\n" +
       "HARD RULES (non-negotiable):\n" +
       "- Any boxing or striking exercise (punches, combos, bag work, pad work, footwork drills, hooks, jabs, uppercuts, crosses, etc.) MUST have intensity = 'High'.\n" +
-      "- Isolated single-joint strength exercises (flies, curls, tricep extensions, lateral raises, face pulls, leg curls, leg extensions, calf raises, etc.) MUST have intensity = 'Low' — heart rate does not spike with small-range isolated movements.\n" +
-      "- Compound barbell/dumbbell lifts (bench press, squat, deadlift, rows, overhead press, lunges) are typically 'Medium'.\n" +
-      "- Full-body plyometric, HIIT, circuit, cardio, or conditioning exercises (burpees, jump squats, mountain climbers, battle ropes, sprints) are 'High'.\n" +
       "- Always populate primaryMuscles and secondaryMuscles — never return empty arrays unless you have absolutely no information." +
       glossaryBlock,
     prompt:
