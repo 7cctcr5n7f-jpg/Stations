@@ -20,8 +20,11 @@ function getSql(): NeonQueryFunction<false, false> {
 // Also supports sql.query(text, params) via the underlying Neon client.
 export const sql = ((...args: any[]) => (getSql() as any)(...args)) as NeonQueryFunction<false, false>
 
-// Forward the `.query()` helper used for parameterized, non-tagged queries.
-;(sql as any).query = (...args: any[]) => (getSql() as any).query(...args)
+// Provide a `.query(text, params)` helper for parameterized, non-tagged queries.
+// The Neon HTTP driver (v0.10.x) does not expose `.query()` on the function it
+// returns — instead the function itself is called directly with (text, params).
+// Forwarding through that call form keeps existing `sql.query(...)` callers working.
+;(sql as any).query = (text: string, params?: any[]) => (getSql() as any)(text, params)
 
 // ---- Row mappers (snake_case DB columns -> camelCase domain objects) ----
 
@@ -45,7 +48,27 @@ export function mapVideo(row: any): Video {
     equipment: row.equipment ?? "",
     secondaryMuscle: row.secondary_muscle ?? null,
     thumbnailUrl: row.thumbnail_url ?? null,
-    lastUsed: row.last_used ?? null,
+    lastUsed: row.computed_last_used
+      ? (typeof row.computed_last_used === "string" ? row.computed_last_used : new Date(row.computed_last_used).toISOString())
+      : row.last_used ?? null,
+    nextScheduled: row.next_scheduled
+      ? (typeof row.next_scheduled === "string" ? row.next_scheduled : new Date(row.next_scheduled).toISOString().split("T")[0])
+      : null,
+    timesUsed: row.times_used != null ? Number(row.times_used) : 0,
+    movementPattern: row.movement_pattern ?? null,
+    intensity: row.intensity ?? null,
+    exerciseType: row.exercise_type ?? null,
+    explosive: row.explosive ?? false,
+    weightRequired: row.weight_required ?? false,
+    spaceRequirement: row.space_requirement ?? null,
+    boxingType: row.boxing_type ?? null,
+    aiConfidence: row.ai_confidence != null ? Number(row.ai_confidence) : null,
+    aiGeneratedAt: row.ai_generated_at
+      ? (typeof row.ai_generated_at === "string" ? row.ai_generated_at : new Date(row.ai_generated_at).toISOString())
+      : null,
+    manualFields: Array.isArray(row.manual_fields)
+      ? row.manual_fields
+      : (row.manual_fields ? JSON.parse(row.manual_fields) : []),
   }
 }
 

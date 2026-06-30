@@ -9,15 +9,38 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { SearchableSelect } from "@/components/searchable-select";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Upload, X, FileVideo, Plus } from "lucide-react";
+import { Upload, X, FileVideo, Plus, Sparkles, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
+import { getIntensityStyle } from "@/lib/intensity";
 
 interface VideoUploadModalProps {
   isOpen: boolean;
   onClose: () => void;
 }
+
+interface AiMeta {
+  movementPattern: string;
+  intensity: string;
+  exerciseType: string;
+  explosive: boolean;
+  weightRequired: boolean;
+  spaceRequirement: string;
+  boxingType: string;
+  confidence: number | null;
+}
+
+const EMPTY_AI_META: AiMeta = {
+  movementPattern: "",
+  intensity: "",
+  exerciseType: "",
+  explosive: false,
+  weightRequired: false,
+  spaceRequirement: "",
+  boxingType: "",
+  confidence: null,
+};
 
 interface VideoFormData {
   title: string;
@@ -46,9 +69,43 @@ export default function VideoUploadModal({ isOpen, onClose }: VideoUploadModalPr
   const [batchVideos, setBatchVideos] = useState<BatchVideoData[]>([]);
   const [isBatchMode, setIsBatchMode] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
+  const [aiMeta, setAiMeta] = useState<AiMeta>(EMPTY_AI_META);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
   const queryClient = useQueryClient();
+
+  const analyzeWithAi = async () => {
+    if (!formData.title.trim()) {
+      toast({ title: "Enter a title first", description: "AI uses the exercise name to infer metadata.", variant: "destructive" });
+      return;
+    }
+    setIsAnalyzing(true);
+    try {
+      const res = await apiRequest("POST", "/api/videos/ai-suggest", {
+        title: formData.title,
+        bodyPart: formData.primaryMuscles.join(", "),
+        equipment: formData.equipment.join(", "),
+      });
+      const m = await res.json();
+      setAiMeta({
+        movementPattern: m.movementPattern ?? "",
+        intensity: m.intensity ?? "",
+        exerciseType: m.exerciseType ?? "",
+        explosive: m.explosive ?? false,
+        weightRequired: m.weightRequired ?? false,
+        spaceRequirement: m.spaceRequirement ?? "",
+        boxingType: m.boxingType ?? "",
+        confidence: m.confidence ?? null,
+      });
+      toast({ title: "AI analysis complete", description: "Review the suggested metadata before uploading." });
+    } catch (error) {
+      console.error("[v0] AI analyze failed:", error);
+      toast({ title: "AI analysis failed", description: "Please try again.", variant: "destructive" });
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
 
   // Fetch dynamic options for body parts and equipment
   const { data: videoOptions } = useQuery({
@@ -68,6 +125,17 @@ export default function VideoUploadModal({ isOpen, onClose }: VideoUploadModalPr
       formData.append('bodyPart', data.primaryMuscles.join(', '));
       formData.append('secondaryMuscle', data.secondaryMuscles.join(', '));
       formData.append('equipment', data.equipment.join(', '));
+      // Include AI-reviewed metadata if the trainer ran analysis
+      if (aiMeta.confidence != null) {
+        formData.append('movementPattern', aiMeta.movementPattern);
+        formData.append('intensity', aiMeta.intensity);
+        formData.append('exerciseType', aiMeta.exerciseType);
+        formData.append('explosive', String(aiMeta.explosive));
+        formData.append('weightRequired', String(aiMeta.weightRequired));
+        formData.append('spaceRequirement', aiMeta.spaceRequirement);
+        formData.append('boxingType', aiMeta.boxingType);
+        formData.append('aiConfidence', String(aiMeta.confidence));
+      }
 
       const response = await fetch('/api/videos/upload', {
         method: 'POST',
@@ -152,6 +220,7 @@ export default function VideoUploadModal({ isOpen, onClose }: VideoUploadModalPr
     setBatchVideos([]);
     setIsBatchMode(false);
     setIsDragOver(false);
+    setAiMeta(EMPTY_AI_META);
     onClose();
   };
 
@@ -709,6 +778,122 @@ export default function VideoUploadModal({ isOpen, onClose }: VideoUploadModalPr
                   }}
                   className="flex-1"
                 />
+              </div>
+            </div>
+
+            {/* AI Metadata Analysis */}
+            <div className="space-y-3 rounded-lg border border-gray-200 p-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="h-4 w-4 text-blue-600" />
+                  <Label className="text-sm font-semibold">Training Metadata</Label>
+                  {aiMeta.confidence != null && (
+                    <Badge variant="secondary" className="text-[10px]">AI confidence {aiMeta.confidence}%</Badge>
+                  )}
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={analyzeWithAi}
+                  disabled={isAnalyzing}
+                >
+                  {isAnalyzing ? (
+                    <Loader2 className="mr-2 h-3 w-3 animate-spin" />
+                  ) : (
+                    <Sparkles className="mr-2 h-3 w-3" />
+                  )}
+                  Analyze with AI
+                </Button>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label className="text-xs">Intensity</Label>
+                  <Select
+                    value={aiMeta.intensity || "unset"}
+                    onValueChange={(value) => setAiMeta(prev => ({ ...prev, intensity: value === "unset" ? "" : value }))}
+                  >
+                    <SelectTrigger className="h-8 text-xs">
+                      <span className="flex items-center gap-1.5">
+                        <span className={`h-2.5 w-2.5 rounded-full ${getIntensityStyle(aiMeta.intensity).dot}`} />
+                        {aiMeta.intensity || "Unset"}
+                      </span>
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Low">Low</SelectItem>
+                      <SelectItem value="Medium">Medium</SelectItem>
+                      <SelectItem value="High">High</SelectItem>
+                      <SelectItem value="unset">Unset</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Exercise Type</Label>
+                  <Select
+                    value={aiMeta.exerciseType || "unset"}
+                    onValueChange={(value) => setAiMeta(prev => ({ ...prev, exerciseType: value === "unset" ? "" : value }))}
+                  >
+                    <SelectTrigger className="h-8 text-xs">
+                      <SelectValue placeholder="Select type" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Strength">Strength</SelectItem>
+                      <SelectItem value="Cardio">Cardio</SelectItem>
+                      <SelectItem value="Conditioning">Conditioning</SelectItem>
+                      <SelectItem value="Skill">Skill</SelectItem>
+                      <SelectItem value="Mobility">Mobility</SelectItem>
+                      <SelectItem value="unset">Unset</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Movement Pattern</Label>
+                  <Input
+                    className="h-8 text-xs"
+                    placeholder="e.g. Squat, Punch"
+                    value={aiMeta.movementPattern}
+                    onChange={(e) => setAiMeta(prev => ({ ...prev, movementPattern: e.target.value }))}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Space Requirement</Label>
+                  <Select
+                    value={aiMeta.spaceRequirement || "unset"}
+                    onValueChange={(value) => setAiMeta(prev => ({ ...prev, spaceRequirement: value === "unset" ? "" : value }))}
+                  >
+                    <SelectTrigger className="h-8 text-xs">
+                      <SelectValue placeholder="Select space" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Stationary">Stationary</SelectItem>
+                      <SelectItem value="Small">Small</SelectItem>
+                      <SelectItem value="Large">Large</SelectItem>
+                      <SelectItem value="unset">Unset</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-6 pt-1">
+                <label className="flex items-center gap-2 text-xs cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={aiMeta.explosive}
+                    onChange={(e) => setAiMeta(prev => ({ ...prev, explosive: e.target.checked }))}
+                    className="h-4 w-4"
+                  />
+                  Explosive / Plyometric
+                </label>
+                <label className="flex items-center gap-2 text-xs cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={aiMeta.weightRequired}
+                    onChange={(e) => setAiMeta(prev => ({ ...prev, weightRequired: e.target.checked }))}
+                    className="h-4 w-4"
+                  />
+                  Weight Required
+                </label>
               </div>
             </div>
           </div>

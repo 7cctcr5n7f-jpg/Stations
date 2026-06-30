@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic"
 
 import { type NextRequest, NextResponse } from "next/server"
 import { sql, mapSchedule } from "@/lib/db"
+import { broadcastScheduleChange } from "@/app/api/schedules/sse/route"
 
 export const runtime = "nodejs"
 
@@ -53,7 +54,9 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     if (rows.length === 0) {
       return NextResponse.json({ message: "Schedule not found" }, { status: 404 })
     }
-    return NextResponse.json(mapSchedule(rows[0]))
+    const updated = mapSchedule(rows[0])
+    broadcastScheduleChange(updated.roomId, { type: "schedule_updated", scheduleId: updated.id, roomId: updated.roomId, date: updated.scheduleDate })
+    return NextResponse.json(updated)
   } catch (error) {
     console.error("[v0] Failed to update schedule:", error)
     return NextResponse.json({ message: "Failed to update schedule" }, { status: 500 })
@@ -63,7 +66,13 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 export async function DELETE(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params
-    await sql`DELETE FROM schedules WHERE id = ${Number(id)}`
+    const scheduleId = Number(id)
+    // Fetch before deleting so we know which room to notify
+    const rows = await sql`SELECT room_id, schedule_date FROM schedules WHERE id = ${scheduleId}`
+    await sql`DELETE FROM schedules WHERE id = ${scheduleId}`
+    if (rows.length > 0) {
+      broadcastScheduleChange(rows[0].room_id, { type: "schedule_deleted", scheduleId, roomId: rows[0].room_id, date: rows[0].schedule_date })
+    }
     return NextResponse.json({ success: true })
   } catch (error) {
     console.error("[v0] Failed to delete schedule:", error)

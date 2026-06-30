@@ -15,6 +15,16 @@ export async function POST(request: NextRequest) {
     const bodyPart = (formData.get("bodyPart") as string) || ""
     const secondaryMuscle = (formData.get("secondaryMuscle") as string) || ""
     const equipment = (formData.get("equipment") as string) || ""
+    // Optional AI-reviewed metadata from the upload modal.
+    const movementPattern = (formData.get("movementPattern") as string) || null
+    const intensity = (formData.get("intensity") as string) || null
+    const exerciseType = (formData.get("exerciseType") as string) || null
+    const explosive = formData.get("explosive") === "true"
+    const weightRequired = formData.get("weightRequired") === "true"
+    const spaceRequirement = (formData.get("spaceRequirement") as string) || null
+    const boxingType = (formData.get("boxingType") as string) || null
+    const aiConfidenceRaw = formData.get("aiConfidence") as string | null
+    const aiConfidence = aiConfidenceRaw ? Number(aiConfidenceRaw) : null
 
     if (!file) {
       return NextResponse.json({ message: "No video file provided" }, { status: 400 })
@@ -29,13 +39,27 @@ export async function POST(request: NextRequest) {
     const videoUrl = await uploadToR2(key, await file.arrayBuffer() as any, file.type || "video/mp4")
 
     const rows = await sql`
-      INSERT INTO videos (title, url, body_part, secondary_muscle, equipment)
+      INSERT INTO videos (
+        title, url, body_part, secondary_muscle, equipment,
+        movement_pattern, intensity, exercise_type, explosive,
+        weight_required, space_requirement, boxing_type,
+        ai_confidence, ai_generated_at
+      )
       VALUES (
         ${title},
         ${videoUrl},
         ${bodyPart},
         ${secondaryMuscle === "none" ? null : secondaryMuscle},
-        ${equipment}
+        ${equipment},
+        ${movementPattern},
+        ${intensity},
+        ${exerciseType},
+        ${explosive},
+        ${weightRequired},
+        ${spaceRequirement},
+        ${boxingType},
+        ${aiConfidence},
+        ${aiConfidence != null ? new Date().toISOString() : null}
       )
       RETURNING *
     `

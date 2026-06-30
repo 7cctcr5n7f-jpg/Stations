@@ -38,7 +38,7 @@ export default function ImageThumbnail({
 
   return (
     <div 
-      className={`relative ${dimensions[size]} bg-gray-800 rounded overflow-hidden group ${onClick ? 'cursor-pointer hover:ring-2 hover:ring-blue-400 hover:ring-opacity-60' : ''} ${className}`}
+      className={`relative ${dimensions[size]} bg-gray-100 rounded overflow-hidden group ${onClick ? 'cursor-pointer hover:ring-2 hover:ring-blue-400 hover:ring-opacity-60' : ''} ${className}`}
       onClick={onClick}
     >
       {thumbnailSrc ? (
@@ -46,12 +46,14 @@ export default function ImageThumbnail({
           src={thumbnailSrc}
           alt={video.title}
           className="w-full h-full object-cover"
+          loading="lazy"
+          decoding="async"
           onError={() => setThumbError(true)}
         />
       ) : (
         // Neutral placeholder — thumbnail not available, but video may still work
-        <div className="w-full h-full flex items-center justify-center bg-gray-700">
-          <Film className="h-4 w-4 text-gray-400" />
+        <div className="w-full h-full flex items-center justify-center bg-gray-100">
+          <Film className="h-4 w-4 text-gray-300" />
         </div>
       )}
 

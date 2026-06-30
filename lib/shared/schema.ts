@@ -9,6 +9,10 @@ export interface Room {
   isActive: boolean
 }
 
+export type Intensity = "Low" | "Medium" | "High"
+export type SpaceRequirement = "Stationary" | "Small" | "Large"
+export type ExerciseType = "Strength" | "Cardio" | "Conditioning" | "Skill" | "Mobility"
+
 export interface Video {
   id: number
   title: string
@@ -19,6 +23,20 @@ export interface Video {
   secondaryMuscle?: string | null
   thumbnailUrl?: string | null
   lastUsed?: string | null
+  nextScheduled?: string | null
+  timesUsed?: number
+  // AI-generated / trainer-editable metadata
+  movementPattern?: string | null
+  intensity?: Intensity | null
+  exerciseType?: ExerciseType | string | null
+  explosive?: boolean
+  weightRequired?: boolean
+  spaceRequirement?: SpaceRequirement | string | null
+  boxingType?: string | null
+  aiConfidence?: number | null
+  aiGeneratedAt?: string | null
+  // Names of fields a trainer has manually set; the AI generator must not overwrite these
+  manualFields?: string[]
 }
 
 export interface Schedule {
@@ -43,6 +61,20 @@ export interface RoomAssignment {
   roomId: number
   videoId: number
 }
+
+// Exercise Dictionary — AI knowledge base for studio-specific abbreviations/terms
+export interface DictionaryEntry {
+  id: number
+  alias: string        // abbreviation or alternate name, e.g. "HK"
+  canonical: string    // resolved canonical term, e.g. "Hook"
+  category: string     // Punch | Equipment | Exercise | Modifier | Category | Format | Defence | BoxingDrill
+  tags: string[]       // free-form tags for filtering
+  notes: string | null // optional trainer notes
+  createdAt: string | null
+  updatedAt: string | null
+}
+
+export type InsertDictionaryEntry = Omit<DictionaryEntry, "id" | "createdAt" | "updatedAt">
 
 // Insert helper types
 export type InsertRoom = Omit<Room, "id">

@@ -31,6 +31,20 @@ export function formatTimeAgo(date: Date | string | null): string {
   return "Used just now";
 }
 
+/** Compact single-token version: "35d", "2h", "5m", "now", "–" */
+export function formatTimeAgoShort(date: Date | string | null): string {
+  if (!date) return "–"
+  const diffMs = Date.now() - new Date(date).getTime()
+  const diffSeconds = Math.floor(diffMs / 1000)
+  const diffMinutes = Math.floor(diffSeconds / 60)
+  const diffHours = Math.floor(diffMinutes / 60)
+  const diffDays = Math.floor(diffHours / 24)
+  if (diffDays > 0) return `${diffDays}d`
+  if (diffHours > 0) return `${diffHours}h`
+  if (diffMinutes > 0) return `${diffMinutes}m`
+  return "now"
+}
+
 export function getDayOfWeek(): string {
   const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
   return days[new Date().getDay()];
