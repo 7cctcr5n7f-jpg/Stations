@@ -38,7 +38,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import type { Video } from "@/lib/shared/schema";
 
-type HeartRate = "green" | "orange" | "red";
+type HeartRate = "green" | "orange" | "red"; // v2 — pickerTarget replaces old pickerRoomId
 
 interface RoundExercise {
   videoId: number;
