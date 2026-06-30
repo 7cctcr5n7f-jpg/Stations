@@ -21,6 +21,7 @@ import ImageThumbnail from "@/components/image-thumbnail";
 import EnhancedCacheDashboard from "@/components/enhanced-cache-dashboard";
 import { ExerciseDictionary } from "@/components/exercise-dictionary";
 import { UnknownTermsBanner, UnknownTermsReviewDialog, type UnknownTerm } from "@/components/unknown-terms-review";
+import { ThumbnailGenerator } from "@/components/thumbnail-generator";
 import { 
   Dumbbell, LogOut, TrendingUp, Play, Video as VideoIcon, Calendar, 
   DoorOpen, Plus, Trash2, Edit, Clock, CheckCircle, Download, Wifi, WifiOff,
@@ -1004,6 +1005,10 @@ export default function TrainerDashboard() {
                       )}
                       AI Complete Metadata
                     </Button>
+
+                    <ThumbnailGenerator
+                      onComplete={() => queryClient.invalidateQueries({ queryKey: ["/api/videos"] })}
+                    />
 
                     <Button 
                       onClick={() => setIsSimpleBulkUploadModalOpen(true)}
