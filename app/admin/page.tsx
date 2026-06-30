@@ -48,9 +48,38 @@ interface RoomWithAssignments extends Room {
   assignments: Array<Schedule & { video: Video }>;
 }
 
+const VALID_TABS = ["liveview", "library", "schedule", "cache"] as const;
+
 export default function TrainerDashboard() {
   const router = useRouter();
   const setLocation = (path: string) => router.push(path);
+  // Persist the selected tab to the URL hash so it survives re-renders,
+  // background refetches, and full component remounts (which previously
+  // snapped the uncontrolled Tabs back to "liveview").
+  const [activeTab, setActiveTab] = useState<string>("liveview");
+
+  // Restore the tab from the URL hash on mount and whenever the hash changes.
+  useEffect(() => {
+    const syncFromHash = () => {
+      const hash = window.location.hash.replace("#", "");
+      if ((VALID_TABS as readonly string[]).includes(hash)) {
+        setActiveTab((prev) => (prev !== hash ? hash : prev));
+      }
+    };
+    syncFromHash();
+    window.addEventListener("hashchange", syncFromHash);
+    return () => window.removeEventListener("hashchange", syncFromHash);
+  }, []);
+
+  const handleTabChange = (value: string) => {
+    setActiveTab(value);
+    if (typeof window !== "undefined") {
+      // replaceState keeps the selection in the URL without adding history
+      // entries or causing the page to scroll/jump.
+      window.history.replaceState(null, "", `#${value}`);
+    }
+  };
+
   const [selectedVideo, setSelectedVideo] = useState<Video | null>(null);
   const [selectedRoom, setSelectedRoom] = useState<number | null>(null);
   const [isAssignmentModalOpen, setIsAssignmentModalOpen] = useState(false);
@@ -898,7 +927,7 @@ export default function TrainerDashboard() {
 
       {/* Main Content */}
       <div className="container mx-auto px-4 py-6">
-        <Tabs defaultValue="liveview" className="space-y-6">
+        <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-6">
           <TabsList className="bg-white shadow-sm">
             <TabsTrigger value="liveview" className="flex items-center">
               <Monitor className="mr-2 h-4 w-4" />
