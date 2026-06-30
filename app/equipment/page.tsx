@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ChevronLeft, ChevronRight, LogOut } from "lucide-react";
 import { getRoomColorClasses } from "@/lib/utils";
-import type { Room, Video } from "@shared/schema";
+import type { Room, Video } from "@/lib/shared/schema";
 
 export default function EquipmentView() {
   const [currentDate, setCurrentDate] = useState(new Date().toISOString().split('T')[0]);

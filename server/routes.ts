@@ -6,7 +6,7 @@ import path from "path";
 import fs from "fs";
 import ffmpeg from "fluent-ffmpeg";
 import { storage } from "./storage";
-import { insertVideoSchema, insertRoomAssignmentSchema, insertScheduleSchema, videos, schedules } from "@shared/schema";
+import { insertVideoSchema, insertRoomAssignmentSchema, insertScheduleSchema, videos, schedules } from "../lib/shared/schema";
 import { db } from "./db";
 import { ThumbnailGenerator } from "./thumbnail-generator";
 import { AppStorageService } from "./appStorage";
@@ -842,7 +842,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Delete all schedules associated with this video
       const { eq } = await import("drizzle-orm");
-      const { schedules } = await import("@shared/schema");
+      const { schedules } = await import("../lib/shared/schema");
       const { db } = await import("./db");
       
       const scheduleDeleteResult = await db.delete(schedules).where(eq(schedules.videoId, videoId));

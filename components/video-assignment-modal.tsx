@@ -13,7 +13,7 @@ import { Check, Play, Filter, Clock, CheckCircle, Calendar } from "lucide-react"
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { formatTimeAgo } from "@/lib/utils";
-import type { Video, Room, Schedule } from "@shared/schema";
+import type { Video, Room, Schedule } from "@/lib/shared/schema";
 import VideoThumbnail from "./video-thumbnail";
 import ImageThumbnail from "./image-thumbnail";
 

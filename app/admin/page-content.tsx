@@ -41,7 +41,7 @@ import { EditableSelect } from "@/components/editable-select";
 import { SimpleMultiSelect } from "@/components/simple-multi-select";
 import { SearchableSelect } from "@/components/searchable-select";
 import { VideoOptionsButton } from "@/components/video-options-manager";
-import type { Room, Video, RoomAssignment, Schedule } from "@shared/schema";
+import type { Room, Video, RoomAssignment, Schedule } from "@/lib/shared/schema";
 
 interface Stats {
   activeRooms: number;
