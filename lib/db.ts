@@ -20,8 +20,11 @@ function getSql(): NeonQueryFunction<false, false> {
 // Also supports sql.query(text, params) via the underlying Neon client.
 export const sql = ((...args: any[]) => (getSql() as any)(...args)) as NeonQueryFunction<false, false>
 
-// Forward the `.query()` helper used for parameterized, non-tagged queries.
-;(sql as any).query = (...args: any[]) => (getSql() as any).query(...args)
+// Provide a `.query(text, params)` helper for parameterized, non-tagged queries.
+// The Neon HTTP driver (v0.10.x) does not expose `.query()` on the function it
+// returns — instead the function itself is called directly with (text, params).
+// Forwarding through that call form keeps existing `sql.query(...)` callers working.
+;(sql as any).query = (text: string, params?: any[]) => (getSql() as any)(text, params)
 
 // ---- Row mappers (snake_case DB columns -> camelCase domain objects) ----
 
