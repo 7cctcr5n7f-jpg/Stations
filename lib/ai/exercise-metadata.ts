@@ -23,6 +23,16 @@ export const exerciseMetadataSchema = z.object({
     .describe(
       "If this is a boxing/striking drill, the type (e.g. Combination, Defense, Footwork, Pad Work, Bag Work). Otherwise null.",
     ),
+  primaryMuscles: z
+    .array(z.string())
+    .describe(
+      "List of primary muscles worked, e.g. ['Glutes', 'Quadriceps']. For boxing/punching drills include relevant muscles such as ['Shoulders', 'Core', 'Chest']. Use standard anatomical names.",
+    ),
+  secondaryMuscles: z
+    .array(z.string())
+    .describe(
+      "List of secondary/stabiliser muscles worked, e.g. ['Hamstrings', 'Calves']. Can be empty if none are notable.",
+    ),
   confidence: z
     .number()
     .min(0)
@@ -129,7 +139,10 @@ export async function generateExerciseMetadata(
       "You are a strength & conditioning and boxing coach classifying gym exercises for a HIIT/boxing studio. " +
       "Given an exercise name, infer structured training metadata. Be decisive but set a realistic confidence. " +
       "If the name is ambiguous or generic, lower the confidence accordingly. " +
-      "Always use the provided Exercise Dictionary to resolve abbreviations before guessing." +
+      "Always use the provided Exercise Dictionary to resolve abbreviations before guessing.\n\n" +
+      "HARD RULES (non-negotiable):\n" +
+      "- Any boxing or striking exercise (punches, combos, bag work, pad work, footwork drills, hooks, jabs, uppercuts, crosses, etc.) MUST have intensity = 'High'.\n" +
+      "- Always populate primaryMuscles and secondaryMuscles — never return empty arrays unless you have absolutely no information." +
       glossaryBlock,
     prompt:
       `Classify this exercise.\n\nName: "${video.title}"` +

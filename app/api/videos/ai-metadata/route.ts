@@ -16,6 +16,22 @@ const FIELD_TO_COLUMN: Record<string, string> = {
   weightRequired: "weight_required",
   spaceRequirement: "space_requirement",
   boxingType: "boxing_type",
+  primaryMuscles: "body_part",
+  secondaryMuscles: "secondary_muscle",
+}
+
+/**
+ * Boxing-related equipment tokens and exercise types that trigger the
+ * "always High intensity" business rule.
+ */
+const BOXING_EQUIPMENT_TOKENS = ["BOXING", "GLOVES", "PADS", "BAG", "HEAVYBAG", "SPEEDBAG"]
+
+function isBoxingExercise(row: any, boxingType: string | null): boolean {
+  if (boxingType) return true
+  const equipment: string = (row.equipment ?? "").toUpperCase()
+  if (BOXING_EQUIPMENT_TOKENS.some((t) => equipment.includes(t))) return true
+  const exerciseType: string = (row.exercise_type ?? "").toLowerCase()
+  return exerciseType === "skill" && equipment.includes("BOXING")
 }
 
 /** Load the full exercise dictionary as a flat glossary for the AI prompt. */
@@ -107,18 +123,44 @@ export async function POST(req: NextRequest) {
             ? JSON.parse(row.manual_fields)
             : []
 
+        // Apply the boxing → always High intensity business rule AFTER generation
+        // so it overrides the model even if it under-estimated.
+        const resolvedIntensity =
+          isBoxingExercise(row, meta.boxingType) ? "High" : meta.intensity
+
+        // Normalise muscle arrays to comma-separated strings (matching existing column format)
+        const primaryMusclesStr =
+          meta.primaryMuscles.length > 0 ? meta.primaryMuscles.join(", ") : null
+        const secondaryMusclesStr =
+          meta.secondaryMuscles.length > 0 ? meta.secondaryMuscles.join(", ") : null
+
         const aiValues: Record<string, any> = {
           movementPattern: meta.movementPattern,
-          intensity: meta.intensity,
+          intensity: resolvedIntensity,
           exerciseType: meta.exerciseType,
           explosive: meta.explosive,
           weightRequired: meta.weightRequired,
           spaceRequirement: meta.spaceRequirement,
           boxingType: meta.boxingType,
+          // Only write muscles if the trainer hasn't manually set them
+          primaryMuscles: primaryMusclesStr,
+          secondaryMuscles: secondaryMusclesStr,
         }
 
         const v = (key: string) =>
           manualFields.includes(key) ? row[FIELD_TO_COLUMN[key]] : aiValues[key]
+
+        // Determine if body_part/secondary_muscle should be updated:
+        // only write AI muscles when the existing value is missing/placeholder
+        // and the trainer hasn't manually set it.
+        const shouldUpdateBodyPart =
+          !manualFields.includes("primaryMuscles") &&
+          primaryMusclesStr !== null &&
+          (!row.body_part || row.body_part === "General" || row.body_part === "")
+        const shouldUpdateSecondary =
+          !manualFields.includes("secondaryMuscles") &&
+          secondaryMusclesStr !== null &&
+          (!row.secondary_muscle || row.secondary_muscle === "")
 
         const updated = await sql`
           UPDATE videos SET
@@ -129,6 +171,8 @@ export async function POST(req: NextRequest) {
             weight_required = ${v("weightRequired")},
             space_requirement = ${v("spaceRequirement")},
             boxing_type = ${v("boxingType")},
+            body_part = CASE WHEN ${shouldUpdateBodyPart} THEN ${primaryMusclesStr} ELSE body_part END,
+            secondary_muscle = CASE WHEN ${shouldUpdateSecondary} THEN ${secondaryMusclesStr} ELSE secondary_muscle END,
             ai_confidence = ${Math.round(meta.confidence)},
             ai_generated_at = NOW()
           WHERE id = ${row.id}
