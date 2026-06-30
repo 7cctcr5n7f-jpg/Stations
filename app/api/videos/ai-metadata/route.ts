@@ -157,10 +157,20 @@ export async function POST(req: NextRequest) {
           !manualFields.includes("primaryMuscles") &&
           primaryMusclesStr !== null &&
           (!row.body_part || row.body_part === "General" || row.body_part === "")
+
+        // A secondary_muscle value is considered a placeholder when it:
+        //  - is empty/null, OR
+        //  - exactly matches the primary body_part (trainer left the default), OR
+        //  - is a single muscle that duplicates the primary (e.g. "Chest" when body_part is "Chest")
+        const secondaryIsPlaceholder =
+          !row.secondary_muscle ||
+          row.secondary_muscle.trim() === "" ||
+          row.secondary_muscle.trim().toLowerCase() === (row.body_part ?? "").trim().toLowerCase()
+
         const shouldUpdateSecondary =
           !manualFields.includes("secondaryMuscles") &&
           secondaryMusclesStr !== null &&
-          (!row.secondary_muscle || row.secondary_muscle === "")
+          secondaryIsPlaceholder
 
         const updated = await sql`
           UPDATE videos SET
