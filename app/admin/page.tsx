@@ -28,7 +28,6 @@ import {
   Sparkles, AlertCircle, Loader2, Search, CalendarDays, BookOpen, Image
 } from "lucide-react";
 import { getIntensityStyle, INTENSITY_LEVELS } from "@/lib/intensity";
-import { generateVideoThumbnail } from "@/lib/generate-thumbnail";
 const tenRoundsLogo = "/logo.png";
 import { getRoomColorClasses, formatTimeAgo, formatTimeAgoShort, getDayOfWeek, capitalizeFirst } from "@/lib/utils";
 import { apiRequest } from "@/lib/queryClient";
@@ -713,13 +712,15 @@ export default function TrainerDashboard() {
     let processed = 0;
     for (const video of missing) {
       try {
-        const localUrl = video.url;
-        const thumbBlob = await generateVideoThumbnail(localUrl, 1);
-        await fetch(`/api/videos/${video.id}/thumbnail`, {
+        // Server-side generation: ffmpeg fetches the video from R2 and
+        // extracts the frame — no CORS issues, no tainted canvas.
+        const res = await fetch(`/api/videos/${video.id}/thumbnail/generate`, {
           method: "POST",
-          headers: { "content-type": "image/jpeg" },
-          body: thumbBlob,
         });
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          console.warn(`[bulk-thumbnails] server error for ${video.id}:`, body);
+        }
         processed++;
         setThumbProgress({ running: true, processed, total: missing.length });
       } catch (err) {
