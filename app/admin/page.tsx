@@ -21,6 +21,7 @@ import ImageThumbnail from "@/components/image-thumbnail";
 import EnhancedCacheDashboard from "@/components/enhanced-cache-dashboard";
 import { ExerciseDictionary } from "@/components/exercise-dictionary";
 import { UnknownTermsBanner, UnknownTermsReviewDialog, type UnknownTerm } from "@/components/unknown-terms-review";
+import { ThumbnailBackfill } from "@/components/thumbnail-backfill";
 import { 
   Dumbbell, LogOut, TrendingUp, Play, Video as VideoIcon, Calendar, 
   DoorOpen, Plus, Trash2, Edit, Clock, CheckCircle, Download, Wifi, WifiOff,
@@ -642,17 +643,25 @@ export default function TrainerDashboard() {
       toast({ title: "AI metadata started", description: `Processing ${total} exercises...` });
 
       let processed = 0;
-      let done = false;
+      let consecutiveEmpty = 0;
       let safety = 0;
       // Accumulate unknown terms across all batches (deduped by term string)
       const allUnknownMap: Record<string, UnknownTerm> = {};
-      while (!done && safety < 500) {
+      while (safety < 500) {
         safety++;
-        const res = await apiRequest("POST", "/api/videos/ai-metadata", { mode: "fill", batchSize: 8 });
+        const res = await apiRequest("POST", "/api/videos/ai-metadata", { mode: "fill", batchSize: 15 });
         const data = await res.json();
-        processed += data.processedCount ?? 0;
-        done = data.done || (data.processedCount ?? 0) === 0;
-        setAiProgress({ running: !done, processed: Math.min(processed, total), total });
+        const batchCount = data.processedCount ?? 0;
+        processed += batchCount;
+
+        if (batchCount === 0) {
+          consecutiveEmpty++;
+          if (consecutiveEmpty >= 2 || data.done) break; // nothing left to process
+        } else {
+          consecutiveEmpty = 0;
+        }
+
+        setAiProgress({ running: true, processed: Math.min(processed, total), total });
         // Merge unknown terms from this batch
         if (Array.isArray(data.unknownTerms)) {
           for (const t of data.unknownTerms as UnknownTerm[]) {
@@ -671,8 +680,11 @@ export default function TrainerDashboard() {
             }
           }
         }
-        // Refresh the table as batches complete so trainers see progress live.
-        queryClient.invalidateQueries({ queryKey: ["/api/videos"] });
+        // Only refresh the table every 5 batches to avoid spamming re-renders.
+        if (safety % 5 === 0) {
+          queryClient.invalidateQueries({ queryKey: ["/api/videos"] });
+        }
+        if (data.done) break;
       }
 
       const collectedTerms = Object.values(allUnknownMap);
@@ -991,6 +1003,8 @@ export default function TrainerDashboard() {
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-xl font-semibold">Video Library</CardTitle>
                   <div className="flex items-center space-x-2">
+
+                    <ThumbnailBackfill onComplete={() => queryClient.invalidateQueries({ queryKey: ["/api/videos"] })} />
 
                     <Button
                       onClick={runAiMetadata}
