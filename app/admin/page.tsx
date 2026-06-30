@@ -1165,6 +1165,7 @@ export default function TrainerDashboard() {
                     <thead>
                       <tr className="border-b border-gray-200 bg-gray-50/80">
                         <th className="w-10 p-2"></th>
+                        <th className="w-6 p-1"></th>
                         <th className="text-left p-2 font-medium text-gray-500 uppercase tracking-wide text-[10px]">Name</th>
                         <th className="text-left p-2 font-medium text-gray-500 uppercase tracking-wide text-[10px] w-24">Cat.</th>
                         <th className="text-left p-2 font-medium text-gray-500 uppercase tracking-wide text-[10px]">
@@ -1216,28 +1217,32 @@ export default function TrainerDashboard() {
                               </button>
                             </td>
 
-                            {/* Name + AI status */}
+                            {/* AI status — own column */}
+                            <td className="p-1 text-center">
+                              {isReview ? (
+                                <span
+                                  className="inline-flex h-4 w-4 rounded-full bg-amber-100 items-center justify-center"
+                                  title="Needs metadata review"
+                                >
+                                  <AlertCircle className="h-2.5 w-2.5 text-amber-600" />
+                                </span>
+                              ) : video.aiConfidence ? (
+                                <span
+                                  className="inline-flex items-center gap-0.5 rounded-full bg-green-50 px-1 py-0.5 text-[9px] font-semibold text-green-700 border border-green-200"
+                                  title={`AI confidence ${video.aiConfidence}%`}
+                                >
+                                  <Sparkles className="h-2 w-2" />
+                                  {video.aiConfidence}%
+                                </span>
+                              ) : null}
+                            </td>
+
+                            {/* Name */}
                             <td className="p-2 max-w-[220px]">
-                              <div className="flex items-center gap-1.5 min-w-0">
+                              <div className="flex items-center min-w-0">
                                 <span className="truncate font-medium text-gray-800 text-xs leading-tight" title={video.title}>
                                   {video.title}
                                 </span>
-                                {isReview ? (
-                                  <span
-                                    className="shrink-0 h-4 w-4 rounded-full bg-amber-100 flex items-center justify-center"
-                                    title="Needs metadata review"
-                                  >
-                                    <AlertCircle className="h-2.5 w-2.5 text-amber-600" />
-                                  </span>
-                                ) : (
-                                  <span
-                                    className="shrink-0 inline-flex items-center gap-0.5 rounded-full bg-green-50 px-1.5 py-0.5 text-[9px] font-semibold text-green-700 border border-green-200"
-                                    title={`AI confidence ${video.aiConfidence}%`}
-                                  >
-                                    <Sparkles className="h-2 w-2" />
-                                    {video.aiConfidence}%
-                                  </span>
-                                )}
                               </div>
                             </td>
 
