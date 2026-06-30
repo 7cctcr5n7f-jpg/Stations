@@ -1203,18 +1203,12 @@ export default function TrainerDashboard() {
                           <tr key={video.id} className="group hover:bg-gray-50/70 transition-colors">
                             {/* Thumbnail */}
                             <td className="p-1.5 pl-2">
-                              <button
+                              <ImageThumbnail
+                                video={video}
+                                size="small"
+                                showPlayButton={true}
                                 onClick={() => handlePreviewVideo(video)}
-                                className="block w-8 h-8 rounded overflow-hidden bg-gray-100 flex-shrink-0 hover:ring-2 hover:ring-blue-400 transition-all"
-                                title="Preview video"
-                              >
-                                <ImageThumbnail
-                                  video={video}
-                                  size="small"
-                                  showPlayButton={false}
-                                  onClick={() => handlePreviewVideo(video)}
-                                />
-                              </button>
+                              />
                             </td>
 
                             {/* AI status — own column */}

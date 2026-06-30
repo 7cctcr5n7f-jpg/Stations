@@ -150,17 +150,12 @@ export async function POST(req: NextRequest) {
         const v = (key: string) =>
           manualFields.includes(key) ? row[FIELD_TO_COLUMN[key]] : aiValues[key]
 
-        // Determine if body_part/secondary_muscle should be updated:
-        // only write AI muscles when the existing value is missing/placeholder
-        // and the trainer hasn't manually set it.
+        // For muscles: always write AI value unless the trainer has manually set that field.
+        // We do NOT gate on whether body_part already has a value — the AI enriches it.
         const shouldUpdateBodyPart =
-          !manualFields.includes("primaryMuscles") &&
-          primaryMusclesStr !== null &&
-          (!row.body_part || row.body_part === "General" || row.body_part === "")
+          !manualFields.includes("primaryMuscles") && primaryMusclesStr !== null
         const shouldUpdateSecondary =
-          !manualFields.includes("secondaryMuscles") &&
-          secondaryMusclesStr !== null &&
-          (!row.secondary_muscle || row.secondary_muscle === "")
+          !manualFields.includes("secondaryMuscles") && secondaryMusclesStr !== null
 
         const updated = await sql`
           UPDATE videos SET
