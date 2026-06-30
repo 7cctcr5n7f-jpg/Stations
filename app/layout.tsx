@@ -23,7 +23,7 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en" className="bg-background">
-      <body className={`${inter.variable} font-sans antialiased`}>
+      <body className={`${inter.variable} font-sans antialiased min-h-svh bg-black`}>
         <Providers>{children}</Providers>
       </body>
     </html>
