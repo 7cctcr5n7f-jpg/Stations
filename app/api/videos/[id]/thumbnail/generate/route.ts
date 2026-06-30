@@ -16,15 +16,14 @@ ffmpeg.setFfmpegPath(ffmpegInstaller.path)
 /**
  * POST /api/videos/[id]/thumbnail/generate
  *
- * Fetches the video from R2 server-side, uses ffmpeg to extract a JPEG frame
- * at 1 second, uploads it to R2, and writes thumbnail_url to the DB.
- * No CORS issues — everything runs on the server.
+ * Uses ffmpeg to seek directly into the remote R2 URL (no full download),
+ * extracts a single JPEG frame at 1 second, uploads it to R2, and writes
+ * thumbnail_url to the DB. No CORS issues — everything runs on the server.
  */
 export async function POST(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const tmpVideo = path.join(os.tmpdir(), `thumb-video-${Date.now()}.mp4`)
   const tmpThumb = path.join(os.tmpdir(), `thumb-out-${Date.now()}.jpg`)
 
   try {
@@ -46,28 +45,28 @@ export async function POST(
       return NextResponse.json({ error: "Video has no URL" }, { status: 400 })
     }
 
-    // Download the video to a temp file (ffmpeg works best with file paths)
-    const videoRes = await fetch(videoUrl)
-    if (!videoRes.ok) {
-      return NextResponse.json(
-        { error: `Failed to fetch video: ${videoRes.status}` },
-        { status: 502 }
-      )
-    }
-    const videoBuffer = Buffer.from(await videoRes.arrayBuffer())
-    fs.writeFileSync(tmpVideo, videoBuffer)
-
-    // Use ffmpeg to extract a JPEG frame at 1 second (or at 0 if video is shorter)
+    // Pass the remote URL directly to ffmpeg with -ss before -i so it seeks
+    // via HTTP range requests rather than downloading the whole file first.
+    // -vframes 1 grabs exactly one frame and exits immediately.
     await new Promise<void>((resolve, reject) => {
-      ffmpeg(tmpVideo)
+      ffmpeg()
+        .input(videoUrl)
+        .inputOptions(["-ss 00:00:01"])   // seek to 1 s BEFORE opening (fast seek)
+        .outputOptions(["-vframes 1", "-q:v 3", "-vf scale=320:-1"])
+        .output(tmpThumb)
         .on("end", () => resolve())
-        .on("error", (err) => reject(err))
-        .screenshots({
-          timestamps: ["00:00:01.000"],
-          filename: path.basename(tmpThumb),
-          folder: os.tmpdir(),
-          size: "320x?",
+        .on("error", (err) => {
+          // If 1-second seek fails (video shorter than 1s), retry at 0
+          ffmpeg()
+            .input(videoUrl)
+            .inputOptions(["-ss 00:00:00"])
+            .outputOptions(["-vframes 1", "-q:v 3", "-vf scale=320:-1"])
+            .output(tmpThumb)
+            .on("end", () => resolve())
+            .on("error", (err2) => reject(err2))
+            .run()
         })
+        .run()
     })
 
     // Upload the JPEG to R2
@@ -91,8 +90,6 @@ export async function POST(
       { status: 500 }
     )
   } finally {
-    // Clean up temp files
-    try { fs.unlinkSync(tmpVideo) } catch {}
     try { fs.unlinkSync(tmpThumb) } catch {}
   }
 }

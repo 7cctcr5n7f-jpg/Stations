@@ -649,17 +649,34 @@ function TrainerDashboardInner() {
       toast({ title: "AI metadata started", description: `Processing ${total} exercises...` });
 
       let processed = 0;
-      let done = false;
+      let consecutiveErrors = 0;
       let safety = 0;
       // Accumulate unknown terms across all batches (deduped by term string)
       const allUnknownMap: Record<string, UnknownTerm> = {};
-      while (!done && safety < 500) {
+      // Keep going until the server says done OR we have too many consecutive failures
+      while (safety < 500 && consecutiveErrors < 3) {
         safety++;
-        const res = await apiRequest("POST", "/api/videos/ai-metadata", { mode: "fill", batchSize: 8 });
-        const data = await res.json();
+        let data: any = null;
+        try {
+          const res = await apiRequest("POST", "/api/videos/ai-metadata", { mode: "fill", batchSize: 4 });
+          if (!res.ok) {
+            consecutiveErrors++;
+            console.warn(`[v0] AI metadata batch ${safety} returned ${res.status} — retrying (${consecutiveErrors}/3)`);
+            await new Promise((r) => setTimeout(r, 2000));
+            continue;
+          }
+          data = await res.json();
+          consecutiveErrors = 0; // reset on success
+        } catch (fetchErr) {
+          consecutiveErrors++;
+          console.warn(`[v0] AI metadata fetch error batch ${safety}:`, fetchErr);
+          await new Promise((r) => setTimeout(r, 2000));
+          continue;
+        }
+
         processed += data.processedCount ?? 0;
-        done = data.done || (data.processedCount ?? 0) === 0;
-        setAiProgress({ running: !done, processed: Math.min(processed, total), total });
+        setAiProgress({ running: true, processed: Math.min(processed, total), total });
+
         // Merge unknown terms from this batch
         if (Array.isArray(data.unknownTerms)) {
           for (const t of data.unknownTerms as UnknownTerm[]) {
@@ -678,8 +695,12 @@ function TrainerDashboardInner() {
             }
           }
         }
+
         // Refresh the table as batches complete so trainers see progress live.
         queryClient.invalidateQueries({ queryKey: ["/api/videos"] });
+
+        // Stop when the server says there's nothing left to process
+        if (data.done || data.remaining === 0) break;
       }
 
       const collectedTerms = Object.values(allUnknownMap);
@@ -701,38 +722,58 @@ function TrainerDashboardInner() {
   const runBulkThumbnails = async () => {
     if (thumbProgress?.running) return;
 
-    const missing = (videos ?? []).filter((v) => !v.thumbnailUrl);
-    if (missing.length === 0) {
+    // Ask the server for all video IDs missing a thumbnail — this covers
+    // every video in the DB, not just what the SWR cache has loaded.
+    let missingIds: number[] = [];
+    try {
+      const countRes = await fetch("/api/videos/missing-thumbnails");
+      if (countRes.ok) {
+        const json = await countRes.json();
+        missingIds = json.ids ?? [];
+      }
+    } catch {}
+
+    // Fallback: derive from the in-memory SWR cache
+    if (missingIds.length === 0) {
+      missingIds = (videos ?? []).filter((v) => !v.thumbnailUrl).map((v) => v.id);
+    }
+
+    if (missingIds.length === 0) {
       toast({ title: "All videos already have thumbnails", description: "Nothing to process." });
       return;
     }
 
-    setThumbProgress({ running: true, processed: 0, total: missing.length });
-    toast({ title: "Generating thumbnails", description: `Processing ${missing.length} videos...` });
+    const total = missingIds.length;
+    setThumbProgress({ running: true, processed: 0, total });
+    toast({ title: "Generating thumbnails", description: `Processing ${total} videos...` });
 
     let processed = 0;
-    for (const video of missing) {
-      try {
-        // Server-side generation: ffmpeg fetches the video from R2 and
-        // extracts the frame — no CORS issues, no tainted canvas.
-        const res = await fetch(`/api/videos/${video.id}/thumbnail/generate`, {
-          method: "POST",
-        });
-        if (!res.ok) {
-          const body = await res.json().catch(() => ({}));
-          console.warn(`[bulk-thumbnails] server error for ${video.id}:`, body);
-        }
-        processed++;
-        setThumbProgress({ running: true, processed, total: missing.length });
-      } catch (err) {
-        console.warn(`[bulk-thumbnails] failed for video ${video.id}:`, err);
-        processed++;
-        setThumbProgress({ running: true, processed, total: missing.length });
-      }
+    // Process in chunks of 3 concurrent requests to stay within rate limits
+    const CONCURRENCY = 3;
+    for (let i = 0; i < missingIds.length; i += CONCURRENCY) {
+      const chunk = missingIds.slice(i, i + CONCURRENCY);
+      await Promise.all(
+        chunk.map(async (videoId) => {
+          try {
+            const res = await fetch(`/api/videos/${videoId}/thumbnail/generate`, { method: "POST" });
+            if (!res.ok) {
+              const body = await res.json().catch(() => ({}));
+              console.warn(`[bulk-thumbnails] server error for ${videoId}:`, body);
+            }
+          } catch (err) {
+            console.warn(`[bulk-thumbnails] failed for video ${videoId}:`, err);
+          } finally {
+            processed++;
+            setThumbProgress({ running: true, processed, total });
+          }
+        }),
+      );
+      // Refresh the table every chunk so thumbnails appear as they're generated
+      queryClient.invalidateQueries({ queryKey: ["/api/videos"] });
     }
 
     queryClient.invalidateQueries({ queryKey: ["/api/videos"] });
-    setThumbProgress({ running: false, processed: missing.length, total: missing.length });
+    setThumbProgress({ running: false, processed: total, total });
     toast({ title: "Thumbnails complete", description: `Generated ${processed} thumbnails.` });
     setTimeout(() => setThumbProgress(null), 4000);
   };
