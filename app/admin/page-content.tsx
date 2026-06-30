@@ -21,12 +21,15 @@ import VideoThumbnail from "@/components/video-thumbnail";
 import ImageThumbnail from "@/components/image-thumbnail";
 import EnhancedCacheDashboard from "@/components/enhanced-cache-dashboard";
 import { ExerciseDictionary } from "@/components/exercise-dictionary";
+import { WorkoutBuilder } from "@/components/workout-builder/workout-builder";
+import { BuilderConfig } from "@/components/workout-builder/builder-config";
 import { UnknownTermsBanner, UnknownTermsReviewDialog, type UnknownTerm } from "@/components/unknown-terms-review";
 import { 
   Dumbbell, LogOut, TrendingUp, Play, Video as VideoIcon, Calendar, 
   DoorOpen, Plus, Trash2, Edit, Clock, CheckCircle, Download, Wifi, WifiOff,
   Monitor, ZoomIn, ZoomOut, Save, ChevronsUpDown, ChevronUp, ChevronDown, GripVertical, X, Copy,
-  Sparkles, AlertCircle, Loader2, Search, CalendarDays, BookOpen, Image
+  Sparkles, AlertCircle, Loader2, Search, CalendarDays, BookOpen, Image,
+  Wand2, Settings2
 } from "lucide-react";
 import { getIntensityStyle, INTENSITY_LEVELS } from "@/lib/intensity";
 const tenRoundsLogo = "/logo.png";
@@ -1064,6 +1067,14 @@ function TrainerDashboardInner() {
             <TabsTrigger value="schedule" className="flex items-center">
               <Calendar className="mr-2 h-4 w-4" />
               Schedule
+            </TabsTrigger>
+            <TabsTrigger value="builder" className="flex items-center">
+              <Wand2 className="mr-2 h-4 w-4" />
+              Builder
+            </TabsTrigger>
+            <TabsTrigger value="builder-config" className="flex items-center">
+              <Settings2 className="mr-2 h-4 w-4" />
+              Builder Config
             </TabsTrigger>
 
             <TabsTrigger value="cache" className="flex items-center">
@@ -2159,6 +2170,16 @@ function TrainerDashboardInner() {
                 </div>
               </CardContent>
             </Card>
+          </TabsContent>
+
+          {/* Workout Builder Tab */}
+          <TabsContent value="builder" className="space-y-6">
+            <WorkoutBuilder />
+          </TabsContent>
+
+          {/* Builder Config Tab */}
+          <TabsContent value="builder-config" className="space-y-6">
+            <BuilderConfig />
           </TabsContent>
 
           {/* Cache Tab */}
