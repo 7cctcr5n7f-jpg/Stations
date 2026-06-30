@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic"
 
 import { type NextRequest, NextResponse } from "next/server"
 import { sql, mapSchedule } from "@/lib/db"
+import { broadcastScheduleChange } from "@/app/api/schedules/sse/route"
 
 export const runtime = "nodejs"
 
@@ -74,7 +75,9 @@ export async function POST(request: NextRequest) {
          ${sets}, ${restTime}, ${isActive}, ${heartRateZone})
       RETURNING *
     `
-    return NextResponse.json(mapSchedule(rows[0]), { status: 201 })
+    const created = mapSchedule(rows[0])
+    broadcastScheduleChange(created.roomId, { type: "schedule_created", scheduleId: created.id, roomId: created.roomId, date: created.scheduleDate })
+    return NextResponse.json(created, { status: 201 })
   } catch (error) {
     console.error("[v0] Failed to create schedule:", error)
     return NextResponse.json({ message: "Failed to create schedule" }, { status: 500 })
