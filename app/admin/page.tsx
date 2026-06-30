@@ -23,7 +23,7 @@ import {
   Dumbbell, LogOut, TrendingUp, Play, Video as VideoIcon, Calendar, 
   DoorOpen, Plus, Trash2, Edit, Clock, CheckCircle, Download, Wifi, WifiOff,
   Monitor, ZoomIn, ZoomOut, Save, ChevronsUpDown, ChevronUp, ChevronDown, GripVertical, X, Copy,
-  Sparkles, AlertCircle, Loader2
+  Sparkles, AlertCircle, Loader2, Search, CalendarDays
 } from "lucide-react";
 import { getIntensityStyle, INTENSITY_LEVELS } from "@/lib/intensity";
 const tenRoundsLogo = "/logo.png";
@@ -1003,14 +1003,44 @@ export default function TrainerDashboard() {
                 )}
               </CardHeader>
               <CardContent className="space-y-6">
-                {/* Search Filter */}
-                <div className="mb-4 flex flex-wrap items-center gap-3">
-                  <Input
-                    type="text"
-                    placeholder="Search videos..."
-                    value={videoFilters.search}
-                    onChange={(e) => setVideoFilters(prev => ({ ...prev, search: e.target.value }))}
-                    className="max-w-md"
+                {/* Toolbar: search + filters */}
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="relative flex-1 min-w-48 max-w-sm">
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400 pointer-events-none" />
+                    <Input
+                      type="text"
+                      placeholder="Search videos..."
+                      value={videoFilters.search}
+                      onChange={(e) => setVideoFilters(prev => ({ ...prev, search: e.target.value }))}
+                      className="h-8 pl-8 text-xs"
+                    />
+                  </div>
+                  <SearchableSelect
+                    options={dynamicCategories}
+                    value={videoFilters.category[0] || "all"}
+                    placeholder="Category"
+                    onValueChange={(value) =>
+                      setVideoFilters(prev => ({ ...prev, category: value === "all" ? [] : [value] }))
+                    }
+                    allowAll={true}
+                  />
+                  <SearchableSelect
+                    options={dynamicBodyParts}
+                    value={videoFilters.bodyPart[0] || "all"}
+                    placeholder="Muscle"
+                    onValueChange={(value) =>
+                      setVideoFilters(prev => ({ ...prev, bodyPart: value === "all" ? [] : [value] }))
+                    }
+                    allowAll={true}
+                  />
+                  <SearchableSelect
+                    options={dynamicEquipment}
+                    value={videoFilters.equipment[0] || "all"}
+                    placeholder="Equipment"
+                    onValueChange={(value) =>
+                      setVideoFilters(prev => ({ ...prev, equipment: value === "all" ? [] : [value] }))
+                    }
+                    allowAll={true}
                   />
                   <Select
                     value={videoFilters.intensity || "all"}
@@ -1018,358 +1048,263 @@ export default function TrainerDashboard() {
                       setVideoFilters(prev => ({ ...prev, intensity: value === "all" ? "" : value }))
                     }
                   >
-                    <SelectTrigger className="h-9 w-40 text-xs">
-                      <SelectValue placeholder="All intensities" />
+                    <SelectTrigger className="h-8 w-32 text-xs">
+                      <SelectValue placeholder="Intensity" />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="all">All intensities</SelectItem>
                       {INTENSITY_LEVELS.map((level) => (
-                        <SelectItem key={level} value={level}>{level} intensity</SelectItem>
+                        <SelectItem key={level} value={level}>{level}</SelectItem>
                       ))}
-                      <SelectItem value="unset">Intensity unset</SelectItem>
+                      <SelectItem value="unset">Unset</SelectItem>
                     </SelectContent>
                   </Select>
-                  <Button
+                  <button
                     type="button"
-                    variant={videoFilters.needsReview ? "default" : "outline"}
-                    size="sm"
-                    className={videoFilters.needsReview ? "bg-amber-500 hover:bg-amber-600" : ""}
                     onClick={() => setVideoFilters(prev => ({ ...prev, needsReview: !prev.needsReview }))}
+                    className={`inline-flex h-8 items-center gap-1.5 rounded-md border px-3 text-xs font-medium transition-colors ${
+                      videoFilters.needsReview
+                        ? "border-amber-400 bg-amber-50 text-amber-700"
+                        : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
+                    }`}
                   >
-                    <AlertCircle className="mr-2 h-4 w-4" />
+                    <AlertCircle className="h-3.5 w-3.5" />
                     Needs Review
-                  </Button>
+                  </button>
+                  <span className="ml-auto text-xs text-gray-400 tabular-nums">
+                    {filteredVideos?.length ?? 0} videos
+                  </span>
                 </div>
-                
-                
-                {/* Video Count */}
-                <div className="text-sm text-gray-600 mb-2">
-                  Showing {filteredVideos?.length || 0} videos
-                  {videoFilters.search && ` matching "${videoFilters.search}"`}
-                  {(videoFilters.category.length > 0 || videoFilters.bodyPart.length > 0 || videoFilters.secondaryMuscle.length > 0 || videoFilters.equipment.length > 0 || videoFilters.lastUsed || videoFilters.scheduled) && 
-                    ` with current filters`
-                  }
-                </div>
-                
-                {/* Video Table with Column Filters */}
-                <div className="border rounded-lg overflow-hidden">
+
+                {/* Video Table */}
+                <div className="rounded-lg border border-gray-200 overflow-hidden">
                   <table className="w-full text-xs">
-                    <thead className="bg-gray-50">
-                      {/* Column Headers */}
-                      <tr className="border-b">
-                        <th className="text-left p-3 text-xs font-medium text-gray-900 w-20">Thumbnail</th>
-                        <th className="text-left p-3 text-xs font-medium text-gray-900 w-48">Name</th>
-                        <th className="text-left p-3 text-xs font-medium text-gray-900 w-32">Category</th>
-                        <th className="text-left p-3 text-xs font-medium text-gray-900 w-44">
-                          <div className="flex items-center justify-between">
-                            <span>Primary Muscle</span>
-                            <VideoOptionsButton 
+                    <thead>
+                      <tr className="border-b border-gray-200 bg-gray-50/80">
+                        <th className="w-10 p-2"></th>
+                        <th className="text-left p-2 font-medium text-gray-500 uppercase tracking-wide text-[10px]">Name</th>
+                        <th className="text-left p-2 font-medium text-gray-500 uppercase tracking-wide text-[10px] w-24">Cat.</th>
+                        <th className="text-left p-2 font-medium text-gray-500 uppercase tracking-wide text-[10px]">
+                          <div className="flex items-center gap-1">
+                            Muscles
+                            <VideoOptionsButton
                               category="bodyPart"
                               options={videoOptions?.bodyParts || []}
                               title="Primary Muscles"
                             />
                           </div>
                         </th>
-                        <th className="text-left p-3 text-xs font-medium text-gray-900 w-44">
-                          <div className="flex items-center justify-between">
-                            <span>Secondary Muscle</span>
-                            <VideoOptionsButton 
-                              category="secondaryMuscle"
-                              options={videoOptions?.secondaryMuscles || []}
-                              title="Secondary Muscles"
-                            />
-                          </div>
-                        </th>
-                        <th className="text-left p-3 text-xs font-medium text-gray-900 w-44">
-                          <div className="flex items-center justify-between">
-                            <span>Equipment</span>
-                            <VideoOptionsButton 
+                        <th className="text-left p-2 font-medium text-gray-500 uppercase tracking-wide text-[10px]">
+                          <div className="flex items-center gap-1">
+                            Equipment
+                            <VideoOptionsButton
                               category="equipment"
                               options={videoOptions?.equipment || []}
                               title="Equipment"
                             />
                           </div>
                         </th>
-                        <th className="text-left p-3 text-xs font-medium text-gray-900 w-28">Last Used</th>
-                        <th className="text-left p-3 text-xs font-medium text-gray-900 w-28">Scheduled</th>
-                        <th className="text-center p-3 text-xs font-medium text-gray-900 w-20">Times Used</th>
-                        <th className="text-left p-3 text-xs font-medium text-gray-900 w-32">Intensity</th>
-                        <th className="text-left p-3 text-xs font-medium text-gray-900 w-40">Movement</th>
-                        <th className="text-right p-3 text-xs font-medium text-gray-900 w-24">Actions</th>
-                      </tr>
-                      {/* Column Filters */}
-                      <tr className="border-b bg-gray-100">
-                        <th className="p-1"></th>
-                        <th className="p-1"></th>
-                        <th className="p-1">
-                          <SearchableSelect
-                            options={dynamicCategories}
-                            value={videoFilters.category[0] || "all"}
-                            placeholder="All"
-                            onValueChange={(value) => 
-                              setVideoFilters(prev => ({ ...prev, category: value === "all" ? [] : [value] }))
-                            }
-                            allowAll={true}
-                          />
-                        </th>
-                        <th className="p-1">
-                          <SearchableSelect
-                            options={dynamicBodyParts}
-                            value={videoFilters.bodyPart[0] || "all"}
-                            placeholder="All"
-                            onValueChange={(value) => 
-                              setVideoFilters(prev => ({ ...prev, bodyPart: value === "all" ? [] : [value] }))
-                            }
-                            allowAll={true}
-                          />
-                        </th>
-                        <th className="p-1">
-                          <SearchableSelect
-                            options={dynamicSecondaryMuscles}
-                            value={videoFilters.secondaryMuscle[0] || "all"}
-                            placeholder="All"
-                            onValueChange={(value) => 
-                              setVideoFilters(prev => ({ ...prev, secondaryMuscle: value === "all" ? [] : [value] }))
-                            }
-                            allowAll={true}
-                            allowNone={true}
-                          />
-                        </th>
-                        <th className="p-1">
-                          <SearchableSelect
-                            options={dynamicEquipment}
-                            value={videoFilters.equipment[0] || "all"}
-                            placeholder="All"
-                            onValueChange={(value) => 
-                              setVideoFilters(prev => ({ ...prev, equipment: value === "all" ? [] : [value] }))
-                            }
-                            allowAll={true}
-                          />
-                        </th>
-                        <th className="p-1">
-                          <Select onValueChange={(value) => 
-                            setVideoFilters(prev => ({ ...prev, lastUsed: value === "all" ? "" : value }))
-                          }>
-                            <SelectTrigger className="h-7 text-xs">
-                              <SelectValue placeholder="All" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="all">All</SelectItem>
-                              <SelectItem value="today">Today</SelectItem>
-                              <SelectItem value="week">This Week</SelectItem>
-                              <SelectItem value="month">This Month</SelectItem>
-                              <SelectItem value="never">Never Used</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </th>
-                        <th className="p-1">
-                          <Select onValueChange={(value) => 
-                            setVideoFilters(prev => ({ ...prev, scheduled: value === "all" ? "" : value }))
-                          }>
-                            <SelectTrigger className="h-7 text-xs">
-                              <SelectValue placeholder="All" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="all">All</SelectItem>
-                              <SelectItem value="scheduled">Scheduled</SelectItem>
-                              <SelectItem value="unscheduled">Not Scheduled</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </th>
-                        <th className="p-1"></th>
-                        <th className="p-1"></th>
-                        <th className="p-1"></th>
-                        <th className="p-1"></th>
+                        <th className="text-left p-2 font-medium text-gray-500 uppercase tracking-wide text-[10px] w-28">Usage</th>
+                        <th className="text-left p-2 font-medium text-gray-500 uppercase tracking-wide text-[10px] w-24">Intensity</th>
+                        <th className="text-left p-2 font-medium text-gray-500 uppercase tracking-wide text-[10px] w-28">Movement</th>
+                        <th className="w-8 p-2"></th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-gray-200">
+                    <tbody className="divide-y divide-gray-100">
                       {filteredVideos.map((video) => {
-                        const scheduledDates = schedules?.filter(s => s.videoId === video.id).map(s => s.scheduleDate) || [];
+                        const isReview = videoNeedsReview(video);
+                        const intensityStyle = getIntensityStyle(video.intensity);
                         return (
-                          <tr key={video.id} className="hover:bg-gray-50">
-                            <td className="p-3">
-                              <ImageThumbnail 
-                                video={video} 
-                                size="small" 
-                                showPlayButton={true} 
+                          <tr key={video.id} className="group hover:bg-gray-50/70 transition-colors">
+                            {/* Thumbnail */}
+                            <td className="p-1.5 pl-2">
+                              <button
                                 onClick={() => handlePreviewVideo(video)}
-                              />
+                                className="block w-8 h-8 rounded overflow-hidden bg-gray-100 flex-shrink-0 hover:ring-2 hover:ring-blue-400 transition-all"
+                                title="Preview video"
+                              >
+                                <ImageThumbnail
+                                  video={video}
+                                  size="small"
+                                  showPlayButton={false}
+                                  onClick={() => handlePreviewVideo(video)}
+                                />
+                              </button>
                             </td>
-                            <td className="p-3">
-                              <div className="flex flex-col gap-1">
-                                <span className="text-xs text-gray-900">{video.title}</span>
-                                {videoNeedsReview(video) ? (
-                                  <span className="inline-flex w-fit items-center gap-1 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800">
-                                    <AlertCircle className="h-3 w-3" />
-                                    Needs Review
+
+                            {/* Name + AI status */}
+                            <td className="p-2 max-w-[220px]">
+                              <div className="flex items-center gap-1.5 min-w-0">
+                                <span className="truncate font-medium text-gray-800 text-xs leading-tight" title={video.title}>
+                                  {video.title}
+                                </span>
+                                {isReview ? (
+                                  <span
+                                    className="shrink-0 h-4 w-4 rounded-full bg-amber-100 flex items-center justify-center"
+                                    title="Needs metadata review"
+                                  >
+                                    <AlertCircle className="h-2.5 w-2.5 text-amber-600" />
                                   </span>
                                 ) : (
-                                  <span className="inline-flex w-fit items-center gap-1 rounded bg-green-50 px-1.5 py-0.5 text-[10px] font-medium text-green-700">
-                                    <CheckCircle className="h-3 w-3" />
-                                    AI {video.aiConfidence}%
+                                  <span
+                                    className="shrink-0 inline-flex items-center gap-0.5 rounded-full bg-green-50 px-1.5 py-0.5 text-[9px] font-semibold text-green-700 border border-green-200"
+                                    title={`AI confidence ${video.aiConfidence}%`}
+                                  >
+                                    <Sparkles className="h-2 w-2" />
+                                    {video.aiConfidence}%
                                   </span>
                                 )}
                               </div>
                             </td>
-                            <td className="p-3">
-                              <div className="flex flex-wrap gap-1">
-                                {deriveCategories(video.bodyPart, video.equipment).map((category, index) => (
-                                  <div key={index} className={`inline-block px-2 py-1 rounded text-[10px] font-medium ${
-                                    category === 'Missing' 
-                                      ? 'bg-gray-100 text-gray-800' 
-                                      : category === 'HIIT'
-                                      ? 'bg-red-100 text-red-800'
-                                      : 'bg-blue-100 text-blue-800'
-                                  }`}>
-                                    {category}
-                                  </div>
+
+                            {/* Category chips */}
+                            <td className="p-2">
+                              <div className="flex flex-wrap gap-0.5">
+                                {deriveCategories(video.bodyPart, video.equipment).map((cat, i) => (
+                                  <span
+                                    key={i}
+                                    className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
+                                      cat === "HIIT"
+                                        ? "bg-red-50 text-red-700"
+                                        : cat === "Missing"
+                                        ? "bg-gray-100 text-gray-500"
+                                        : "bg-blue-50 text-blue-700"
+                                    }`}
+                                  >
+                                    {cat}
+                                  </span>
                                 ))}
                               </div>
                             </td>
-                            <td className="p-3">
-                              {inlineEditingField?.videoId === video.id && inlineEditingField?.field === 'bodyPart' ? (
+
+                            {/* Primary + Secondary muscles */}
+                            <td className="p-2 max-w-[160px]">
+                              {inlineEditingField?.videoId === video.id && inlineEditingField?.field === "bodyPart" ? (
                                 <SimpleMultiSelect
                                   options={videoOptions?.bodyParts || []}
-                                  selectedValues={video.bodyPart && video.bodyPart !== 'General' ? video.bodyPart.split(',').map(s => s.trim()).filter(s => s !== 'General') : []}
-                                  onSelectionChange={(values) => {
-                                    const joinedValue = values.join(', ');
-                                    updateVideoInlineMutation.mutate({
-                                      videoId: video.id,
-                                      field: 'bodyPart',
-                                      value: joinedValue
-                                    });
-                                  }}
+                                  selectedValues={video.bodyPart && video.bodyPart !== "General" ? video.bodyPart.split(",").map(s => s.trim()).filter(s => s !== "General") : []}
+                                  onSelectionChange={(values) => updateVideoInlineMutation.mutate({ videoId: video.id, field: "bodyPart", value: values.join(", ") })}
                                   onClose={() => setInlineEditingField(null)}
                                   onNewItemAdded={handleNewPrimaryMuscle}
-                                  placeholder="Select muscles"
-                                  className="h-6 text-xs border-blue-300"
+                                  placeholder="Primary muscles"
+                                  className="h-6 text-xs"
                                 />
-                              ) : (
-                                <div 
-                                  className={`cursor-pointer transition-colors rounded px-2 py-1 ${
-                                    video.bodyPart === 'General' || !video.bodyPart 
-                                      ? 'bg-red-100 text-red-800 border border-red-200 hover:bg-red-200' 
-                                      : 'bg-[hsl(123,47%,50%,0.1)] text-[hsl(123,47%,50%)] hover:bg-[hsl(123,47%,50%,0.2)]'
-                                  }`}
-                                  onClick={() => setInlineEditingField({ videoId: video.id, field: 'bodyPart' })}
-                                  title="Click to edit primary muscles (can select multiple)"
-                                >
-                                  {video.bodyPart === 'General' || !video.bodyPart ? (
-                                    <span className="text-[10px] font-medium">Click to set</span>
-                                  ) : (
-                                    <div className="flex flex-wrap gap-1">
-                                      {video.bodyPart.split(',').map((part, index) => (
-                                        <span key={index} className="text-[10px] font-medium bg-white/30 px-1 py-0.5 rounded">
-                                          {part.trim()}
-                                        </span>
-                                      ))}
-                                    </div>
-                                  )}
-                                </div>
-                              )}
-                            </td>
-                            <td className="p-3">
-                              {inlineEditingField?.videoId === video.id && inlineEditingField?.field === 'secondaryMuscle' ? (
+                              ) : inlineEditingField?.videoId === video.id && inlineEditingField?.field === "secondaryMuscle" ? (
                                 <SimpleMultiSelect
                                   options={videoOptions?.secondaryMuscles || []}
-                                  selectedValues={video.secondaryMuscle && video.secondaryMuscle !== '' ? video.secondaryMuscle.split(',').map(s => s.trim()).filter(s => s !== 'none' && s !== '') : []}
-                                  onSelectionChange={(values) => {
-                                    const joinedValue = values.length > 0 ? values.join(', ') : '';
-                                    updateVideoInlineMutation.mutate({
-                                      videoId: video.id,
-                                      field: 'secondaryMuscle',
-                                      value: joinedValue
-                                    });
-                                  }}
+                                  selectedValues={video.secondaryMuscle ? video.secondaryMuscle.split(",").map(s => s.trim()).filter(s => s !== "none" && s !== "") : []}
+                                  onSelectionChange={(values) => updateVideoInlineMutation.mutate({ videoId: video.id, field: "secondaryMuscle", value: values.join(", ") })}
                                   onClose={() => setInlineEditingField(null)}
                                   onNewItemAdded={handleNewSecondaryMuscle}
-                                  placeholder="Select secondary muscles"
-                                  className="h-6 text-xs border-blue-300"
+                                  placeholder="Secondary muscles"
+                                  className="h-6 text-xs"
                                 />
                               ) : (
-                                <div 
-                                  className={`cursor-pointer transition-colors rounded px-2 py-1 ${
-                                    !video.secondaryMuscle 
-                                      ? 'bg-gray-100 text-gray-500 border border-gray-200 hover:bg-gray-200' 
-                                      : 'bg-blue-50 text-blue-800 border border-blue-200 hover:bg-blue-100'
-                                  }`}
-                                  onClick={() => setInlineEditingField({ videoId: video.id, field: 'secondaryMuscle' })}
-                                  title="Click to edit secondary muscles (can select multiple)"
-                                >
-                                  {!video.secondaryMuscle ? (
-                                    <span className="text-[10px] font-medium">Click to set</span>
+                                <div className="flex flex-wrap gap-1 items-center">
+                                  {/* Primary pills */}
+                                  {!video.bodyPart || video.bodyPart === "General" ? (
+                                    <button
+                                      className="rounded px-1.5 py-0.5 text-[10px] bg-red-50 text-red-600 hover:bg-red-100 transition-colors"
+                                      onClick={() => setInlineEditingField({ videoId: video.id, field: "bodyPart" })}
+                                      title="Set primary muscles"
+                                    >
+                                      + set muscle
+                                    </button>
                                   ) : (
-                                    <div className="flex flex-wrap gap-1">
-                                      {video.secondaryMuscle.split(',').map((muscle, index) => (
-                                        <span key={index} className="text-[10px] font-medium bg-white/40 px-1 py-0.5 rounded">
-                                          {muscle.trim()}
-                                        </span>
-                                      ))}
-                                    </div>
+                                    video.bodyPart.split(",").map((p, i) => (
+                                      <button
+                                        key={i}
+                                        className="rounded px-1.5 py-0.5 text-[10px] font-medium bg-green-50 text-green-800 hover:bg-green-100 transition-colors"
+                                        onClick={() => setInlineEditingField({ videoId: video.id, field: "bodyPart" })}
+                                        title="Edit primary muscles"
+                                      >
+                                        {p.trim()}
+                                      </button>
+                                    ))
+                                  )}
+                                  {/* Secondary pills — dimmer */}
+                                  {video.secondaryMuscle ? (
+                                    video.secondaryMuscle.split(",").map((m, i) => (
+                                      <button
+                                        key={i}
+                                        className="rounded px-1.5 py-0.5 text-[10px] font-medium bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors"
+                                        onClick={() => setInlineEditingField({ videoId: video.id, field: "secondaryMuscle" })}
+                                        title="Edit secondary muscles"
+                                      >
+                                        {m.trim()}
+                                      </button>
+                                    ))
+                                  ) : (
+                                    <button
+                                      className="rounded px-1 py-0.5 text-[10px] text-gray-300 hover:text-gray-500 hover:bg-gray-100 transition-colors"
+                                      onClick={() => setInlineEditingField({ videoId: video.id, field: "secondaryMuscle" })}
+                                      title="Add secondary muscles"
+                                    >
+                                      +
+                                    </button>
                                   )}
                                 </div>
                               )}
                             </td>
-                            <td className="p-3">
-                              {inlineEditingField?.videoId === video.id && inlineEditingField?.field === 'equipment' ? (
+
+                            {/* Equipment */}
+                            <td className="p-2">
+                              {inlineEditingField?.videoId === video.id && inlineEditingField?.field === "equipment" ? (
                                 <SimpleMultiSelect
                                   options={videoOptions?.equipment || []}
-                                  selectedValues={video.equipment && video.equipment !== 'To be assigned' ? video.equipment.split(',').map(s => s.trim()).filter(s => s !== 'To be assigned' && s !== '') : []}
-                                  onSelectionChange={(values) => {
-                                    const joinedValue = values.length > 0 ? values.join(', ') : '';
-                                    updateVideoInlineMutation.mutate({
-                                      videoId: video.id,
-                                      field: 'equipment',
-                                      value: joinedValue
-                                    });
-                                  }}
+                                  selectedValues={video.equipment && video.equipment !== "To be assigned" ? video.equipment.split(",").map(s => s.trim()).filter(s => s !== "To be assigned" && s !== "") : []}
+                                  onSelectionChange={(values) => updateVideoInlineMutation.mutate({ videoId: video.id, field: "equipment", value: values.join(", ") })}
                                   onClose={() => setInlineEditingField(null)}
                                   onNewItemAdded={handleNewEquipment}
-                                  placeholder="Select equipment"
-                                  className="h-6 text-xs border-blue-300"
+                                  placeholder="Equipment"
+                                  className="h-6 text-xs"
                                 />
                               ) : (
-                                <div 
-                                  className={`cursor-pointer transition-colors rounded px-2 py-1 ${
-                                    video.equipment === 'To be assigned' || !video.equipment 
-                                      ? 'bg-red-100 text-red-800 border border-red-200 hover:bg-red-200' 
-                                      : 'bg-gray-100 text-gray-800 border border-gray-200 hover:bg-gray-200'
+                                <button
+                                  className={`inline-flex flex-wrap gap-0.5 rounded px-1.5 py-0.5 transition-colors text-left ${
+                                    !video.equipment || video.equipment === "To be assigned"
+                                      ? "bg-red-50 text-red-600 hover:bg-red-100"
+                                      : "bg-gray-100 text-gray-700 hover:bg-gray-200"
                                   }`}
-                                  onClick={() => setInlineEditingField({ videoId: video.id, field: 'equipment' })}
-                                  title="Click to edit equipment (can select multiple)"
+                                  onClick={() => setInlineEditingField({ videoId: video.id, field: "equipment" })}
+                                  title="Edit equipment"
                                 >
-                                  {video.equipment === 'To be assigned' || !video.equipment ? (
-                                    <span className="text-[10px] font-medium">Click to set</span>
+                                  {!video.equipment || video.equipment === "To be assigned" ? (
+                                    <span className="text-[10px]">+ set</span>
                                   ) : (
-                                    <div className="flex flex-wrap gap-1">
-                                      {video.equipment.split(',').map((eq, index) => (
-                                        <span key={index} className="text-[10px] font-medium bg-white/40 px-1 py-0.5 rounded">
-                                          {eq.trim()}
-                                        </span>
-                                      ))}
-                                    </div>
+                                    video.equipment.split(",").map((eq, i) => (
+                                      <span key={i} className="text-[10px] font-medium">{eq.trim()}{i < video.equipment!.split(",").length - 1 ? "," : ""}</span>
+                                    ))
                                   )}
+                                </button>
+                              )}
+                            </td>
+
+                            {/* Usage: last used + scheduled + count */}
+                            <td className="p-2">
+                              <div className="space-y-0.5">
+                                <div className="flex items-center gap-1 text-[10px] text-gray-500">
+                                  <Clock className="h-3 w-3 shrink-0" />
+                                  <span>{formatTimeAgo(video.lastUsed)}</span>
                                 </div>
-                              )}
+                                <div className="flex items-center gap-1 text-[10px]">
+                                  <CalendarDays className="h-3 w-3 shrink-0 text-gray-400" />
+                                  {video.nextScheduled ? (
+                                    <span className="text-green-600 font-medium">
+                                      {new Date(video.nextScheduled + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                                    </span>
+                                  ) : (
+                                    <span className="text-gray-400">–</span>
+                                  )}
+                                  <span className="ml-1 tabular-nums rounded-full bg-gray-100 px-1.5 py-0 text-gray-500 font-medium text-[9px]">
+                                    ×{video.timesUsed ?? 0}
+                                  </span>
+                                </div>
+                              </div>
                             </td>
-                            <td className="p-3 text-xs text-gray-600">
-                              {formatTimeAgo(video.lastUsed)}
-                            </td>
-                            <td className="p-3">
-                              {video.nextScheduled ? (
-                                <span className="text-xs text-green-600 font-medium">
-                                  {new Date(video.nextScheduled + "T00:00:00").toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                                </span>
-                              ) : (
-                                <span className="text-xs text-gray-400">Not scheduled</span>
-                              )}
-                            </td>
-                            {/* Times Used */}
-                            <td className="p-3 text-center">
-                              <span className="text-xs font-medium text-gray-700">{video.timesUsed ?? 0}</span>
-                            </td>
-                            {/* Intensity (drives heart-rate zone) */}
-                            <td className="p-3">
+
+                            {/* Intensity dot + select */}
+                            <td className="p-2">
                               <Select
                                 value={video.intensity ?? "unset"}
                                 onValueChange={(value) =>
@@ -1380,9 +1315,9 @@ export default function TrainerDashboard() {
                                   })
                                 }
                               >
-                                <SelectTrigger className="h-7 w-[110px] text-xs">
+                                <SelectTrigger className={`h-6 w-24 border text-[10px] font-medium px-1.5 ${intensityStyle.badge}`}>
                                   <span className="flex items-center gap-1.5">
-                                    <span className={`h-2.5 w-2.5 rounded-full ${getIntensityStyle(video.intensity).dot}`} />
+                                    <span className={`h-2 w-2 rounded-full shrink-0 ${intensityStyle.dot}`} />
                                     {video.intensity ?? "Unset"}
                                   </span>
                                 </SelectTrigger>
@@ -1394,64 +1329,56 @@ export default function TrainerDashboard() {
                                 </SelectContent>
                               </Select>
                             </td>
-                            {/* Movement pattern (inline editable) */}
-                            <td className="p-3">
-                              {inlineEditingField?.videoId === video.id && inlineEditingField?.field === 'movementPattern' ? (
+
+                            {/* Movement pattern */}
+                            <td className="p-2">
+                              {inlineEditingField?.videoId === video.id && inlineEditingField?.field === "movementPattern" ? (
                                 <Input
                                   autoFocus
                                   defaultValue={video.movementPattern ?? ""}
-                                  className="h-7 text-xs"
+                                  className="h-6 text-[10px] px-1.5"
                                   onBlur={(e) => {
-                                    updateVideoInlineMutation.mutate({
-                                      videoId: video.id,
-                                      field: "movementPattern",
-                                      value: e.target.value.trim(),
-                                    });
+                                    updateVideoInlineMutation.mutate({ videoId: video.id, field: "movementPattern", value: e.target.value.trim() });
                                     setInlineEditingField(null);
                                   }}
                                   onKeyDown={(e) => {
-                                    if (e.key === "Enter" && !e.nativeEvent.isComposing) {
-                                      (e.target as HTMLInputElement).blur();
-                                    } else if (e.key === "Escape") {
-                                      setInlineEditingField(null);
-                                    }
+                                    if (e.key === "Enter" && !e.nativeEvent.isComposing) (e.target as HTMLInputElement).blur();
+                                    else if (e.key === "Escape") setInlineEditingField(null);
                                   }}
                                 />
                               ) : (
-                                <div
-                                  className={`cursor-pointer rounded px-2 py-1 transition-colors ${
+                                <button
+                                  className={`rounded px-1.5 py-0.5 text-[10px] transition-colors ${
                                     video.movementPattern
-                                      ? "bg-gray-100 text-gray-800 hover:bg-gray-200"
-                                      : "bg-gray-50 text-gray-400 border border-gray-200 hover:bg-gray-100"
+                                      ? "bg-gray-100 text-gray-700 hover:bg-gray-200 font-medium"
+                                      : "text-gray-400 hover:bg-gray-100 hover:text-gray-600"
                                   }`}
-                                  onClick={() => setInlineEditingField({ videoId: video.id, field: 'movementPattern' })}
+                                  onClick={() => setInlineEditingField({ videoId: video.id, field: "movementPattern" })}
                                   title="Click to edit movement pattern"
                                 >
-                                  <span className="text-[10px] font-medium">
-                                    {video.movementPattern || "Click to set"}
-                                  </span>
-                                </div>
+                                  {video.movementPattern || "+ set"}
+                                </button>
                               )}
                             </td>
-                            <td className="p-3">
-                              <div className="flex space-x-1 justify-end">
-                                <Button 
+
+                            {/* Actions — single edit button, delete on hover */}
+                            <td className="p-2 pr-3">
+                              <div className="flex items-center gap-1 justify-end opacity-0 group-hover:opacity-100 transition-opacity">
+                                <button
                                   onClick={() => handleEditVideo(video)}
-                                  variant="outline" 
-                                  size="sm"
-                                  className="h-7 w-7 p-0"
+                                  className="h-6 w-6 flex items-center justify-center rounded hover:bg-gray-200 text-gray-500 hover:text-gray-800 transition-colors"
+                                  title="Edit video"
                                 >
                                   <Edit className="h-3 w-3" />
-                                </Button>
-                                <Button 
+                                </button>
+                                <button
                                   onClick={() => handleDeleteVideo(video)}
-                                  variant="outline" 
-                                  size="sm"
-                                  className="text-red-600 hover:text-red-700 hover:bg-red-50 h-7 w-7 p-0"
+                                  className="h-6 w-6 flex items-center justify-center rounded hover:bg-red-100 text-gray-400 hover:text-red-600 transition-colors"
+                                  title="Delete video"
                                   disabled={deleteVideoMutation.isPending}
                                 >
                                   <Trash2 className="h-3 w-3" />
-                                </Button>
+                                </button>
                               </div>
                             </td>
                           </tr>
@@ -1459,9 +1386,9 @@ export default function TrainerDashboard() {
                       })}
                     </tbody>
                   </table>
-                  
+
                   {filteredVideos.length === 0 && (
-                    <div className="text-center py-8 text-gray-500">
+                    <div className="text-center py-10 text-gray-400 text-sm">
                       No videos match your current filters
                     </div>
                   )}
