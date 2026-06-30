@@ -25,9 +25,10 @@ import {
   Dumbbell, LogOut, TrendingUp, Play, Video as VideoIcon, Calendar, 
   DoorOpen, Plus, Trash2, Edit, Clock, CheckCircle, Download, Wifi, WifiOff,
   Monitor, ZoomIn, ZoomOut, Save, ChevronsUpDown, ChevronUp, ChevronDown, GripVertical, X, Copy,
-  Sparkles, AlertCircle, Loader2, Search, CalendarDays, BookOpen
+  Sparkles, AlertCircle, Loader2, Search, CalendarDays, BookOpen, Image
 } from "lucide-react";
 import { getIntensityStyle, INTENSITY_LEVELS } from "@/lib/intensity";
+import { generateVideoThumbnail } from "@/lib/generate-thumbnail";
 const tenRoundsLogo = "/logo.png";
 import { getRoomColorClasses, formatTimeAgo, formatTimeAgoShort, getDayOfWeek, capitalizeFirst } from "@/lib/utils";
 import { apiRequest } from "@/lib/queryClient";
@@ -103,6 +104,12 @@ export default function TrainerDashboard() {
   });
   // AI metadata generation progress
   const [aiProgress, setAiProgress] = useState<{
+    running: boolean;
+    processed: number;
+    total: number;
+  } | null>(null);
+  // Bulk thumbnail generation progress
+  const [thumbProgress, setThumbProgress] = useState<{
     running: boolean;
     processed: number;
     total: number;
@@ -690,6 +697,44 @@ export default function TrainerDashboard() {
     }
   };
 
+  // Generate thumbnails for all videos that are missing one.
+  const runBulkThumbnails = async () => {
+    if (thumbProgress?.running) return;
+
+    const missing = (videos ?? []).filter((v) => !v.thumbnailUrl);
+    if (missing.length === 0) {
+      toast({ title: "All videos already have thumbnails", description: "Nothing to process." });
+      return;
+    }
+
+    setThumbProgress({ running: true, processed: 0, total: missing.length });
+    toast({ title: "Generating thumbnails", description: `Processing ${missing.length} videos...` });
+
+    let processed = 0;
+    for (const video of missing) {
+      try {
+        const localUrl = video.url;
+        const thumbBlob = await generateVideoThumbnail(localUrl, 1);
+        await fetch(`/api/videos/${video.id}/thumbnail`, {
+          method: "POST",
+          headers: { "content-type": "image/jpeg" },
+          body: thumbBlob,
+        });
+        processed++;
+        setThumbProgress({ running: true, processed, total: missing.length });
+      } catch (err) {
+        console.warn(`[bulk-thumbnails] failed for video ${video.id}:`, err);
+        processed++;
+        setThumbProgress({ running: true, processed, total: missing.length });
+      }
+    }
+
+    queryClient.invalidateQueries({ queryKey: ["/api/videos"] });
+    setThumbProgress({ running: false, processed: missing.length, total: missing.length });
+    toast({ title: "Thumbnails complete", description: `Generated ${processed} thumbnails.` });
+    setTimeout(() => setThumbProgress(null), 4000);
+  };
+
   // Handle new custom entries for inline editing
   const handleNewPrimaryMuscle = async (newMuscle: string) => {
     try {
@@ -1005,6 +1050,21 @@ export default function TrainerDashboard() {
                       AI Complete Metadata
                     </Button>
 
+                    <Button
+                      onClick={runBulkThumbnails}
+                      disabled={thumbProgress?.running}
+                      variant="outline"
+                    >
+                      {thumbProgress?.running ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      ) : (
+                        <Image className="mr-2 h-4 w-4" />
+                      )}
+                      {thumbProgress?.running
+                        ? `${thumbProgress.processed}/${thumbProgress.total} thumbnails`
+                        : "Generate Thumbnails"}
+                    </Button>
+
                     <Button 
                       onClick={() => setIsSimpleBulkUploadModalOpen(true)}
                       className="bg-green-600 hover:bg-green-700"
@@ -1030,6 +1090,26 @@ export default function TrainerDashboard() {
                         className="h-full rounded-full bg-blue-600 transition-all duration-500"
                         style={{
                           width: `${aiProgress.total ? Math.round((aiProgress.processed / aiProgress.total) * 100) : 0}%`,
+                        }}
+                      />
+                    </div>
+                  </div>
+                )}
+                {thumbProgress && (
+                  <div className="mt-3">
+                    <div className="flex items-center justify-between text-xs text-gray-600 mb-1">
+                      <span>
+                        {thumbProgress.running ? "Generating thumbnails..." : "Thumbnails complete"}
+                      </span>
+                      <span>
+                        {thumbProgress.processed} / {thumbProgress.total}
+                      </span>
+                    </div>
+                    <div className="h-2 w-full overflow-hidden rounded-full bg-gray-200">
+                      <div
+                        className="h-full rounded-full bg-gray-700 transition-all duration-500"
+                        style={{
+                          width: `${thumbProgress.total ? Math.round((thumbProgress.processed / thumbProgress.total) * 100) : 0}%`,
                         }}
                       />
                     </div>

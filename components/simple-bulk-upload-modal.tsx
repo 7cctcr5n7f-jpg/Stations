@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useRef } from "react";
+import { generateVideoThumbnail } from "@/lib/generate-thumbnail";
 import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -220,6 +221,20 @@ export function SimpleBulkUploadModal({ isOpen, onClose }: SimpleBulkUploadModal
 
         const result = await response.json();
         console.log(`✅ Successfully uploaded ${i + 1}/${files.length}: ${fileData.title}`);
+
+        // Auto-generate thumbnail from the local File still in memory.
+        try {
+          const localUrl = URL.createObjectURL(fileData.file);
+          const thumbBlob = await generateVideoThumbnail(localUrl, 1);
+          URL.revokeObjectURL(localUrl);
+          await fetch(`/api/videos/${result.id}/thumbnail`, {
+            method: "POST",
+            headers: { "content-type": "image/jpeg" },
+            body: thumbBlob,
+          });
+        } catch (thumbErr) {
+          console.warn("[simple-bulk] thumbnail generation failed:", thumbErr);
+        }
         
         setFiles(prev => prev.map((f, idx) => 
           idx === i ? { ...f, status: 'success', progress: 100 } : f
