@@ -19,6 +19,7 @@ export interface Video {
   secondaryMuscle?: string | null
   thumbnailUrl?: string | null
   lastUsed?: string | null
+  nextScheduled?: string | null
 }
 
 export interface Schedule {

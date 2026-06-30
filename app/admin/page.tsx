@@ -484,9 +484,9 @@ export default function TrainerDashboard() {
       }
     }
     
-    // Scheduled filter
+    // Scheduled filter — use nextScheduled from the video itself (future dates)
     if (videoFilters.scheduled) {
-      const isScheduled = schedules?.some(s => s.videoId === video.id) || false;
+      const isScheduled = !!video.nextScheduled;
       if (videoFilters.scheduled === 'scheduled' && !isScheduled) return false;
       if (videoFilters.scheduled === 'unscheduled' && isScheduled) return false;
     }
@@ -1180,16 +1180,10 @@ export default function TrainerDashboard() {
                               {formatTimeAgo(video.lastUsed)}
                             </td>
                             <td className="p-3">
-                              {scheduledDates.length > 0 ? (
-                                <div className="text-xs">
-                                  <span className="text-green-600 font-medium">{scheduledDates.length} dates</span>
-                                  <div className="text-xs text-gray-500">
-                                    {scheduledDates.slice(0, 1).map(date => 
-                                      new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-                                    ).join(', ')}
-                                    {scheduledDates.length > 1 && ` +${scheduledDates.length - 1}`}
-                                  </div>
-                                </div>
+                              {video.nextScheduled ? (
+                                <span className="text-xs text-green-600 font-medium">
+                                  {new Date(video.nextScheduled + "T00:00:00").toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                                </span>
                               ) : (
                                 <span className="text-xs text-gray-400">Not scheduled</span>
                               )}

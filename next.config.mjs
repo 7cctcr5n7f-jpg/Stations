@@ -9,15 +9,9 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
-  experimental: {
-    turbo: {
-      rules: {
-        "*.css": {
-          loaders: ["postcss-loader"],
-          as: "*.css",
-        },
-      },
-    },
+  // Disable Turbopack so Tailwind v3 PostCSS runs correctly in dev
+  turbopack: {
+    enabled: false,
   },
 }
 

@@ -45,7 +45,12 @@ export function mapVideo(row: any): Video {
     equipment: row.equipment ?? "",
     secondaryMuscle: row.secondary_muscle ?? null,
     thumbnailUrl: row.thumbnail_url ?? null,
-    lastUsed: row.last_used ?? null,
+    lastUsed: row.computed_last_used
+      ? (typeof row.computed_last_used === "string" ? row.computed_last_used : new Date(row.computed_last_used).toISOString())
+      : row.last_used ?? null,
+    nextScheduled: row.next_scheduled
+      ? (typeof row.next_scheduled === "string" ? row.next_scheduled : new Date(row.next_scheduled).toISOString().split("T")[0])
+      : null,
   }
 }
 
