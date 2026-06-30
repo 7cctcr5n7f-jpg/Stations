@@ -701,6 +701,10 @@ function TrainerDashboardInner() {
 
         // Stop when the server says there's nothing left to process
         if (data.done || data.remaining === 0) break;
+
+        // Small pause between batches so we don't immediately re-hit the
+        // AI Gateway rate limit — 1.5s gives the quota window time to reset.
+        await new Promise((r) => setTimeout(r, 1500));
       }
 
       const collectedTerms = Object.values(allUnknownMap);

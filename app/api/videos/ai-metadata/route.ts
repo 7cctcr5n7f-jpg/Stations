@@ -192,6 +192,23 @@ export async function POST(req: NextRequest) {
       } catch (err: any) {
         console.error(`[v0] AI metadata failed for video ${row.id}:`, err?.message)
         errors.push({ id: row.id, error: err?.message ?? "unknown error" })
+
+        // If this was a rate-limit error, stamp ai_generated_at so the video
+        // is not re-fetched in every subsequent batch, causing an infinite loop.
+        // The video will still show ai_confidence = null so a trainer can spot it.
+        const isRateLimit =
+          err?.message?.includes("rate-limit") ||
+          err?.message?.includes("429") ||
+          err?.name === "GatewayRateLimitError"
+        if (isRateLimit) {
+          try {
+            await sql`
+              UPDATE videos
+              SET ai_generated_at = NOW()
+              WHERE id = ${row.id} AND ai_generated_at IS NULL
+            `
+          } catch {}
+        }
       }
     }
 

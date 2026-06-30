@@ -6,11 +6,15 @@ import path from "path"
 import os from "os"
 import fs from "fs"
 import { type NextRequest, NextResponse } from "next/server"
-import ffmpegInstaller from "@ffmpeg-installer/ffmpeg"
-import ffmpeg from "fluent-ffmpeg"
 import { sql, mapVideo } from "@/lib/db"
 import { uploadToR2 } from "@/lib/r2"
 
+// Use require() so webpack does not attempt to bundle these native-binary
+// packages — they must be resolved at runtime via node_modules.
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const ffmpegInstaller = require("@ffmpeg-installer/ffmpeg") as { path: string }
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const ffmpeg = require("fluent-ffmpeg") as typeof import("fluent-ffmpeg")
 ffmpeg.setFfmpegPath(ffmpegInstaller.path)
 
 /**
