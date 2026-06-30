@@ -212,7 +212,12 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const remaining = Math.max(totalMatching - processed.length, 0)
+    // Re-query the true remaining count AFTER all updates (including rate-limit
+    // stamps) so the client gets an accurate picture and doesn't stop early.
+    const remainingRows = await sql`
+      SELECT COUNT(*)::int AS c FROM videos WHERE ai_generated_at IS NULL
+    `
+    const remaining = remainingRows[0]?.c ?? 0
     const unknownTerms = Object.values(unknownTermMap)
 
     return NextResponse.json({
@@ -220,8 +225,10 @@ export async function POST(req: NextRequest) {
       processed,
       errors,
       remaining,
-      done: processed.length === 0 || remaining === 0,
-      unknownTerms,       // [ { term, videoIds, videoTitles } ]
+      // Only signal done when there is genuinely nothing left — never stop
+      // just because this batch had zero successes (e.g. all rate-limited).
+      done: remaining === 0,
+      unknownTerms,
       glossarySize: glossary.length,
     })
   } catch (error: any) {

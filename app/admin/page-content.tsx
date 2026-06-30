@@ -702,9 +702,11 @@ function TrainerDashboardInner() {
         // Stop when the server says there's nothing left to process
         if (data.done || data.remaining === 0) break;
 
-        // Small pause between batches so we don't immediately re-hit the
-        // AI Gateway rate limit — 1.5s gives the quota window time to reset.
-        await new Promise((r) => setTimeout(r, 1500));
+        // If the whole batch was rate-limited (zero successes), wait longer
+        // before retrying so the AI Gateway quota window has time to reset.
+        const batchDelay = (data.processedCount ?? 0) === 0 ? 10000 : 1500;
+        setAiProgress((p) => p ? ({ ...p, rateLimited: (data.processedCount ?? 0) === 0 }) : p);
+        await new Promise((r) => setTimeout(r, batchDelay));
       }
 
       const collectedTerms = Object.values(allUnknownMap);
@@ -1126,7 +1128,11 @@ function TrainerDashboardInner() {
                   <div className="mt-3">
                     <div className="flex items-center justify-between text-xs text-gray-600 mb-1">
                       <span>
-                        {aiProgress.running ? "Generating AI metadata..." : "AI metadata complete"}
+                        {aiProgress.running
+  ? (aiProgress as any).rateLimited
+    ? "Rate limited — waiting to retry..."
+    : "Generating AI metadata..."
+  : "AI metadata complete"}
                       </span>
                       <span>
                         {aiProgress.processed} / {aiProgress.total}
