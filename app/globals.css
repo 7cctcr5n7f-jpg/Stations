@@ -1,0 +1,101 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 0 0% 3.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 3.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 3.9%;
+    --primary: 0 0% 9%;
+    --primary-foreground: 0 0% 98%;
+    --secondary: 0 0% 96.1%;
+    --secondary-foreground: 0 0% 9%;
+    --muted: 0 0% 96.1%;
+    --muted-foreground: 0 0% 45.1%;
+    --accent: 0 0% 96.1%;
+    --accent-foreground: 0 0% 9%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 0 0% 89.8%;
+    --input: 0 0% 89.8%;
+    --ring: 0 0% 3.9%;
+    --radius: 0.5rem;
+  }
+
+  .dark {
+    --background: 0 0% 3.9%;
+    --foreground: 0 0% 98%;
+    --card: 0 0% 3.9%;
+    --card-foreground: 0 0% 98%;
+    --popover: 0 0% 3.9%;
+    --popover-foreground: 0 0% 98%;
+    --primary: 0 0% 98%;
+    --primary-foreground: 0 0% 9%;
+    --secondary: 0 0% 14.9%;
+    --secondary-foreground: 0 0% 98%;
+    --muted: 0 0% 14.9%;
+    --muted-foreground: 0 0% 63.9%;
+    --accent: 0 0% 14.9%;
+    --accent-foreground: 0 0% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 0 0% 14.9%;
+    --input: 0 0% 14.9%;
+    --ring: 0 0% 83.1%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+/* Room color palette (rounds 1-12) used dynamically across the app */
+@layer utilities {
+  .room-color-1 { background-color: #ef4444; color: #fff; }
+  .room-color-2 { background-color: #f97316; color: #fff; }
+  .room-color-3 { background-color: #eab308; color: #1f2937; }
+  .room-color-4 { background-color: #22c55e; color: #fff; }
+  .room-color-5 { background-color: #14b8a6; color: #fff; }
+  .room-color-6 { background-color: #3b82f6; color: #fff; }
+  .room-color-7 { background-color: #6366f1; color: #fff; }
+  .room-color-8 { background-color: #a855f7; color: #fff; }
+  .room-color-9 { background-color: #ec4899; color: #fff; }
+  .room-color-10 { background-color: #0ea5e9; color: #fff; }
+  .room-color-11 { background-color: #84cc16; color: #1f2937; }
+  .room-color-12 { background-color: #f43f5e; color: #fff; }
+
+  .room-border-1 { border-color: #ef4444; }
+  .room-border-2 { border-color: #f97316; }
+  .room-border-3 { border-color: #eab308; }
+  .room-border-4 { border-color: #22c55e; }
+  .room-border-5 { border-color: #14b8a6; }
+  .room-border-6 { border-color: #3b82f6; }
+  .room-border-7 { border-color: #6366f1; }
+  .room-border-8 { border-color: #a855f7; }
+  .room-border-9 { border-color: #ec4899; }
+  .room-border-10 { border-color: #0ea5e9; }
+  .room-border-11 { border-color: #84cc16; }
+  .room-border-12 { border-color: #f43f5e; }
+
+  .room-bg-1 { background-color: #fef2f2; }
+  .room-bg-2 { background-color: #fff7ed; }
+  .room-bg-3 { background-color: #fefce8; }
+  .room-bg-4 { background-color: #f0fdf4; }
+  .room-bg-5 { background-color: #f0fdfa; }
+  .room-bg-6 { background-color: #eff6ff; }
+  .room-bg-7 { background-color: #eef2ff; }
+  .room-bg-8 { background-color: #faf5ff; }
+  .room-bg-9 { background-color: #fdf2f8; }
+  .room-bg-10 { background-color: #f0f9ff; }
+  .room-bg-11 { background-color: #f7fee7; }
+  .room-bg-12 { background-color: #fff1f2; }
+}
