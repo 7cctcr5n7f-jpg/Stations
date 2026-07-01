@@ -440,11 +440,10 @@ function TrainerDashboardInner() {
     if (!videos) return [];
     const parts = new Set<string>();
     videos.forEach(video => {
-      if (video.bodyPart) {
-        video.bodyPart.split(',').forEach(part => {
-          const trimmed = part.trim();
-          if (trimmed) parts.add(trimmed);
-        });
+      // video.muscleGroups is the canonical array of specific muscle names.
+      // video.bodyPart is an alias for video.category — do NOT use it here.
+      if (Array.isArray(video.muscleGroups)) {
+        video.muscleGroups.forEach(m => { if (m) parts.add(m.trim()); });
       }
     });
     return Array.from(parts).sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
@@ -503,17 +502,12 @@ function TrainerDashboardInner() {
       if (!hasMatch) return false;
     }
 
-    // Check primary muscles (bodyPart) - multiple selection
+    // Check muscles — use canonical muscleGroups array (bodyPart is a category alias, not muscles)
     if (videoFilters.bodyPart.length > 0) {
-      const videoBodyParts = video.bodyPart ? video.bodyPart.split(',').map(part => part.trim()) : [];
-      const hasMatch = videoFilters.bodyPart.some(filterPart => {
-        if (filterPart === 'General') {
-          return !video.bodyPart || video.bodyPart === 'General';
-        }
-        return videoBodyParts.some(videoPart => 
-          videoPart.toLowerCase() === filterPart.toLowerCase()
-        );
-      });
+      const videoMuscles = Array.isArray(video.muscleGroups) ? video.muscleGroups.map((m: string) => m.trim().toLowerCase()) : [];
+      const hasMatch = videoFilters.bodyPart.some(filterPart =>
+        videoMuscles.includes(filterPart.toLowerCase())
+      );
       if (!hasMatch) return false;
     }
     
