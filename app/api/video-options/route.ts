@@ -23,7 +23,12 @@ export async function GET() {
       else if (row.category === "workoutMethod") workoutMethods.push(row.value)
     }
 
-    return NextResponse.json({ bodyParts, secondaryMuscles, equipment, muscleGroups, workoutMethods })
+    return NextResponse.json({ bodyParts, secondaryMuscles, equipment, muscleGroups, workoutMethods }, {
+      headers: {
+        // Edge-cache for 60 s; video options change only when a trainer adds/edits them.
+        "Cache-Control": "s-maxage=60, stale-while-revalidate=300",
+      },
+    })
   } catch (error) {
     console.error("[v0] Failed to fetch video options:", error)
     return NextResponse.json({ message: "Failed to fetch video options" }, { status: 500 })
