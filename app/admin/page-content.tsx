@@ -1473,25 +1473,7 @@ function TrainerDashboardInner() {
                                 />
                               ) : (
                                 <div className="flex flex-wrap gap-1 items-center">
-                                  {/* Category pill */}
-                                  {video.category ? (
-                                    <button
-                                      className="rounded px-1.5 py-0.5 text-[10px] font-semibold bg-green-50 text-green-800 hover:bg-green-100 transition-colors border border-green-200"
-                                      onClick={() => setInlineEditingField({ videoId: video.id, field: "bodyPart" })}
-                                      title="Edit category"
-                                    >
-                                      {video.category}
-                                    </button>
-                                  ) : (
-                                    <button
-                                      className="rounded px-1.5 py-0.5 text-[10px] bg-red-50 text-red-600 hover:bg-red-100 transition-colors"
-                                      onClick={() => setInlineEditingField({ videoId: video.id, field: "bodyPart" })}
-                                      title="Set category"
-                                    >
-                                      + set
-                                    </button>
-                                  )}
-                                  {/* Muscle group pills — deduplicated vs the Cat. column, broad category names excluded */}
+                                  {/* Muscle group pills — granular secondary muscles only, no broad category terms */}
                                   {(() => {
                                     // Broad category-level terms that belong in the Cat. column only
                                     const BROAD_TERMS = new Set([
