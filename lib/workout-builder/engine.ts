@@ -1,5 +1,6 @@
 import type { Video } from "@/lib/shared/schema"
 import type {
+  BuilderParams,
   EngineInput,
   GeneratedRound,
   HeartRate,
@@ -150,6 +151,46 @@ function daysSince(iso: string | null | undefined, now: Date): number | null {
   return Math.floor((now.getTime() - then) / (1000 * 60 * 60 * 24))
 }
 
+// ---- params-derived modifiers ----------------------------------------------
+
+interface EngineModifiers {
+  /** Fraction 0–1 representing HIIT weight (1 = full HIIT bias). */
+  hiitBias: number
+  /** Whether this is a boxing-focused run. */
+  boxingFocused: boolean
+  /** Whether this is a strength-focused run. */
+  strengthFocused: boolean
+  /** Whether this is a functional-fitness run. */
+  functionalFocused: boolean
+  /** Intensity override: High for Advanced, Low for Beginner, null for Intermediate. */
+  intensityOverride: HeartRate | null
+  /** Boxing volume fraction 0–1 for second-exercise selection on boxing rounds. */
+  boxingVolumeFraction: number
+}
+
+function resolveModifiers(params: BuilderParams | undefined): EngineModifiers {
+  if (!params) {
+    return {
+      hiitBias: 0.6,
+      boxingFocused: false,
+      strengthFocused: false,
+      functionalFocused: false,
+      intensityOverride: null,
+      boxingVolumeFraction: 0.5,
+    }
+  }
+  return {
+    hiitBias: params.hiitStrengthRatio / 100,
+    boxingFocused: params.focus === "Boxing Focused",
+    strengthFocused: params.focus === "Strength Focused",
+    functionalFocused: params.focus === "Functional Fitness",
+    intensityOverride:
+      params.difficulty === "Advanced" ? "red" :
+      params.difficulty === "Beginner" ? "green" : null,
+    boxingVolumeFraction: params.boxingVolume / 100,
+  }
+}
+
 // ---- scoring ---------------------------------------------------------------
 
 interface ScoredCandidate {
@@ -176,9 +217,18 @@ function scoreCandidate(
   lastScheduledIso: string | null,
   usedEquipmentCounts: Record<string, number>,
   now: Date,
+  mods: EngineModifiers,
 ): ScoredCandidate {
   const reasons: string[] = []
   let score = 0
+
+  const cat = exerciseCategory(video)
+  const isHiit = cat.includes("hiit") || norm(video.exerciseType).includes("hiit") || norm(video.exerciseType).includes("cardio")
+  const isStrength = cat.includes("chest") || cat.includes("back") || cat.includes("shoulder") ||
+    cat.includes("bicep") || cat.includes("tricep") || cat.includes("legs") || cat.includes("arm") ||
+    norm(video.exerciseType).includes("strength") || norm(video.exerciseType).includes("hypertrophy")
+  const isBoxingEx = isBoxingExercise(video)
+  const isFunctional = norm(video.movementPattern).includes("functional") || norm(video.exerciseType).includes("functional")
 
   // 1) Template muscle match
   if (template && (template.primaryMuscles.length || template.secondaryMuscles.length)) {
@@ -193,7 +243,6 @@ function scoreCandidate(
       reasons.push(`Hits a secondary muscle group for today`)
     }
   } else {
-    // No template -> neutral credit so generation still works
     score += W.templateMuscle * 0.4
   }
 
@@ -207,7 +256,6 @@ function scoreCandidate(
     score += W.rotationFreshness
     reasons.push(`Last used ${since}d ago (outside ${reuseWeeks}-week rotation)`)
   } else {
-    // Linearly penalize recency inside the window
     const frac = since / windowDays
     score += W.rotationFreshness * frac
     reasons.push(`Used ${since}d ago — partially fresh`)
@@ -218,7 +266,7 @@ function scoreCandidate(
   const pref = cfg.preferredEquipment.map(norm)
   const avoid = cfg.avoidEquipment.map(norm)
   if (avoid.length && tokens.some((t) => avoid.includes(t))) {
-    score -= W.equipmentPref // strong negative; usually filtered out earlier
+    score -= W.equipmentPref
     reasons.push("Uses avoided equipment")
   } else if (pref.length && tokens.some((t) => pref.includes(t))) {
     score += W.equipmentPref
@@ -227,8 +275,11 @@ function scoreCandidate(
     score += W.equipmentPref * 0.5
   }
 
-  // 4) Intensity / heart-rate fit
-  const desiredHr = cfg.preferredHeartRate ?? (cfg.preferredIntensity ? INTENSITY_TO_HR[cfg.preferredIntensity] : null)
+  // 4) Intensity / heart-rate fit — builder difficulty can override per-station preference
+  const desiredHr =
+    mods.intensityOverride ??
+    cfg.preferredHeartRate ??
+    (cfg.preferredIntensity ? INTENSITY_TO_HR[cfg.preferredIntensity] : null)
   if (desiredHr && video.intensity) {
     const videoHr = INTENSITY_TO_HR[video.intensity as Intensity]
     if (videoHr === desiredHr) {
@@ -259,6 +310,34 @@ function scoreCandidate(
     score += W.variety
   } else {
     score += W.variety * 0.4
+  }
+
+  // 7) Builder params bonus/penalty — layered on top of the base score
+  // HIIT bias: favour HIIT exercises proportionally; penalise strength when HIIT heavy
+  if (isHiit && mods.hiitBias > 0.5) {
+    score += Math.round((mods.hiitBias - 0.5) * 20) // up to +10
+    if (mods.hiitBias > 0.7) reasons.push("Fits HIIT-focused programme")
+  } else if (isStrength && mods.hiitBias < 0.5) {
+    score += Math.round((0.5 - mods.hiitBias) * 20) // up to +10
+    if (mods.hiitBias < 0.3) reasons.push("Fits strength-focused programme")
+  }
+
+  // Boxing focus bonus
+  if (mods.boxingFocused && isBoxingEx) {
+    score += 8
+    reasons.push("Boxing-focused programme")
+  }
+
+  // Functional bonus
+  if (mods.functionalFocused && isFunctional) {
+    score += 6
+    reasons.push("Functional Fitness programme")
+  }
+
+  // Strength-focused: extra credit for strength/hypertrophy exercises
+  if (mods.strengthFocused && isStrength) {
+    score += 6
+    reasons.push("Strength-focused programme")
   }
 
   // Clamp 0-100
@@ -337,7 +416,10 @@ export function generateWorkout(input: EngineInput): WorkoutDraft {
     videos,
     lastScheduledById,
     lockedByRoomId = {},
+    params,
   } = input
+
+  const mods = resolveModifiers(params)
 
   const limits: Record<string, number> = {}
   for (const l of equipmentLimits) limits[norm(l.equipment)] = l.maxStations
@@ -383,7 +465,7 @@ export function generateWorkout(input: EngineInput): WorkoutDraft {
     const scoreAll = (pool: Video[]) =>
       pool
         .map((v) =>
-          scoreCandidate(v, cfg, template, settings.reuseWeeks, lastScheduledById[v.id] ?? null, usedEquipmentCounts, now),
+          scoreCandidate(v, cfg, template, settings.reuseWeeks, lastScheduledById[v.id] ?? null, usedEquipmentCounts, now, mods),
         )
         .sort((a, b) => b.score - a.score)
 

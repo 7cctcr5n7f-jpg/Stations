@@ -84,6 +84,52 @@ export interface WorkoutDraft {
   warnings: string[]
 }
 
+// ---- Builder session parameters (chosen in the UI per-generation) ----------
+
+export type GenerationMode = "single" | "week"
+
+export type WorkoutFocus =
+  | "Balanced"
+  | "HIIT Focused"
+  | "Strength Focused"
+  | "Functional Fitness"
+  | "Boxing Focused"
+  | "Conditioning Focused"
+  | "Endurance Focused"
+
+export type DifficultyLevel = "Beginner" | "Intermediate" | "Advanced"
+
+/** Parameters the trainer picks in the Builder UI for a single generation run.
+ *  These layer on top of (and never replace) the permanent BuilderConfig rules. */
+export interface BuilderParams {
+  mode: GenerationMode
+  /** Start date: yyyy-mm-dd. For single = target day; for week = Monday of the week. */
+  startDate: string
+  focus: WorkoutFocus
+  /** 0 = 100% Strength, 100 = 100% HIIT. Default 60. */
+  hiitStrengthRatio: number
+  /** 0–100. Influences how many boxing combos are included. Default 50. */
+  boxingVolume: number
+  /** 0–100. Influences functional / movement-pattern variety. Default 50. */
+  functionalTraining: number
+  difficulty: DifficultyLevel
+  includeWeeklyChallenge: boolean
+  /** Minimum acceptable programme score (per day). Default 80. */
+  minScore: number
+}
+
+export const DEFAULT_BUILDER_PARAMS: BuilderParams = {
+  mode: "week",
+  startDate: "",
+  focus: "Balanced",
+  hiitStrengthRatio: 60,
+  boxingVolume: 50,
+  functionalTraining: 50,
+  difficulty: "Intermediate",
+  includeWeeklyChallenge: true,
+  minScore: 80,
+}
+
 // Inputs the engine needs to generate a workout.
 export interface EngineInput {
   date: string
@@ -97,4 +143,6 @@ export interface EngineInput {
   lastScheduledById: Record<number, string | null>
   // Existing rounds to preserve (locked picks) keyed by roomId
   lockedByRoomId?: Record<number, GeneratedRound>
+  // Optional session parameters from the builder UI
+  params?: BuilderParams
 }
