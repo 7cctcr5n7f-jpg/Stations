@@ -46,9 +46,45 @@ async function loadGlossary(): Promise<DictionaryGlossaryEntry[]> {
     `
     return rows.map((r: any) => ({ alias: r.alias, canonical: r.canonical, category: r.category }))
   } catch {
-    // Table may not exist on first run — non-fatal, AI falls back to general knowledge
     return []
   }
+}
+
+/**
+ * A video needs (re)filling if ANY of these key fields is missing.
+ * Written as a literal helper to avoid sql-fragment composition issues —
+ * we inline the exact same SQL text in every query that needs it.
+ *
+ * NOTE: We intentionally do NOT include ai_generated_at IS NULL here.
+ * A video with ai_generated_at set but missing movement_pattern, intensity,
+ * or muscle_groups still needs processing.  The old code stamped
+ * ai_generated_at on rate-limit errors without filling the fields, which
+ * caused those videos to fall out of the "needs fill" set prematurely.
+ */
+function needsFillRows(limit: number) {
+  return sql`
+    SELECT * FROM videos
+    WHERE (
+      movement_pattern IS NULL OR movement_pattern = ''
+      OR intensity IS NULL OR intensity = ''
+      OR (muscle_groups IS NULL OR array_length(muscle_groups, 1) IS NULL OR array_length(muscle_groups, 1) = 0)
+    )
+    ORDER BY
+      (CASE WHEN ai_generated_at IS NULL THEN 0 ELSE 1 END) ASC,
+      id ASC
+    LIMIT ${limit}
+  `
+}
+
+function countNeedsFill() {
+  return sql`
+    SELECT COUNT(*)::int AS c FROM videos
+    WHERE (
+      movement_pattern IS NULL OR movement_pattern = ''
+      OR intensity IS NULL OR intensity = ''
+      OR (muscle_groups IS NULL OR array_length(muscle_groups, 1) IS NULL OR array_length(muscle_groups, 1) = 0)
+    )
+  `
 }
 
 export async function POST(req: NextRequest) {
@@ -58,21 +94,14 @@ export async function POST(req: NextRequest) {
     const ids: number[] | undefined = Array.isArray(body.ids)
       ? body.ids.map((n: any) => Number(n)).filter((n: number) => Number.isFinite(n))
       : undefined
-    const batchSize: number = Math.min(Math.max(Number(body.batchSize) || 8, 1), 15)
+    // Always process ONE video per request to avoid hitting Vercel AI Gateway
+    // rate limits. Concurrent AI calls (even within the same request) share
+    // the same per-minute token quota — firing 5 at once exhausts it instantly.
+    // The client loops calling this endpoint, creating natural pacing.
+    const batchSize = 1
 
     // Load the exercise dictionary once for the whole batch
     const glossary = await loadGlossary()
-
-    // A video needs filling if it is missing ANY of the key derived fields,
-    // regardless of whether ai_generated_at was set by an older route version.
-    const NEEDS_FILL_CONDITION = sql`
-      (
-        ai_generated_at IS NULL
-        OR movement_pattern IS NULL OR movement_pattern = ''
-        OR intensity IS NULL OR intensity = ''
-        OR (muscle_groups IS NULL OR array_length(muscle_groups, 1) IS NULL OR array_length(muscle_groups, 1) = 0)
-      )
-    `
 
     // Determine which videos to process this batch.
     let batch: any[]
@@ -89,25 +118,14 @@ export async function POST(req: NextRequest) {
       `
       totalMatching = countRows[0]?.c ?? 0
     } else {
-      // Fill mode: process any video missing one or more key fields
-      batch = await sql`
-        SELECT * FROM videos
-        WHERE ${NEEDS_FILL_CONDITION}
-        ORDER BY
-          -- Prioritise never-processed first, then by missing fields count
-          (CASE WHEN ai_generated_at IS NULL THEN 0 ELSE 1 END) ASC,
-          id ASC
-        LIMIT ${batchSize}
-      `
-      const countRows = await sql`
-        SELECT COUNT(*)::int AS c FROM videos WHERE ${NEEDS_FILL_CONDITION}
-      `
+      // Fill mode: inline conditions to avoid sql-fragment composition issues.
+      batch = await needsFillRows(batchSize)
+      const countRows = await countNeedsFill()
       totalMatching = countRows[0]?.c ?? 0
     }
 
     const processed: any[] = []
     const errors: { id: number; error: string }[] = []
-    // Accumulate unknown terms across the whole batch, keyed by term for dedup
     const unknownTermMap: Record<string, { term: string; videoIds: number[]; videoTitles: string[] }> = {}
 
     for (const row of batch) {
@@ -119,7 +137,6 @@ export async function POST(req: NextRequest) {
             bodyPart: row.body_part,
             equipment: row.equipment,
             secondaryMuscle: row.secondary_muscle,
-            // New fields — pass through as hints so the model has context
             category: row.category ?? undefined,
             muscleGroups: Array.isArray(row.muscle_groups) && row.muscle_groups.length > 0
               ? row.muscle_groups
@@ -161,13 +178,11 @@ export async function POST(req: NextRequest) {
         const resolvedExerciseType = isHiit ? "HIIT" : meta.exerciseType
         const resolvedCategory = isHiit ? "HIIT" : (meta.category ?? meta.exerciseType)
 
-        // muscleGroups — always use what the AI returned; ensure at least one entry.
         const resolvedMuscleGroups: string[] =
           Array.isArray(meta.muscleGroups) && meta.muscleGroups.length > 0
             ? meta.muscleGroups
             : []
 
-        // workoutMethods — ensure 'Standard' is always present.
         const resolvedWorkoutMethods: string[] = Array.isArray(meta.workoutMethods)
           ? (meta.workoutMethods.includes("Standard") ? meta.workoutMethods : ["Standard", ...meta.workoutMethods])
           : ["Standard"]
@@ -188,13 +203,8 @@ export async function POST(req: NextRequest) {
         const v = (key: string) =>
           manualFields.includes(key) ? row[FIELD_TO_COLUMN[key]] : aiValues[key]
 
-        // Determine whether to update category, muscle_groups, workout_methods.
-        // In regenerate mode: always write (unless trainer has manually locked the field).
-        // In fill mode: only write when the field is missing/placeholder.
         const isRegenerate = mode === "regenerate"
 
-        // Fill mode: write if the field is missing; regenerate mode: always write
-        // (unless the trainer has manually locked the field).
         const isMissingMovement = !row.movement_pattern || row.movement_pattern === ""
         const isMissingIntensity = !row.intensity || row.intensity === ""
         const isMissingMuscles = !row.muscle_groups || row.muscle_groups.length === 0
@@ -243,40 +253,15 @@ export async function POST(req: NextRequest) {
       } catch (err: any) {
         console.error(`[v0] AI metadata failed for video ${row.id}:`, err?.message)
         errors.push({ id: row.id, error: err?.message ?? "unknown error" })
-
-        // If this was a rate-limit error, stamp ai_generated_at so the video
-        // is not re-fetched in every subsequent batch, causing an infinite loop.
-        // The video will still show ai_confidence = null so a trainer can spot it.
-        const isRateLimit =
-          err?.message?.includes("rate-limit") ||
-          err?.message?.includes("429") ||
-          err?.name === "GatewayRateLimitError"
-        if (isRateLimit) {
-          try {
-            // Stamp ai_generated_at so this video doesn't loop forever.
-            // The missing fields (movement_pattern, intensity, muscle_groups) will
-            // still be empty and will be retried on the next run.
-            await sql`
-              UPDATE videos
-              SET ai_generated_at = COALESCE(ai_generated_at, NOW())
-              WHERE id = ${row.id}
-            `
-          } catch {}
-        }
+        // IMPORTANT: Do NOT stamp ai_generated_at on errors.
+        // Doing so would hide the video from future "needs fill" queries
+        // even though its movement_pattern / intensity / muscle_groups are
+        // still empty.  The video will be retried on the next batch.
       }
     }
 
-    // Re-query the true remaining count AFTER all updates so the client gets
-    // an accurate picture. Count any video still missing a key field.
-    const remainingRows = await sql`
-      SELECT COUNT(*)::int AS c FROM videos
-      WHERE (
-        ai_generated_at IS NULL
-        OR movement_pattern IS NULL OR movement_pattern = ''
-        OR intensity IS NULL OR intensity = ''
-        OR (muscle_groups IS NULL OR array_length(muscle_groups, 1) IS NULL OR array_length(muscle_groups, 1) = 0)
-      )
-    `
+    // Re-query the true remaining count AFTER all updates.
+    const remainingRows = await countNeedsFill()
     const remaining = remainingRows[0]?.c ?? 0
     const unknownTerms = Object.values(unknownTermMap)
 
@@ -285,8 +270,7 @@ export async function POST(req: NextRequest) {
       processed,
       errors,
       remaining,
-      // Only signal done when there is genuinely nothing left — never stop
-      // just because this batch had zero successes (e.g. all rate-limited).
+      // Signal done only when nothing is genuinely left.
       done: remaining === 0,
       unknownTerms,
       glossarySize: glossary.length,
@@ -299,15 +283,7 @@ export async function POST(req: NextRequest) {
 
 export async function GET() {
   try {
-    const rows = await sql`
-      SELECT COUNT(*)::int AS c FROM videos
-      WHERE (
-        ai_generated_at IS NULL
-        OR movement_pattern IS NULL OR movement_pattern = ''
-        OR intensity IS NULL OR intensity = ''
-        OR (muscle_groups IS NULL OR array_length(muscle_groups, 1) IS NULL OR array_length(muscle_groups, 1) = 0)
-      )
-    `
+    const rows = await countNeedsFill()
     return NextResponse.json({ needsReview: rows[0]?.c ?? 0 })
   } catch (error) {
     console.error("[v0] /api/videos/ai-metadata GET error:", error)

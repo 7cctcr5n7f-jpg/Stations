@@ -440,11 +440,10 @@ function TrainerDashboardInner() {
     if (!videos) return [];
     const parts = new Set<string>();
     videos.forEach(video => {
-      if (video.bodyPart) {
-        video.bodyPart.split(',').forEach(part => {
-          const trimmed = part.trim();
-          if (trimmed) parts.add(trimmed);
-        });
+      // video.muscleGroups is the canonical array of specific muscle names.
+      // video.bodyPart is an alias for video.category — do NOT use it here.
+      if (Array.isArray(video.muscleGroups)) {
+        video.muscleGroups.forEach(m => { if (m) parts.add(m.trim()); });
       }
     });
     return Array.from(parts).sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
@@ -503,17 +502,12 @@ function TrainerDashboardInner() {
       if (!hasMatch) return false;
     }
 
-    // Check primary muscles (bodyPart) - multiple selection
+    // Check muscles — use canonical muscleGroups array (bodyPart is a category alias, not muscles)
     if (videoFilters.bodyPart.length > 0) {
-      const videoBodyParts = video.bodyPart ? video.bodyPart.split(',').map(part => part.trim()) : [];
-      const hasMatch = videoFilters.bodyPart.some(filterPart => {
-        if (filterPart === 'General') {
-          return !video.bodyPart || video.bodyPart === 'General';
-        }
-        return videoBodyParts.some(videoPart => 
-          videoPart.toLowerCase() === filterPart.toLowerCase()
-        );
-      });
+      const videoMuscles = Array.isArray(video.muscleGroups) ? video.muscleGroups.map((m: string) => m.trim().toLowerCase()) : [];
+      const hasMatch = videoFilters.bodyPart.some(filterPart =>
+        videoMuscles.includes(filterPart.toLowerCase())
+      );
       if (!hasMatch) return false;
     }
     
@@ -694,67 +688,92 @@ function TrainerDashboardInner() {
       let processed = 0;
       let consecutiveErrors = 0;
       let safety = 0;
-      // Accumulate unknown terms across all batches (deduped by term string)
       const allUnknownMap: Record<string, UnknownTerm> = {};
-      // Keep going until the server says done OR we have too many consecutive failures
-      while (safety < 500 && consecutiveErrors < 3) {
+
+      // Process one video per request. Single-call-per-request is the only
+      // reliable way to avoid Vercel AI Gateway per-minute rate limits —
+      // batching multiple generateObject calls in one request fires them all
+      // concurrently and exhausts the quota immediately.
+      let lastErrorMessage = "";
+
+      while (safety < 2000 && consecutiveErrors < 5) {
         safety++;
         let data: any = null;
         try {
-          const res = await apiRequest("POST", "/api/videos/ai-metadata", { mode: "fill", batchSize: 4 });
+          const res = await apiRequest("POST", "/api/videos/ai-metadata", { mode: "fill" });
           if (!res.ok) {
             consecutiveErrors++;
-            console.warn(`[v0] AI metadata batch ${safety} returned ${res.status} — retrying (${consecutiveErrors}/3)`);
-            await new Promise((r) => setTimeout(r, 2000));
+            await new Promise((r) => setTimeout(r, 2000 * consecutiveErrors));
             continue;
           }
           data = await res.json();
-          consecutiveErrors = 0; // reset on success
-        } catch (fetchErr) {
+          consecutiveErrors = 0;
+          lastErrorMessage = "";
+        } catch (fetchErr: any) {
           consecutiveErrors++;
-          console.warn(`[v0] AI metadata fetch error batch ${safety}:`, fetchErr);
-          await new Promise((r) => setTimeout(r, 2000));
+          lastErrorMessage = fetchErr?.message ?? "Network error";
+          await new Promise((r) => setTimeout(r, 2000 * consecutiveErrors));
           continue;
         }
 
         processed += data.processedCount ?? 0;
-        setAiProgress({ running: true, processed: Math.min(processed, total), total });
 
-        // Merge unknown terms from this batch
+        // If all videos in this batch errored, capture the first error message.
+        if ((data.processedCount ?? 0) === 0 && data.errors?.length > 0) {
+          consecutiveErrors++;
+          lastErrorMessage = data.errors[0]?.error ?? "AI generation failed";
+          await new Promise((r) => setTimeout(r, 2000 * consecutiveErrors));
+          continue;
+        }
+        consecutiveErrors = 0;
+
+        // Server re-queries remaining after every update — use it for the bar.
+        const remaining: number = data.remaining ?? 0;
+        setAiProgress({ running: true, processed: total - remaining, total });
+
+        // Merge unknown terms
         if (Array.isArray(data.unknownTerms)) {
           for (const t of data.unknownTerms as UnknownTerm[]) {
             if (!allUnknownMap[t.term]) {
               allUnknownMap[t.term] = { term: t.term, videoIds: [], videoTitles: [] };
             }
             for (const id of t.videoIds) {
-              if (!allUnknownMap[t.term].videoIds.includes(id)) {
-                allUnknownMap[t.term].videoIds.push(id);
-              }
+              if (!allUnknownMap[t.term].videoIds.includes(id)) allUnknownMap[t.term].videoIds.push(id);
             }
             for (const title of t.videoTitles) {
-              if (!allUnknownMap[t.term].videoTitles.includes(title)) {
-                allUnknownMap[t.term].videoTitles.push(title);
-              }
+              if (!allUnknownMap[t.term].videoTitles.includes(title)) allUnknownMap[t.term].videoTitles.push(title);
             }
           }
         }
 
-        // Refresh the table as batches complete so trainers see progress live.
-        queryClient.invalidateQueries({ queryKey: ["/api/videos"] });
+        // Refresh table every 10 videos so the trainer sees progress live.
+        if (safety % 10 === 0) {
+          queryClient.invalidateQueries({ queryKey: ["/api/videos"] });
+        }
 
-        // Stop when the server says there's nothing left to process
-        if (data.done || data.remaining === 0) break;
+        if (data.done || remaining === 0) break;
 
-        // If the whole batch was rate-limited (zero successes), wait longer
-        // before retrying so the AI Gateway quota window has time to reset.
-        const batchDelay = (data.processedCount ?? 0) === 0 ? 10000 : 1500;
-        setAiProgress((p) => p ? ({ ...p, rateLimited: (data.processedCount ?? 0) === 0 }) : p);
-        await new Promise((r) => setTimeout(r, batchDelay));
+        // Small pause between calls to stay within gateway rate limits.
+        await new Promise((r) => setTimeout(r, 300));
       }
+
+      // Final refresh so the table reflects all changes.
+      queryClient.invalidateQueries({ queryKey: ["/api/videos"] });
 
       const collectedTerms = Object.values(allUnknownMap);
       if (collectedTerms.length > 0) {
         setUnknownTerms(collectedTerms);
+      }
+
+      // If we stopped due to consecutive errors, show what went wrong.
+      if (consecutiveErrors >= 5) {
+        setAiProgress(null);
+        toast({
+          title: "AI metadata stopped",
+          description: lastErrorMessage || "Too many consecutive errors. Please try again.",
+          variant: "destructive",
+        });
+        return;
       }
 
       setAiProgress({ running: false, processed: total, total });

@@ -84,7 +84,9 @@ export const exerciseMetadataSchema = z.object({
 
 export type ExerciseMetadata = z.infer<typeof exerciseMetadataSchema>
 
-export const AI_MODEL = "openai/gpt-4o-mini"
+// openai/gpt-4o-mini is rate-limited on the Vercel AI Gateway free tier.
+// anthropic/claude-haiku-4-5 is available without rate limits under the same gateway.
+export const AI_MODEL = "anthropic/claude-haiku-4-5"
 
 export interface VideoForAI {
   id: number
