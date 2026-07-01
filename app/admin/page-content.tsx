@@ -693,32 +693,39 @@ function TrainerDashboardInner() {
 
       let processed = 0;
       let consecutiveErrors = 0;
+      // Track batches with zero progress to detect true "stuck" situations
+      let emptyBatches = 0;
       let safety = 0;
-      // Accumulate unknown terms across all batches (deduped by term string)
       const allUnknownMap: Record<string, UnknownTerm> = {};
-      // Keep going until the server says done OR we have too many consecutive failures
-      while (safety < 500 && consecutiveErrors < 3) {
+
+      while (safety < 500 && consecutiveErrors < 5 && emptyBatches < 3) {
         safety++;
         let data: any = null;
         try {
-          const res = await apiRequest("POST", "/api/videos/ai-metadata", { mode: "fill", batchSize: 4 });
+          const res = await apiRequest("POST", "/api/videos/ai-metadata", { mode: "fill", batchSize: 5 });
           if (!res.ok) {
             consecutiveErrors++;
-            console.warn(`[v0] AI metadata batch ${safety} returned ${res.status} — retrying (${consecutiveErrors}/3)`);
-            await new Promise((r) => setTimeout(r, 2000));
+            await new Promise((r) => setTimeout(r, 3000 * consecutiveErrors));
             continue;
           }
           data = await res.json();
-          consecutiveErrors = 0; // reset on success
+          consecutiveErrors = 0;
         } catch (fetchErr) {
           consecutiveErrors++;
-          console.warn(`[v0] AI metadata fetch error batch ${safety}:`, fetchErr);
-          await new Promise((r) => setTimeout(r, 2000));
+          await new Promise((r) => setTimeout(r, 3000 * consecutiveErrors));
           continue;
         }
 
-        processed += data.processedCount ?? 0;
-        setAiProgress({ running: true, processed: Math.min(processed, total), total });
+        const batchProcessed: number = data.processedCount ?? 0;
+        processed += batchProcessed;
+
+        // Use server's authoritative remaining count to drive the progress bar.
+        // This is accurate because the server re-queries after every batch.
+        const remaining: number = data.remaining ?? 0;
+        const serverDone = data.done === true || remaining === 0;
+
+        // Update progress: total - remaining gives us cumulative done count
+        setAiProgress({ running: true, processed: Math.max(processed, total - remaining), total });
 
         // Merge unknown terms from this batch
         if (Array.isArray(data.unknownTerms)) {
@@ -739,18 +746,29 @@ function TrainerDashboardInner() {
           }
         }
 
-        // Refresh the table as batches complete so trainers see progress live.
-        queryClient.invalidateQueries({ queryKey: ["/api/videos"] });
+        // Refresh the table every few batches so trainers see progress live.
+        if (safety % 3 === 0) {
+          queryClient.invalidateQueries({ queryKey: ["/api/videos"] });
+        }
 
-        // Stop when the server says there's nothing left to process
-        if (data.done || data.remaining === 0) break;
+        if (serverDone) break;
 
-        // If the whole batch was rate-limited (zero successes), wait longer
-        // before retrying so the AI Gateway quota window has time to reset.
-        const batchDelay = (data.processedCount ?? 0) === 0 ? 10000 : 1500;
-        setAiProgress((p) => p ? ({ ...p, rateLimited: (data.processedCount ?? 0) === 0 }) : p);
-        await new Promise((r) => setTimeout(r, batchDelay));
+        // If zero videos were processed this batch (all errored), increment
+        // the empty-batch counter and wait before retrying.
+        if (batchProcessed === 0) {
+          emptyBatches++;
+          setAiProgress((p) => p ? ({ ...p, rateLimited: true }) : p);
+          await new Promise((r) => setTimeout(r, 8000));
+        } else {
+          emptyBatches = 0;
+          setAiProgress((p) => p ? ({ ...p, rateLimited: false }) : p);
+          // Brief pause between successful batches to avoid rate-limiting.
+          await new Promise((r) => setTimeout(r, 1200));
+        }
       }
+
+      // Final refresh so the table reflects all changes.
+      queryClient.invalidateQueries({ queryKey: ["/api/videos"] });
 
       const collectedTerms = Object.values(allUnknownMap);
       if (collectedTerms.length > 0) {
