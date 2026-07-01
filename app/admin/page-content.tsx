@@ -1954,7 +1954,25 @@ function TrainerDashboardInner() {
                                       onDragEnd={() => setDraggedSchedule(null)}
                                     >
                                       <GripVertical className="h-3 w-3 text-gray-300 cursor-grab shrink-0" />
-                                      <span className={`w-2 h-2 rounded-full shrink-0 ${getIntensityStyle(assignment.video.intensity).dot}`} title={getIntensityStyle(assignment.video.intensity).label} />
+                                      {/* Thumbnail */}
+                                      <div className="relative shrink-0 w-10 h-10 rounded-lg overflow-hidden bg-gray-100 border border-gray-200">
+                                        {assignment.video.thumbnailUrl ? (
+                                          <img
+                                            src={assignment.video.thumbnailUrl}
+                                            alt={assignment.video.title}
+                                            className="w-full h-full object-cover"
+                                          />
+                                        ) : (
+                                          <div className="w-full h-full bg-gray-200 flex items-center justify-center">
+                                            <Monitor className="h-4 w-4 text-gray-400" />
+                                          </div>
+                                        )}
+                                        {/* Intensity dot badge */}
+                                        <span
+                                          className={`absolute bottom-0.5 right-0.5 w-2 h-2 rounded-full border border-white ${getIntensityStyle(assignment.video.intensity).dot}`}
+                                          title={getIntensityStyle(assignment.video.intensity).label}
+                                        />
+                                      </div>
                                       {/* Title */}
                                       <span className="text-xs font-medium text-gray-800 truncate flex-1 min-w-0" title={assignment.video.title}>
                                         {assignment.video.title}
