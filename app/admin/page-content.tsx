@@ -1491,14 +1491,20 @@ function TrainerDashboardInner() {
                                       + set
                                     </button>
                                   )}
-                                  {/* Muscle group pills — deduplicated vs the Cat. column */}
+                                  {/* Muscle group pills — deduplicated vs the Cat. column, broad category names excluded */}
                                   {(() => {
+                                    // Broad category-level terms that belong in the Cat. column only
+                                    const BROAD_TERMS = new Set([
+                                      'legs','core','cardio','shoulders','general','back','chest',
+                                      'biceps','triceps','arms','none','ladies','hiit','boxing',
+                                      'upper body','lower body','full body','abdominals','abs',
+                                    ])
                                     const catChips = deriveCategories(video.bodyPart, video.equipment).map((c: string) => c.toLowerCase())
                                     const catLower = (video.category ?? "").toLowerCase()
                                     const uniqueMuscles = Array.isArray(video.muscleGroups)
                                       ? video.muscleGroups.filter((m: string) => {
                                           const ml = m.trim().toLowerCase()
-                                          return ml && !catChips.includes(ml) && ml !== catLower
+                                          return ml && !BROAD_TERMS.has(ml) && !catChips.includes(ml) && ml !== catLower
                                         })
                                       : []
                                     return uniqueMuscles.length > 0 ? (
