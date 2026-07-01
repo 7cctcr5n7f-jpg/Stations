@@ -123,21 +123,46 @@ export async function POST(req: NextRequest) {
             ? JSON.parse(row.manual_fields)
             : []
 
-        // Apply the boxing → always High intensity business rule AFTER generation
-        // so it overrides the model even if it under-estimated.
+        // Apply boxing → always High intensity business rule AFTER generation.
         const resolvedIntensity =
           isBoxingExercise(row, meta.boxingType) ? "High" : meta.intensity
 
+        // Apply HIIT type + Cardio primary rule AFTER generation.
+        // Boxing and cardio-dominant exercises are HIIT; their primary muscle
+        // is always "Cardio" with actual muscles pushed to secondary.
+        const isHiit =
+          meta.exerciseType === "HIIT" ||
+          meta.exerciseType === "Cardio" || // guard against model using old enum value
+          isBoxingExercise(row, meta.boxingType)
+
+        const resolvedExerciseType = isHiit ? "HIIT" : meta.exerciseType
+
+        // For HIIT exercises, primaryMuscles = ["Cardio"], real muscles go to secondary.
+        // Merge AI primary muscles into secondary when they're not already there.
+        let resolvedPrimary = meta.primaryMuscles
+        let resolvedSecondary = meta.secondaryMuscles
+
+        if (isHiit) {
+          // Move any non-"Cardio" primary muscles into secondary (deduped)
+          const extraMuscles = meta.primaryMuscles.filter(
+            (m) => m.toLowerCase() !== "cardio",
+          )
+          resolvedPrimary = ["Cardio"]
+          resolvedSecondary = [
+            ...new Set([...extraMuscles, ...meta.secondaryMuscles]),
+          ].filter((m) => m.toLowerCase() !== "cardio")
+        }
+
         // Normalise muscle arrays to comma-separated strings (matching existing column format)
         const primaryMusclesStr =
-          meta.primaryMuscles.length > 0 ? meta.primaryMuscles.join(", ") : null
+          resolvedPrimary.length > 0 ? resolvedPrimary.join(", ") : null
         const secondaryMusclesStr =
-          meta.secondaryMuscles.length > 0 ? meta.secondaryMuscles.join(", ") : null
+          resolvedSecondary.length > 0 ? resolvedSecondary.join(", ") : null
 
         const aiValues: Record<string, any> = {
           movementPattern: meta.movementPattern,
           intensity: resolvedIntensity,
-          exerciseType: meta.exerciseType,
+          exerciseType: resolvedExerciseType,
           explosive: meta.explosive,
           weightRequired: meta.weightRequired,
           spaceRequirement: meta.spaceRequirement,
@@ -150,18 +175,17 @@ export async function POST(req: NextRequest) {
         const v = (key: string) =>
           manualFields.includes(key) ? row[FIELD_TO_COLUMN[key]] : aiValues[key]
 
-        // Determine if body_part/secondary_muscle should be updated:
-        // only write AI muscles when the existing value is missing/placeholder
-        // and the trainer hasn't manually set it.
+        // Determine if body_part/secondary_muscle should be updated.
+        // For HIIT exercises we always write "Cardio" as primary (unless the
+        // trainer manually set it) — it's a deliberate structural rule, not just
+        // a fill-in-the-blanks operation.
         const shouldUpdateBodyPart =
           !manualFields.includes("primaryMuscles") &&
           primaryMusclesStr !== null &&
-          (!row.body_part || row.body_part === "General" || row.body_part === "")
+          (isHiit || !row.body_part || row.body_part === "General" || row.body_part === "")
 
-        // A secondary_muscle value is considered a placeholder when it:
-        //  - is empty/null, OR
-        //  - exactly matches the primary body_part (trainer left the default), OR
-        //  - is a single muscle that duplicates the primary (e.g. "Chest" when body_part is "Chest")
+        // For HIIT exercises also always refresh secondary so the actual muscles
+        // are populated correctly. Otherwise only update when it's a placeholder.
         const secondaryIsPlaceholder =
           !row.secondary_muscle ||
           row.secondary_muscle.trim() === "" ||
@@ -170,7 +194,7 @@ export async function POST(req: NextRequest) {
         const shouldUpdateSecondary =
           !manualFields.includes("secondaryMuscles") &&
           secondaryMusclesStr !== null &&
-          secondaryIsPlaceholder
+          (isHiit || secondaryIsPlaceholder)
 
         const updated = await sql`
           UPDATE videos SET
