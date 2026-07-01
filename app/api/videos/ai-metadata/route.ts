@@ -63,6 +63,17 @@ export async function POST(req: NextRequest) {
     // Load the exercise dictionary once for the whole batch
     const glossary = await loadGlossary()
 
+    // A video needs filling if it is missing ANY of the key derived fields,
+    // regardless of whether ai_generated_at was set by an older route version.
+    const NEEDS_FILL_CONDITION = sql`
+      (
+        ai_generated_at IS NULL
+        OR movement_pattern IS NULL OR movement_pattern = ''
+        OR intensity IS NULL OR intensity = ''
+        OR (muscle_groups IS NULL OR array_length(muscle_groups, 1) IS NULL OR array_length(muscle_groups, 1) = 0)
+      )
+    `
+
     // Determine which videos to process this batch.
     let batch: any[]
     let totalMatching = 0
@@ -78,13 +89,18 @@ export async function POST(req: NextRequest) {
       `
       totalMatching = countRows[0]?.c ?? 0
     } else {
+      // Fill mode: process any video missing one or more key fields
       batch = await sql`
         SELECT * FROM videos
-        WHERE ai_generated_at IS NULL
-        ORDER BY id ASC LIMIT ${batchSize}
+        WHERE ${NEEDS_FILL_CONDITION}
+        ORDER BY
+          -- Prioritise never-processed first, then by missing fields count
+          (CASE WHEN ai_generated_at IS NULL THEN 0 ELSE 1 END) ASC,
+          id ASC
+        LIMIT ${batchSize}
       `
       const countRows = await sql`
-        SELECT COUNT(*)::int AS c FROM videos WHERE ai_generated_at IS NULL
+        SELECT COUNT(*)::int AS c FROM videos WHERE ${NEEDS_FILL_CONDITION}
       `
       totalMatching = countRows[0]?.c ?? 0
     }
@@ -177,6 +193,19 @@ export async function POST(req: NextRequest) {
         // In fill mode: only write when the field is missing/placeholder.
         const isRegenerate = mode === "regenerate"
 
+        // Fill mode: write if the field is missing; regenerate mode: always write
+        // (unless the trainer has manually locked the field).
+        const isMissingMovement = !row.movement_pattern || row.movement_pattern === ""
+        const isMissingIntensity = !row.intensity || row.intensity === ""
+        const isMissingMuscles = !row.muscle_groups || row.muscle_groups.length === 0
+
+        const shouldUpdateMovement =
+          !manualFields.includes("movementPattern") && (isRegenerate || isMissingMovement)
+        const shouldUpdateIntensity =
+          !manualFields.includes("intensity") && (isRegenerate || isMissingIntensity)
+        const shouldUpdateExerciseType =
+          !manualFields.includes("exerciseType") && (isRegenerate || !row.exercise_type || row.exercise_type === "")
+
         const shouldUpdateCategory =
           !manualFields.includes("category") &&
           resolvedCategory != null &&
@@ -185,7 +214,7 @@ export async function POST(req: NextRequest) {
         const shouldUpdateMuscleGroups =
           !manualFields.includes("muscleGroups") &&
           resolvedMuscleGroups.length > 0 &&
-          (isRegenerate || isHiit || !row.muscle_groups || row.muscle_groups.length === 0)
+          (isRegenerate || isMissingMuscles)
 
         const shouldUpdateWorkoutMethods =
           !manualFields.includes("workoutMethods") &&
@@ -194,9 +223,9 @@ export async function POST(req: NextRequest) {
 
         const updated = await sql`
           UPDATE videos SET
-            movement_pattern = ${v("movementPattern")},
-            intensity = ${v("intensity")},
-            exercise_type = ${v("exerciseType")},
+            movement_pattern = CASE WHEN ${shouldUpdateMovement} THEN ${v("movementPattern")} ELSE movement_pattern END,
+            intensity = CASE WHEN ${shouldUpdateIntensity} THEN ${v("intensity")} ELSE intensity END,
+            exercise_type = CASE WHEN ${shouldUpdateExerciseType} THEN ${v("exerciseType")} ELSE exercise_type END,
             explosive = ${v("explosive")},
             weight_required = ${v("weightRequired")},
             space_requirement = ${v("spaceRequirement")},
@@ -224,20 +253,29 @@ export async function POST(req: NextRequest) {
           err?.name === "GatewayRateLimitError"
         if (isRateLimit) {
           try {
+            // Stamp ai_generated_at so this video doesn't loop forever.
+            // The missing fields (movement_pattern, intensity, muscle_groups) will
+            // still be empty and will be retried on the next run.
             await sql`
               UPDATE videos
-              SET ai_generated_at = NOW()
-              WHERE id = ${row.id} AND ai_generated_at IS NULL
+              SET ai_generated_at = COALESCE(ai_generated_at, NOW())
+              WHERE id = ${row.id}
             `
           } catch {}
         }
       }
     }
 
-    // Re-query the true remaining count AFTER all updates (including rate-limit
-    // stamps) so the client gets an accurate picture and doesn't stop early.
+    // Re-query the true remaining count AFTER all updates so the client gets
+    // an accurate picture. Count any video still missing a key field.
     const remainingRows = await sql`
-      SELECT COUNT(*)::int AS c FROM videos WHERE ai_generated_at IS NULL
+      SELECT COUNT(*)::int AS c FROM videos
+      WHERE (
+        ai_generated_at IS NULL
+        OR movement_pattern IS NULL OR movement_pattern = ''
+        OR intensity IS NULL OR intensity = ''
+        OR (muscle_groups IS NULL OR array_length(muscle_groups, 1) IS NULL OR array_length(muscle_groups, 1) = 0)
+      )
     `
     const remaining = remainingRows[0]?.c ?? 0
     const unknownTerms = Object.values(unknownTermMap)
@@ -262,7 +300,13 @@ export async function POST(req: NextRequest) {
 export async function GET() {
   try {
     const rows = await sql`
-      SELECT COUNT(*)::int AS c FROM videos WHERE ai_generated_at IS NULL
+      SELECT COUNT(*)::int AS c FROM videos
+      WHERE (
+        ai_generated_at IS NULL
+        OR movement_pattern IS NULL OR movement_pattern = ''
+        OR intensity IS NULL OR intensity = ''
+        OR (muscle_groups IS NULL OR array_length(muscle_groups, 1) IS NULL OR array_length(muscle_groups, 1) = 0)
+      )
     `
     return NextResponse.json({ needsReview: rows[0]?.c ?? 0 })
   } catch (error) {

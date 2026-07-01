@@ -682,13 +682,13 @@ function TrainerDashboardInner() {
       const countRes = await apiRequest("GET", "/api/videos/ai-metadata");
       const { needsReview } = await countRes.json();
       if (!needsReview || needsReview === 0) {
-        toast({ title: "All exercises already have AI metadata", description: "Nothing to process." });
+        toast({ title: "All exercises are complete", description: "Every video has category, muscles, intensity and movement filled." });
         return;
       }
 
       const total = needsReview;
       setAiProgress({ running: true, processed: 0, total });
-      toast({ title: "AI metadata started", description: `Processing ${total} exercises...` });
+      toast({ title: "Filling missing metadata", description: `${total} exercises need category, muscles, intensity or movement data...` });
 
       let processed = 0;
       let consecutiveErrors = 0;
