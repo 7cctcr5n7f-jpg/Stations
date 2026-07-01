@@ -65,6 +65,8 @@ import {
   Dumbbell,
   Zap,
   BarChart3,
+  ArrowUp,
+  ArrowDown,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { apiRequest } from "@/lib/queryClient";
@@ -108,6 +110,12 @@ interface GeneratedRound {
   warnings: string[];
 }
 
+interface MuscleBreakdown {
+  pushCount: number;
+  pullCount: number;
+  muscles: string[];
+}
+
 interface WorkoutDraft {
   date: string;
   weekday: number;
@@ -115,6 +123,7 @@ interface WorkoutDraft {
   rounds: GeneratedRound[];
   score: number;
   summary: string[];
+  muscleBreakdown?: MuscleBreakdown;
   warnings: string[];
 }
 
@@ -972,15 +981,71 @@ function DayWorkout({
             </div>
           </div>
         </CardHeader>
-        <CardContent className="space-y-3">
+        <CardContent className="space-y-4">
           {belowMin && (
             <div className="flex items-center gap-2 rounded-md bg-orange-50 px-3 py-2 text-sm text-orange-800">
               <AlertTriangle className="h-4 w-4 shrink-0" />
               Below your minimum score target ({minScore}). Consider regenerating or replacing low-scoring rounds.
             </div>
           )}
+
+          {/* Push / Pull / Muscles row */}
+          {draft.muscleBreakdown && (
+            <div className="space-y-3">
+              {/* Push + Pull counts */}
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-1.5 rounded-md border border-blue-200 bg-blue-50 px-2.5 py-1.5">
+                  <ArrowUp className="h-3.5 w-3.5 text-blue-600" />
+                  <span className="text-xs font-semibold text-blue-700">Push</span>
+                  <span className="text-sm font-bold text-blue-800">{draft.muscleBreakdown.pushCount}</span>
+                </div>
+                <div className="flex items-center gap-1.5 rounded-md border border-violet-200 bg-violet-50 px-2.5 py-1.5">
+                  <ArrowDown className="h-3.5 w-3.5 text-violet-600" />
+                  <span className="text-xs font-semibold text-violet-700">Pull</span>
+                  <span className="text-sm font-bold text-violet-800">{draft.muscleBreakdown.pullCount}</span>
+                </div>
+                {draft.muscleBreakdown.pushCount > 0 && draft.muscleBreakdown.pullCount > 0 && (() => {
+                  const total = draft.muscleBreakdown!.pushCount + draft.muscleBreakdown!.pullCount
+                  const pushPct = Math.round((draft.muscleBreakdown!.pushCount / total) * 100)
+                  return (
+                    <div className="flex flex-1 items-center gap-2">
+                      <div className="relative h-2 flex-1 overflow-hidden rounded-full bg-muted">
+                        <div className="absolute inset-y-0 left-0 rounded-full bg-blue-400" style={{ width: `${pushPct}%` }} />
+                        <div className="absolute inset-y-0 right-0 rounded-full bg-violet-400" style={{ width: `${100 - pushPct}%` }} />
+                      </div>
+                      <span className="text-xs text-muted-foreground tabular-nums whitespace-nowrap">{pushPct}% / {100 - pushPct}%</span>
+                    </div>
+                  )
+                })()}
+              </div>
+
+              {/* Muscles worked chips */}
+              {draft.muscleBreakdown.muscles.length > 0 && (
+                <div className="space-y-1.5">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Muscles worked</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {draft.muscleBreakdown.muscles.slice(0, 16).map((m) => (
+                      <span
+                        key={m}
+                        className="rounded-full border bg-background px-2 py-0.5 text-xs font-medium text-foreground"
+                      >
+                        {m}
+                      </span>
+                    ))}
+                    {draft.muscleBreakdown.muscles.length > 16 && (
+                      <span className="rounded-full border border-dashed px-2 py-0.5 text-xs text-muted-foreground">
+                        +{draft.muscleBreakdown.muscles.length - 16} more
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Summary lines */}
           {draft.summary.length > 0 && (
-            <ul className="space-y-1 text-sm text-muted-foreground">
+            <ul className="space-y-1 border-t pt-3 text-sm text-muted-foreground">
               {draft.summary.map((s, i) => (
                 <li key={i} className="flex gap-2">
                   <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-green-500" />
@@ -989,6 +1054,7 @@ function DayWorkout({
               ))}
             </ul>
           )}
+
           {draft.warnings.length > 0 && (
             <ul className="space-y-1 text-sm text-orange-700">
               {draft.warnings.map((w, i) => (

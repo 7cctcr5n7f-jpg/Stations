@@ -5,6 +5,7 @@ import type {
   GeneratedRound,
   HeartRate,
   Intensity,
+  MuscleBreakdown,
   RoundConfig,
   RoundExercise,
   WeeklyTemplate,
@@ -603,6 +604,7 @@ export function generateWorkout(input: EngineInput): WorkoutDraft {
     : 0
 
   const summary = buildSummary(rounds, template, settings)
+  const muscleBreakdown = buildMuscleBreakdown(rounds)
 
   return {
     date: input.date,
@@ -611,8 +613,70 @@ export function generateWorkout(input: EngineInput): WorkoutDraft {
     rounds,
     score: overall,
     summary,
+    muscleBreakdown,
     warnings,
   }
+}
+
+// Keywords that classify a movement as push or pull from the movementPattern / exerciseType fields.
+const PUSH_PATTERNS = ["push", "press", "extend", "extension", "fly", "flye", "dip", "bench", "chest", "tricep", "shoulder press"]
+const PULL_PATTERNS = ["pull", "row", "curl", "chin", "lat", "deadlift", "shrug", "rear delt", "bicep", "hamstring", "rdl", "hinge"]
+
+function classifyPushPull(v: Video): "push" | "pull" | "other" {
+  const text = [
+    norm(v.movementPattern ?? ""),
+    norm(v.exerciseType ?? ""),
+    norm(v.category ?? ""),
+    norm(v.bodyPart ?? ""),
+    norm(v.title ?? ""),
+  ].join(" ")
+  const isPush = PUSH_PATTERNS.some((p) => text.includes(p))
+  const isPull = PULL_PATTERNS.some((p) => text.includes(p))
+  if (isPush && !isPull) return "push"
+  if (isPull && !isPush) return "pull"
+  if (isPush && isPull) {
+    // compound — assign to the more specific pattern match
+    const pushScore = PUSH_PATTERNS.filter((p) => text.includes(p)).length
+    const pullScore = PULL_PATTERNS.filter((p) => text.includes(p)).length
+    return pushScore >= pullScore ? "push" : "pull"
+  }
+  return "other"
+}
+
+function buildMuscleBreakdown(rounds: GeneratedRound[]): MuscleBreakdown {
+  let pushCount = 0
+  let pullCount = 0
+  const muscleCounts: Record<string, number> = {}
+
+  for (const r of rounds) {
+    for (const ex of r.exercises) {
+      const dir = classifyPushPull(ex.video)
+      if (dir === "push") pushCount++
+      else if (dir === "pull") pullCount++
+
+      // Collect all muscleGroups (canonical array), fall back to bodyPart + secondaryMuscle
+      const groups: string[] = []
+      if (Array.isArray(ex.video.muscleGroups) && ex.video.muscleGroups.length > 0) {
+        groups.push(...ex.video.muscleGroups)
+      } else {
+        if (ex.video.bodyPart) groups.push(ex.video.bodyPart)
+        if (ex.video.secondaryMuscle) {
+          groups.push(...ex.video.secondaryMuscle.split(/[,/]/).map((s) => s.trim()))
+        }
+      }
+      for (const g of groups) {
+        const key = g.trim()
+        if (key) muscleCounts[key] = (muscleCounts[key] ?? 0) + 1
+      }
+    }
+  }
+
+  // Sort muscles by frequency (most-worked first), deduplicated
+  const muscles = Object.entries(muscleCounts)
+    .sort((a, b) => b[1] - a[1])
+    .map(([m]) => m)
+
+  return { pushCount, pullCount, muscles }
 }
 
 function buildSummary(rounds: GeneratedRound[], template: WeeklyTemplate | null, settings: { reuseWeeks: number }): string[] {

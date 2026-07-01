@@ -75,6 +75,16 @@ export interface GeneratedRound {
   warnings: string[]
 }
 
+/** Structured muscle breakdown computed from all exercises in the workout. */
+export interface MuscleBreakdown {
+  /** Exercise titles / muscle names classified as push-pattern movements. */
+  pushCount: number
+  /** Exercise titles / muscle names classified as pull-pattern movements. */
+  pullCount: number
+  /** All unique muscle groups activated across the whole day, sorted by frequency. */
+  muscles: string[]
+}
+
 export interface WorkoutDraft {
   date: string // yyyy-mm-dd
   weekday: number
@@ -82,6 +92,7 @@ export interface WorkoutDraft {
   rounds: GeneratedRound[]
   score: number // overall 0-100
   summary: string[] // overall explanation bullets
+  muscleBreakdown: MuscleBreakdown
   warnings: string[]
 }
 
