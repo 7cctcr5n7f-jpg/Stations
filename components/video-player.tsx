@@ -114,29 +114,56 @@ export default function VideoPlayer({ assignment, displayMode = 'single', videoC
         </div>
       </div>
 
-      {/* Reps + Equipment strip — bottom right corner */}
+      {/* Reps + Equipment — top right */}
       {(() => {
         const repsStr = String(assignment.reps ?? '').trim();
-        const equipmentStr = (assignment.displayEquipment || assignment.video.equipment || '').split(',')[0].trim();
+        const equipmentRaw = (assignment.displayEquipment || assignment.video.equipment || '').split(',')[0].trim();
+        const equipmentStr = equipmentRaw.toLowerCase() === 'none' ? '' : equipmentRaw;
         const isNumericOnly = /^\d+$/.test(repsStr);
-        const repsLabel = isNumericOnly ? `${repsStr} REPS` : repsStr;
+        const hasReps = repsStr && repsStr !== '0';
+        if (!hasReps && !equipmentStr) return null;
 
         return (
-          <div className={`absolute ${isCompactMode ? 'bottom-3 right-3' : 'bottom-6 right-5'} z-20 flex flex-col items-end gap-1.5`}>
-            {repsStr && repsStr !== '0' && (
-              <div className={`flex items-center gap-0 rounded-full overflow-hidden shadow-lg ${isCompactMode ? 'h-8' : 'h-10'}`}>
-                <div className={`bg-black/85 backdrop-blur-sm text-white font-bold uppercase tracking-wide ${isCompactMode ? 'text-xs px-3' : 'text-sm px-4'} h-full flex items-center`}>
-                  {repsLabel}
+          <div className={`absolute ${isCompactMode ? 'top-3 right-3' : 'top-5 right-5'} z-20`}>
+            <div className={`
+              flex flex-col items-center
+              bg-black/75 backdrop-blur-md
+              rounded-2xl overflow-hidden
+              shadow-[0_4px_24px_rgba(0,0,0,0.35)]
+              ${isCompactMode ? 'min-w-[56px]' : 'min-w-[76px]'}
+            `}>
+              {/* Reps block */}
+              {hasReps && (
+                <div className={`flex flex-col items-center justify-center ${isCompactMode ? 'px-3 pt-2.5 pb-2' : 'px-4 pt-4 pb-3'}`}>
+                  {isNumericOnly ? (
+                    <>
+                      <span className={`font-black text-white leading-none ${isCompactMode ? 'text-2xl' : 'text-4xl'}`}>
+                        {repsStr}
+                      </span>
+                      <span className={`text-white/50 font-semibold uppercase tracking-widest mt-0.5 ${isCompactMode ? 'text-[9px]' : 'text-[10px]'}`}>
+                        REPS
+                      </span>
+                    </>
+                  ) : (
+                    <span className={`font-bold text-white text-center leading-tight uppercase tracking-wide ${isCompactMode ? 'text-xs' : 'text-sm'}`}>
+                      {repsStr}
+                    </span>
+                  )}
                 </div>
-              </div>
-            )}
-            {equipmentStr && (
-              <div className={`flex items-center gap-0 rounded-full overflow-hidden shadow-lg ${isCompactMode ? 'h-7' : 'h-9'}`}>
-                <div className={`bg-black/55 backdrop-blur-sm text-gray-200 font-medium uppercase tracking-widest ${isCompactMode ? 'text-[10px] px-3' : 'text-xs px-4'} h-full flex items-center`}>
-                  {equipmentStr}
+              )}
+
+              {/* Divider + Equipment */}
+              {hasReps && equipmentStr && (
+                <div className="w-full h-px bg-white/10" />
+              )}
+              {equipmentStr && (
+                <div className={`flex items-center justify-center w-full ${isCompactMode ? 'px-2 py-1.5' : 'px-3 py-2'}`}>
+                  <span className={`text-white/60 font-medium uppercase tracking-widest text-center ${isCompactMode ? 'text-[9px]' : 'text-[10px]'}`}>
+                    {equipmentStr}
+                  </span>
                 </div>
-              </div>
-            )}
+              )}
+            </div>
           </div>
         );
       })()}
