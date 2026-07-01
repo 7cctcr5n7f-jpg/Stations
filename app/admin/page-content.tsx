@@ -1258,82 +1258,6 @@ function TrainerDashboardInner() {
                       className="h-8 pl-8 text-xs"
                     />
                   </div>
-                  <SearchableSelect
-                    options={dynamicCategories}
-                    value={videoFilters.category[0] || "all"}
-                    placeholder="Category"
-                    onValueChange={(value) =>
-                      setVideoFilters(prev => ({ ...prev, category: value === "all" ? [] : [value] }))
-                    }
-                    allowAll={true}
-                  />
-                  <SearchableSelect
-                    options={dynamicBodyParts}
-                    value={videoFilters.bodyPart[0] || "all"}
-                    placeholder="Muscle"
-                    onValueChange={(value) =>
-                      setVideoFilters(prev => ({ ...prev, bodyPart: value === "all" ? [] : [value] }))
-                    }
-                    allowAll={true}
-                  />
-                  <SearchableSelect
-                    options={dynamicEquipment}
-                    value={videoFilters.equipment[0] || "all"}
-                    placeholder="Equipment"
-                    onValueChange={(value) =>
-                      setVideoFilters(prev => ({ ...prev, equipment: value === "all" ? [] : [value] }))
-                    }
-                    allowAll={true}
-                  />
-                  <Select
-                    value={videoFilters.intensity || "all"}
-                    onValueChange={(value) =>
-                      setVideoFilters(prev => ({ ...prev, intensity: value === "all" ? "" : value }))
-                    }
-                  >
-                    <SelectTrigger className="h-8 w-32 text-xs">
-                      <SelectValue placeholder="Intensity" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All intensities</SelectItem>
-                      {INTENSITY_LEVELS.map((level) => (
-                        <SelectItem key={level} value={level}>{level}</SelectItem>
-                      ))}
-                      <SelectItem value="unset">Unset</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <Select
-                    value={videoFilters.lastUsed || "all"}
-                    onValueChange={(value) =>
-                      setVideoFilters(prev => ({ ...prev, lastUsed: value === "all" ? "" : value }))
-                    }
-                  >
-                    <SelectTrigger className="h-8 w-32 text-xs">
-                      <SelectValue placeholder="Last Used" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">Any time</SelectItem>
-                      <SelectItem value="today">Today</SelectItem>
-                      <SelectItem value="week">This week</SelectItem>
-                      <SelectItem value="month">This month</SelectItem>
-                      <SelectItem value="never">Never used</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <Select
-                    value={videoFilters.scheduled || "all"}
-                    onValueChange={(value) =>
-                      setVideoFilters(prev => ({ ...prev, scheduled: value === "all" ? "" : value }))
-                    }
-                  >
-                    <SelectTrigger className="h-8 w-34 text-xs">
-                      <SelectValue placeholder="Scheduled" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All schedules</SelectItem>
-                      <SelectItem value="scheduled">Scheduled</SelectItem>
-                      <SelectItem value="unscheduled">Not scheduled</SelectItem>
-                    </SelectContent>
-                  </Select>
                   <button
                     type="button"
                     onClick={() => setVideoFilters(prev => ({ ...prev, needsReview: !prev.needsReview }))}
@@ -1386,6 +1310,118 @@ function TrainerDashboardInner() {
                         <th className="text-center p-2 font-medium text-gray-500 uppercase tracking-wide text-[10px] w-10">Int.</th>
                         <th className="text-left p-2 font-medium text-gray-500 uppercase tracking-wide text-[10px] w-28">Movement</th>
                         <th className="w-8 p-2"></th>
+                      </tr>
+                      {/* Filter row — each control sits directly under its column */}
+                      <tr className="border-b border-gray-200 bg-white">
+                        {/* Thumbnail col — no filter */}
+                        <th className="p-1.5 pl-2 w-10"></th>
+                        {/* AI status col — no filter */}
+                        <th className="p-1 w-6"></th>
+                        {/* Name — no column filter (uses search bar above) */}
+                        <th className="p-1.5"></th>
+                        {/* Cat. */}
+                        <th className="p-1.5 w-24">
+                          <SearchableSelect
+                            options={dynamicCategories}
+                            value={videoFilters.category[0] || "all"}
+                            placeholder="All"
+                            onValueChange={(value) =>
+                              setVideoFilters(prev => ({ ...prev, category: value === "all" ? [] : [value] }))
+                            }
+                            allowAll={true}
+                            className="h-7 text-[11px] w-full"
+                          />
+                        </th>
+                        {/* Muscles */}
+                        <th className="p-1.5">
+                          <SearchableSelect
+                            options={dynamicBodyParts}
+                            value={videoFilters.bodyPart[0] || "all"}
+                            placeholder="All"
+                            onValueChange={(value) =>
+                              setVideoFilters(prev => ({ ...prev, bodyPart: value === "all" ? [] : [value] }))
+                            }
+                            allowAll={true}
+                            className="h-7 text-[11px] w-full"
+                          />
+                        </th>
+                        {/* Equipment */}
+                        <th className="p-1.5">
+                          <SearchableSelect
+                            options={dynamicEquipment}
+                            value={videoFilters.equipment[0] || "all"}
+                            placeholder="All"
+                            onValueChange={(value) =>
+                              setVideoFilters(prev => ({ ...prev, equipment: value === "all" ? [] : [value] }))
+                            }
+                            allowAll={true}
+                            className="h-7 text-[11px] w-full"
+                          />
+                        </th>
+                        {/* Last Used */}
+                        <th className="p-1.5 w-20">
+                          <Select
+                            value={videoFilters.lastUsed || "all"}
+                            onValueChange={(value) =>
+                              setVideoFilters(prev => ({ ...prev, lastUsed: value === "all" ? "" : value }))
+                            }
+                          >
+                            <SelectTrigger className="h-7 w-full text-[11px]">
+                              <SelectValue placeholder="Any time" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="all">Any time</SelectItem>
+                              <SelectItem value="today">Today</SelectItem>
+                              <SelectItem value="week">This week</SelectItem>
+                              <SelectItem value="month">This month</SelectItem>
+                              <SelectItem value="never">Never used</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </th>
+                        {/* Times — no filter */}
+                        <th className="p-1.5 w-14"></th>
+                        {/* Scheduled */}
+                        <th className="p-1.5 w-28">
+                          <Select
+                            value={videoFilters.scheduled || "all"}
+                            onValueChange={(value) =>
+                              setVideoFilters(prev => ({ ...prev, scheduled: value === "all" ? "" : value }))
+                            }
+                          >
+                            <SelectTrigger className="h-7 w-full text-[11px]">
+                              <SelectValue placeholder="All" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="all">All</SelectItem>
+                              <SelectItem value="scheduled">Scheduled</SelectItem>
+                              <SelectItem value="unscheduled">Not scheduled</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </th>
+                        {/* Intensity */}
+                        <th className="p-1.5 w-10">
+                          <Select
+                            value={videoFilters.intensity || "all"}
+                            onValueChange={(value) =>
+                              setVideoFilters(prev => ({ ...prev, intensity: value === "all" ? "" : value }))
+                            }
+                          >
+                            <SelectTrigger className="h-7 w-full text-[11px]">
+                              <SelectValue placeholder="All" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="all">All</SelectItem>
+                              {INTENSITY_LEVELS.map((level) => (
+                                <SelectItem key={level} value={level}>{level}</SelectItem>
+                              ))}
+                              <SelectItem value="unset">Unset</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </th>
+                        {/* Movement — no filter */}
+                        <th className="p-1.5 w-28"></th>
+                        {/* Actions col — no filter */}
+                        <th className="w-8 p-1.5"></th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
