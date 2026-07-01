@@ -38,7 +38,7 @@ interface VideoEditData {
 }
 
 const EXERCISE_TYPES = ["Strength", "HIIT", "Conditioning", "Skill", "Mobility"];
-const EXERCISE_CATEGORIES = ["HIIT", "Chest", "Back", "Shoulders", "Biceps", "Triceps", "Legs", "Core", "Abs"];
+const EXERCISE_CATEGORIES = ["HIIT", "Chest", "Back", "Shoulders", "Arms", "Biceps", "Triceps", "Legs", "Core", "Abs"];
 const WORKOUT_METHODS = ["Standard", "Exercise Combination", "Boxing Combination", "Dropset", "Superset", "AMRAP"];
 const SPACE_REQUIREMENTS = ["Stationary", "Small", "Large"];
 

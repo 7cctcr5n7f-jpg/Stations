@@ -40,13 +40,16 @@ export const exerciseMetadataSchema = z.object({
       "If this is a boxing/striking drill, the type (e.g. Combination, Defense, Footwork, Pad Work, Bag Work). Otherwise null.",
     ),
   category: z
-    .enum(["HIIT", "Chest", "Back", "Shoulders", "Biceps", "Triceps", "Legs", "Core", "Abs"])
+    .enum(["HIIT", "Chest", "Back", "Shoulders", "Arms", "Biceps", "Triceps", "Legs", "Core", "Abs"])
     .describe(
       "The single primary workout Category for this exercise. " +
       "HIIT: any cardio, conditioning, battle ropes, boxing, striking, burpees, jump rope, sprints, circuits, plyometrics. " +
       "Chest: chest press, fly, push-up variants. Back: rows, pull-ups, lat pulldown. " +
-      "Shoulders: overhead press, raises, shoulder-dominant lifts. Biceps: curl variants. " +
-      "Triceps: extension, dip, close-grip variants. Legs: squat, lunge, hinge, calf-dominant. " +
+      "Shoulders: overhead press, raises, shoulder-dominant lifts. " +
+      "Arms: combined arm exercises targeting both biceps and triceps (e.g. arm circuit, cable curls + pushdown combo). " +
+      "Biceps: curl variants targeting biceps primarily. " +
+      "Triceps: extension, dip, close-grip variants targeting triceps primarily. " +
+      "Legs: squat, lunge, hinge, calf-dominant. " +
       "Core: plank, carry, rotation, anti-rotation. Abs: crunch, sit-up, direct ab work. " +
       "Only ONE category per exercise. HIIT MUST NOT also be assigned Chest/Back/Shoulders/Legs etc.",
     ),
@@ -89,6 +92,9 @@ export interface VideoForAI {
   bodyPart?: string | null
   equipment?: string | null
   secondaryMuscle?: string | null
+  /** New canonical fields — used as hints in the AI prompt when already set. */
+  category?: string | null
+  muscleGroups?: string[] | null
 }
 
 /** A resolved entry from the exercise dictionary. */
@@ -151,9 +157,13 @@ export async function generateExerciseMetadata(
   glossary: DictionaryGlossaryEntry[] = [],
 ): Promise<ExerciseMetadataResult> {
   const known: string[] = []
-  if (video.bodyPart) known.push(`Body part / primary muscle: ${video.bodyPart}`)
-  if (video.secondaryMuscle) known.push(`Secondary muscle: ${video.secondaryMuscle}`)
   if (video.equipment) known.push(`Equipment: ${video.equipment}`)
+  if (video.category && video.category !== "General") known.push(`Existing category: ${video.category}`)
+  if (video.muscleGroups && video.muscleGroups.length > 0 && !video.muscleGroups.every(m => m.toLowerCase() === "cardio")) {
+    known.push(`Existing muscle groups: ${video.muscleGroups.join(", ")}`)
+  } else if (video.secondaryMuscle) {
+    known.push(`Secondary muscle (legacy): ${video.secondaryMuscle}`)
+  }
 
   // Build a glossary lookup for unknown-term detection
   const glossaryAliasSet = new Set(glossary.map((e) => e.alias.toUpperCase()))

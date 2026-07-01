@@ -103,6 +103,11 @@ export async function POST(req: NextRequest) {
             bodyPart: row.body_part,
             equipment: row.equipment,
             secondaryMuscle: row.secondary_muscle,
+            // New fields — pass through as hints so the model has context
+            category: row.category ?? undefined,
+            muscleGroups: Array.isArray(row.muscle_groups) && row.muscle_groups.length > 0
+              ? row.muscle_groups
+              : undefined,
           },
           glossary,
         )
@@ -167,23 +172,25 @@ export async function POST(req: NextRequest) {
         const v = (key: string) =>
           manualFields.includes(key) ? row[FIELD_TO_COLUMN[key]] : aiValues[key]
 
-        // Determine whether to update category and muscle_groups.
-        // Always update category for HIIT (structural rule). Otherwise only update
-        // when the existing value is missing/placeholder.
+        // Determine whether to update category, muscle_groups, workout_methods.
+        // In regenerate mode: always write (unless trainer has manually locked the field).
+        // In fill mode: only write when the field is missing/placeholder.
+        const isRegenerate = mode === "regenerate"
+
         const shouldUpdateCategory =
           !manualFields.includes("category") &&
           resolvedCategory != null &&
-          (isHiit || !row.category || row.category === "General" || row.category === "")
+          (isRegenerate || isHiit || !row.category || row.category === "General" || row.category === "")
 
         const shouldUpdateMuscleGroups =
           !manualFields.includes("muscleGroups") &&
           resolvedMuscleGroups.length > 0 &&
-          (isHiit || !row.muscle_groups || row.muscle_groups.length === 0)
+          (isRegenerate || isHiit || !row.muscle_groups || row.muscle_groups.length === 0)
 
         const shouldUpdateWorkoutMethods =
           !manualFields.includes("workoutMethods") &&
           resolvedWorkoutMethods.length > 0 &&
-          (!row.workout_methods || row.workout_methods.length === 0)
+          (isRegenerate || !row.workout_methods || row.workout_methods.length === 0)
 
         const updated = await sql`
           UPDATE videos SET

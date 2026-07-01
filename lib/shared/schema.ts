@@ -19,6 +19,7 @@ export const EXERCISE_CATEGORIES = [
   "Chest",
   "Back",
   "Shoulders",
+  "Arms",
   "Biceps",
   "Triceps",
   "Legs",
