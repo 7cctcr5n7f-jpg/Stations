@@ -3,8 +3,6 @@
 import { useRef, useEffect, useState } from "react"
 import { Play } from "lucide-react"
 
-const logoPath = "/logo.png"
-
 interface VideoPlayerProps {
   assignment: {
     id: number;
@@ -107,88 +105,68 @@ export default function VideoPlayer({ assignment, displayMode = 'single', videoC
         disablePictureInPicture
       />
       
-      {/* Standardized Reps Display - Top Right */}
-      <div className={`absolute ${isCompactMode ? 'top-2 right-0' : 'top-6 right-0'} z-20`}>
-        <div className={`bg-black/80 backdrop-blur-sm rounded-xl ${isCompactMode ? 'w-16 h-16 px-2 py-2' : 'w-24 h-24 px-4 py-4'} flex flex-col items-center justify-center text-center`}>
-          {(() => {
-            const repsStr = String(assignment.reps);
-            const isOnlyNumber = /^\d+$/.test(repsStr);
-            
-            if (isOnlyNumber) {
-              // Show number + "REPS" for pure numbers
-              return (
-                <>
-                  <div className={`${isCompactMode ? 'text-lg' : 'text-3xl'} font-bold text-white mb-0.5`}>
-                    {repsStr}
-                  </div>
-                  <div className={`${isCompactMode ? 'text-xs' : 'text-sm'} text-gray-300 uppercase tracking-wider leading-none`}>
-                    REPS
-                  </div>
-                </>
-              );
-            } else {
-              // Show custom text without "REPS" for text containing more than numbers
-              // Split into number and text parts for different styling (supports decimal numbers)
-              const match = repsStr.match(/^(\d+(?:\.\d+)?)\s*(.+)$/);
-              if (match) {
-                const [, number, text] = match;
-                return (
-                  <div className={`text-center leading-tight`}>
-                    <div className={`${isCompactMode ? 'text-lg' : 'text-3xl'} font-bold text-white mb-0.5`}>
-                      {number}
-                    </div>
-                    <div className={`${isCompactMode ? 'text-xs' : 'text-sm'} text-gray-300 uppercase tracking-wider leading-none`}>
-                      {text}
-                    </div>
-                  </div>
-                );
-              } else {
-                // Fallback for text without clear number/text separation
-                return (
-                  <div className={`${isCompactMode ? 'text-sm' : 'text-lg'} font-bold text-white text-center leading-tight`}>
-                    {repsStr}
-                  </div>
-                );
-              }
-            }
-          })()}
+      {/* Video Title - Top Center */}
+      <div className={`absolute ${isCompactMode ? 'top-3' : 'top-5'} left-1/2 -translate-x-1/2 z-10 w-full px-4 flex justify-center pointer-events-none`}>
+        <div className={`bg-white/90 backdrop-blur-sm rounded-lg ${isCompactMode ? 'px-3 py-1.5' : 'px-6 py-3'} text-center max-w-[65%]`}>
+          <h3 className={`${isCompactMode ? 'text-base' : 'text-2xl'} font-bold text-black leading-tight`}>
+            {assignment.video.title}
+          </h3>
         </div>
-        
-        {/* Equipment Display - Below reps */}
-        {(() => {
-          // Get equipment from assignment or video
-          const equipmentStr = assignment.displayEquipment || assignment.video.equipment;
-          if (!equipmentStr) return null;
-          
-          // Take only the first equipment item for clean display
-          const equipment = equipmentStr.split(',')[0].trim();
-          if (!equipment) return null;
-          
-          return (
-            <div className={`mt-1 bg-black/60 backdrop-blur-sm rounded-lg ${isCompactMode ? 'px-2 py-1' : 'px-3 py-1.5'} text-center`}>
-              <div className={`${isCompactMode ? 'text-xs' : 'text-sm'} text-gray-200 uppercase tracking-wide font-medium`}>
-                {equipment}
-              </div>
-            </div>
-          );
-        })()}
       </div>
 
-      {/* Logo - Top Left */}
-      <div className={`absolute ${isCompactMode ? 'top-2 left-0' : 'top-6 left-0'} z-20`}>
-        <img 
-          src={logoPath} 
-          alt="10Rounds Logo"
-          className={`${isCompactMode ? 'w-16 h-16' : 'w-24 h-24'} object-contain`}
-        />
-      </div>
-      
-      {/* Video Title Overlay - Top Center */}
-      <div className={`absolute ${isCompactMode ? 'top-2' : 'top-6'} left-1/2 transform -translate-x-1/2 z-10`}>
-        <div className={`bg-white/90 backdrop-blur-sm rounded-lg ${isCompactMode ? 'px-3 py-1.5' : 'px-6 py-3'} text-center`}>
-          <h3 className={`${isCompactMode ? 'text-lg' : 'text-2xl'} font-bold text-black`}>{assignment.video.title}</h3>
-        </div>
-      </div>
+      {/* Reps + Equipment — top right */}
+      {(() => {
+        const repsStr = String(assignment.reps ?? '').trim();
+        const equipmentRaw = (assignment.displayEquipment || assignment.video.equipment || '').split(',')[0].trim();
+        const equipmentStr = equipmentRaw.toLowerCase() === 'none' ? '' : equipmentRaw;
+        const isNumericOnly = /^\d+$/.test(repsStr);
+        const hasReps = repsStr && repsStr !== '0';
+        if (!hasReps && !equipmentStr) return null;
+
+        return (
+          <div className={`absolute ${isCompactMode ? 'top-3 right-3' : 'top-5 right-5'} z-20`}>
+            <div className={`
+              flex flex-col items-center
+              bg-black/75 backdrop-blur-md
+              rounded-2xl overflow-hidden
+              shadow-[0_4px_24px_rgba(0,0,0,0.35)]
+              ${isCompactMode ? 'min-w-[56px]' : 'min-w-[76px]'}
+            `}>
+              {/* Reps block */}
+              {hasReps && (
+                <div className={`flex flex-col items-center justify-center ${isCompactMode ? 'px-3 pt-2.5 pb-2' : 'px-4 pt-4 pb-3'}`}>
+                  {isNumericOnly ? (
+                    <>
+                      <span className={`font-black text-white leading-none ${isCompactMode ? 'text-2xl' : 'text-4xl'}`}>
+                        {repsStr}
+                      </span>
+                      <span className={`text-white/50 font-semibold uppercase tracking-widest mt-0.5 ${isCompactMode ? 'text-[9px]' : 'text-[10px]'}`}>
+                        REPS
+                      </span>
+                    </>
+                  ) : (
+                    <span className={`font-bold text-white text-center leading-tight uppercase tracking-wide ${isCompactMode ? 'text-xs' : 'text-sm'}`}>
+                      {repsStr}
+                    </span>
+                  )}
+                </div>
+              )}
+
+              {/* Divider + Equipment */}
+              {hasReps && equipmentStr && (
+                <div className="w-full h-px bg-white/10" />
+              )}
+              {equipmentStr && (
+                <div className={`flex items-center justify-center w-full ${isCompactMode ? 'px-2 py-1.5' : 'px-3 py-2'}`}>
+                  <span className={`text-white/60 font-medium uppercase tracking-widest text-center ${isCompactMode ? 'text-[9px]' : 'text-[10px]'}`}>
+                    {equipmentStr}
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
       
       {/* Loading/Error placeholder */}
       {(!videoLoaded && !videoError) && (

@@ -143,11 +143,8 @@ const WEEK_DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", 
 const WORKOUT_FOCUSES: WorkoutFocus[] = [
   "Balanced",
   "HIIT Focused",
-  "Strength Focused",
   "Functional Fitness",
   "Boxing Focused",
-  "Conditioning Focused",
-  "Endurance Focused",
 ];
 
 // Returns the Monday of the week containing `date`

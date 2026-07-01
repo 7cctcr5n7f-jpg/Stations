@@ -10,6 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import VideoPlayer from "@/components/video-player";
 import VideoAssignmentModal from "@/components/video-assignment-modal";
 import VideoUploadModal from "@/components/video-upload-modal";
 import VideoEditModal from "@/components/video-edit-modal";
@@ -27,7 +28,7 @@ import { UnknownTermsBanner, UnknownTermsReviewDialog, type UnknownTerm } from "
 import { 
   Dumbbell, LogOut, TrendingUp, Play, Video as VideoIcon, Calendar, 
   DoorOpen, Plus, Trash2, Edit, Clock, CheckCircle, Download, Wifi, WifiOff,
-  Monitor, ZoomIn, ZoomOut, Save, ChevronsUpDown, ChevronUp, ChevronDown, GripVertical, X, Copy,
+  Monitor, ZoomIn, ZoomOut, Save, ChevronsUpDown, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, GripVertical, X, Copy,
   Sparkles, AlertCircle, Loader2, Search, CalendarDays, BookOpen, Image,
   Wand2, Settings2
 } from "lucide-react";
@@ -682,13 +683,13 @@ function TrainerDashboardInner() {
       const countRes = await apiRequest("GET", "/api/videos/ai-metadata");
       const { needsReview } = await countRes.json();
       if (!needsReview || needsReview === 0) {
-        toast({ title: "All exercises already have AI metadata", description: "Nothing to process." });
+        toast({ title: "All exercises are complete", description: "Every video has category, muscles, intensity and movement filled." });
         return;
       }
 
       const total = needsReview;
       setAiProgress({ running: true, processed: 0, total });
-      toast({ title: "AI metadata started", description: `Processing ${total} exercises...` });
+      toast({ title: "Filling missing metadata", description: `${total} exercises need category, muscles, intensity or movement data...` });
 
       let processed = 0;
       let consecutiveErrors = 0;
@@ -1258,82 +1259,6 @@ function TrainerDashboardInner() {
                       className="h-8 pl-8 text-xs"
                     />
                   </div>
-                  <SearchableSelect
-                    options={dynamicCategories}
-                    value={videoFilters.category[0] || "all"}
-                    placeholder="Category"
-                    onValueChange={(value) =>
-                      setVideoFilters(prev => ({ ...prev, category: value === "all" ? [] : [value] }))
-                    }
-                    allowAll={true}
-                  />
-                  <SearchableSelect
-                    options={dynamicBodyParts}
-                    value={videoFilters.bodyPart[0] || "all"}
-                    placeholder="Muscle"
-                    onValueChange={(value) =>
-                      setVideoFilters(prev => ({ ...prev, bodyPart: value === "all" ? [] : [value] }))
-                    }
-                    allowAll={true}
-                  />
-                  <SearchableSelect
-                    options={dynamicEquipment}
-                    value={videoFilters.equipment[0] || "all"}
-                    placeholder="Equipment"
-                    onValueChange={(value) =>
-                      setVideoFilters(prev => ({ ...prev, equipment: value === "all" ? [] : [value] }))
-                    }
-                    allowAll={true}
-                  />
-                  <Select
-                    value={videoFilters.intensity || "all"}
-                    onValueChange={(value) =>
-                      setVideoFilters(prev => ({ ...prev, intensity: value === "all" ? "" : value }))
-                    }
-                  >
-                    <SelectTrigger className="h-8 w-32 text-xs">
-                      <SelectValue placeholder="Intensity" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All intensities</SelectItem>
-                      {INTENSITY_LEVELS.map((level) => (
-                        <SelectItem key={level} value={level}>{level}</SelectItem>
-                      ))}
-                      <SelectItem value="unset">Unset</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <Select
-                    value={videoFilters.lastUsed || "all"}
-                    onValueChange={(value) =>
-                      setVideoFilters(prev => ({ ...prev, lastUsed: value === "all" ? "" : value }))
-                    }
-                  >
-                    <SelectTrigger className="h-8 w-32 text-xs">
-                      <SelectValue placeholder="Last Used" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">Any time</SelectItem>
-                      <SelectItem value="today">Today</SelectItem>
-                      <SelectItem value="week">This week</SelectItem>
-                      <SelectItem value="month">This month</SelectItem>
-                      <SelectItem value="never">Never used</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <Select
-                    value={videoFilters.scheduled || "all"}
-                    onValueChange={(value) =>
-                      setVideoFilters(prev => ({ ...prev, scheduled: value === "all" ? "" : value }))
-                    }
-                  >
-                    <SelectTrigger className="h-8 w-34 text-xs">
-                      <SelectValue placeholder="Scheduled" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All schedules</SelectItem>
-                      <SelectItem value="scheduled">Scheduled</SelectItem>
-                      <SelectItem value="unscheduled">Not scheduled</SelectItem>
-                    </SelectContent>
-                  </Select>
                   <button
                     type="button"
                     onClick={() => setVideoFilters(prev => ({ ...prev, needsReview: !prev.needsReview }))}
@@ -1380,11 +1305,124 @@ function TrainerDashboardInner() {
                             />
                           </div>
                         </th>
-                        <th className="text-left p-2 font-medium text-gray-500 uppercase tracking-wide text-[10px] w-24">Last Used</th>
+                        <th className="text-left p-2 font-medium text-gray-500 uppercase tracking-wide text-[10px] w-20">Last Used</th>
+                        <th className="text-center p-2 font-medium text-gray-500 uppercase tracking-wide text-[10px] w-14">Times</th>
                         <th className="text-left p-2 font-medium text-gray-500 uppercase tracking-wide text-[10px] w-28">Scheduled</th>
                         <th className="text-center p-2 font-medium text-gray-500 uppercase tracking-wide text-[10px] w-10">Int.</th>
                         <th className="text-left p-2 font-medium text-gray-500 uppercase tracking-wide text-[10px] w-28">Movement</th>
                         <th className="w-8 p-2"></th>
+                      </tr>
+                      {/* Filter row — each control sits directly under its column */}
+                      <tr className="border-b border-gray-200 bg-white">
+                        {/* Thumbnail col — no filter */}
+                        <th className="p-1.5 pl-2 w-10"></th>
+                        {/* AI status col — no filter */}
+                        <th className="p-1 w-6"></th>
+                        {/* Name — no column filter (uses search bar above) */}
+                        <th className="p-1.5"></th>
+                        {/* Cat. */}
+                        <th className="p-1.5 w-24">
+                          <SearchableSelect
+                            options={dynamicCategories}
+                            value={videoFilters.category[0] || "all"}
+                            placeholder="All"
+                            onValueChange={(value) =>
+                              setVideoFilters(prev => ({ ...prev, category: value === "all" ? [] : [value] }))
+                            }
+                            allowAll={true}
+                            className="h-7 text-[11px] w-full"
+                          />
+                        </th>
+                        {/* Muscles */}
+                        <th className="p-1.5">
+                          <SearchableSelect
+                            options={dynamicBodyParts}
+                            value={videoFilters.bodyPart[0] || "all"}
+                            placeholder="All"
+                            onValueChange={(value) =>
+                              setVideoFilters(prev => ({ ...prev, bodyPart: value === "all" ? [] : [value] }))
+                            }
+                            allowAll={true}
+                            className="h-7 text-[11px] w-full"
+                          />
+                        </th>
+                        {/* Equipment */}
+                        <th className="p-1.5">
+                          <SearchableSelect
+                            options={dynamicEquipment}
+                            value={videoFilters.equipment[0] || "all"}
+                            placeholder="All"
+                            onValueChange={(value) =>
+                              setVideoFilters(prev => ({ ...prev, equipment: value === "all" ? [] : [value] }))
+                            }
+                            allowAll={true}
+                            className="h-7 text-[11px] w-full"
+                          />
+                        </th>
+                        {/* Last Used */}
+                        <th className="p-1.5 w-20">
+                          <Select
+                            value={videoFilters.lastUsed || "all"}
+                            onValueChange={(value) =>
+                              setVideoFilters(prev => ({ ...prev, lastUsed: value === "all" ? "" : value }))
+                            }
+                          >
+                            <SelectTrigger className="h-7 w-full text-[11px]">
+                              <SelectValue placeholder="Any time" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="all">Any time</SelectItem>
+                              <SelectItem value="today">Today</SelectItem>
+                              <SelectItem value="week">This week</SelectItem>
+                              <SelectItem value="month">This month</SelectItem>
+                              <SelectItem value="never">Never used</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </th>
+                        {/* Times — no filter */}
+                        <th className="p-1.5 w-14"></th>
+                        {/* Scheduled */}
+                        <th className="p-1.5 w-28">
+                          <Select
+                            value={videoFilters.scheduled || "all"}
+                            onValueChange={(value) =>
+                              setVideoFilters(prev => ({ ...prev, scheduled: value === "all" ? "" : value }))
+                            }
+                          >
+                            <SelectTrigger className="h-7 w-full text-[11px]">
+                              <SelectValue placeholder="All" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="all">All</SelectItem>
+                              <SelectItem value="scheduled">Scheduled</SelectItem>
+                              <SelectItem value="unscheduled">Not scheduled</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </th>
+                        {/* Intensity */}
+                        <th className="p-1.5 w-10">
+                          <Select
+                            value={videoFilters.intensity || "all"}
+                            onValueChange={(value) =>
+                              setVideoFilters(prev => ({ ...prev, intensity: value === "all" ? "" : value }))
+                            }
+                          >
+                            <SelectTrigger className="h-7 w-full text-[11px]">
+                              <SelectValue placeholder="All" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="all">All</SelectItem>
+                              {INTENSITY_LEVELS.map((level) => (
+                                <SelectItem key={level} value={level}>{level}</SelectItem>
+                              ))}
+                              <SelectItem value="unset">Unset</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </th>
+                        {/* Movement — no filter */}
+                        <th className="p-1.5 w-28"></th>
+                        {/* Actions col — no filter */}
+                        <th className="w-8 p-1.5"></th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
@@ -1472,45 +1510,43 @@ function TrainerDashboardInner() {
                                 />
                               ) : (
                                 <div className="flex flex-wrap gap-1 items-center">
-                                  {/* Category pill */}
-                                  {video.category ? (
-                                    <button
-                                      className="rounded px-1.5 py-0.5 text-[10px] font-semibold bg-green-50 text-green-800 hover:bg-green-100 transition-colors border border-green-200"
-                                      onClick={() => setInlineEditingField({ videoId: video.id, field: "bodyPart" })}
-                                      title="Edit category"
-                                    >
-                                      {video.category}
-                                    </button>
-                                  ) : (
-                                    <button
-                                      className="rounded px-1.5 py-0.5 text-[10px] bg-red-50 text-red-600 hover:bg-red-100 transition-colors"
-                                      onClick={() => setInlineEditingField({ videoId: video.id, field: "bodyPart" })}
-                                      title="Set category"
-                                    >
-                                      + set
-                                    </button>
-                                  )}
-                                  {/* Muscle group pills */}
-                                  {Array.isArray(video.muscleGroups) && video.muscleGroups.length > 0 ? (
-                                    video.muscleGroups.slice(0, 3).map((m: string, i: number) => (
+                                  {/* Muscle group pills — granular secondary muscles only, no broad category terms */}
+                                  {(() => {
+                                    // Broad category-level terms that belong in the Cat. column only
+                                    const BROAD_TERMS = new Set([
+                                      'legs','core','cardio','shoulders','general','back','chest',
+                                      'biceps','triceps','arms','none','ladies','hiit','boxing',
+                                      'upper body','lower body','full body','abdominals','abs',
+                                    ])
+                                    const catChips = deriveCategories(video.bodyPart, video.equipment).map((c: string) => c.toLowerCase())
+                                    const catLower = (video.category ?? "").toLowerCase()
+                                    const uniqueMuscles = Array.isArray(video.muscleGroups)
+                                      ? video.muscleGroups.filter((m: string) => {
+                                          const ml = m.trim().toLowerCase()
+                                          return ml && !BROAD_TERMS.has(ml) && !catChips.includes(ml) && ml !== catLower
+                                        })
+                                      : []
+                                    return uniqueMuscles.length > 0 ? (
+                                      uniqueMuscles.slice(0, 3).map((m: string, i: number) => (
+                                        <button
+                                          key={i}
+                                          className="rounded px-1.5 py-0.5 text-[10px] font-medium bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors"
+                                          onClick={() => setInlineEditingField({ videoId: video.id, field: "muscleGroups" })}
+                                          title="Edit muscle groups"
+                                        >
+                                          {m.trim()}
+                                        </button>
+                                      ))
+                                    ) : (
                                       <button
-                                        key={i}
-                                        className="rounded px-1.5 py-0.5 text-[10px] font-medium bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors"
+                                        className="rounded px-1 py-0.5 text-[10px] text-gray-300 hover:text-gray-500 hover:bg-gray-100 transition-colors"
                                         onClick={() => setInlineEditingField({ videoId: video.id, field: "muscleGroups" })}
-                                        title="Edit muscle groups"
+                                        title="Add muscle groups"
                                       >
-                                        {m.trim()}
+                                        +
                                       </button>
-                                    ))
-                                  ) : (
-                                    <button
-                                      className="rounded px-1 py-0.5 text-[10px] text-gray-300 hover:text-gray-500 hover:bg-gray-100 transition-colors"
-                                      onClick={() => setInlineEditingField({ videoId: video.id, field: "muscleGroups" })}
-                                      title="Add muscle groups"
-                                    >
-                                      +
-                                    </button>
-                                  )}
+                                    )
+                                  })()}
                                 </div>
                               )}
                             </td>
@@ -1548,20 +1584,23 @@ function TrainerDashboardInner() {
                               )}
                             </td>
 
-                            {/* Last Used — single line: clock · 35d · ×7 */}
+                            {/* Last Used */}
                             <td className="p-2 whitespace-nowrap">
                               <div className="flex items-center gap-1 text-[10px] text-gray-500">
                                 <Clock className="h-3 w-3 shrink-0 text-gray-400" />
-                                <span className="tabular-nums">{formatTimeAgoShort(video.lastUsed)}</span>
-                                {(video.timesUsed ?? 0) > 0 && (
-                                  <>
-                                    <span className="text-gray-300">·</span>
-                                    <span className="tabular-nums rounded-full bg-gray-100 px-1.5 py-px text-gray-500 font-medium text-[9px]">
-                                      ×{video.timesUsed}
-                                    </span>
-                                  </>
-                                )}
+                                <span className="tabular-nums">{formatTimeAgoShort(video.lastUsed ?? null)}</span>
                               </div>
+                            </td>
+
+                            {/* Times Used */}
+                            <td className="p-2 text-center whitespace-nowrap">
+                              {(video.timesUsed ?? 0) > 0 ? (
+                                <span className="tabular-nums rounded-full bg-gray-100 px-1.5 py-0.5 text-gray-600 font-semibold text-[10px]">
+                                  {video.timesUsed}
+                                </span>
+                              ) : (
+                                <span className="text-[10px] text-gray-300">—</span>
+                              )}
                             </td>
 
                             {/* Scheduled */}
@@ -1686,543 +1725,370 @@ function TrainerDashboardInner() {
           </TabsContent>
 
           {/* Schedule Tab */}
-          <TabsContent value="schedule" className="space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>Weekly Schedule</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                {/* Date Selector */}
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-4">
-                      <h3 className="text-lg font-semibold">Schedule Calendar</h3>
-                      <div className="flex space-x-2">
-                        <Button
-                          onClick={() => {
-                            const currentWeekStart = new Date(currentDate);
-                            currentWeekStart.setDate(currentWeekStart.getDate() - 7);
-                            setCurrentDate(currentWeekStart.toISOString().split('T')[0]);
-                          }}
-                          variant="outline"
-                          size="sm"
-                        >
-                          Previous Week
-                        </Button>
-                        <Button
-                          onClick={() => {
-                            const currentWeekStart = new Date(currentDate);
-                            currentWeekStart.setDate(currentWeekStart.getDate() + 7);
-                            setCurrentDate(currentWeekStart.toISOString().split('T')[0]);
-                          }}
-                          variant="outline"
-                          size="sm"
-                        >
-                          Next Week
-                        </Button>
-                        <Button
-                          onClick={() => fillScheduleMutation.mutate(currentDate)}
-                          disabled={fillScheduleMutation.isPending}
-                          size="sm"
-                          className="bg-blue-600 text-white hover:bg-blue-700"
-                          title={
-                            (schedules?.length ?? 0) > 0
-                              ? "Keep existing rounds and auto-fill the empty ones"
-                              : "Auto-build a full workout for this day"
-                          }
-                        >
-                          {fillScheduleMutation.isPending ? (
-                            <Loader2 className="mr-1 h-4 w-4 animate-spin" />
-                          ) : (
-                            <Wand2 className="mr-1 h-4 w-4" />
-                          )}
-                          {(schedules?.length ?? 0) > 0 ? "Fill Empty Rounds" : "Build Workout"}
-                        </Button>
-                      </div>
+          <TabsContent value="schedule" className="space-y-4">
+            {/* ── Week navigator ───────────────────────────────────────────── */}
+            {(() => {
+              const currentDateObj = new Date(currentDate);
+              const currentDay = currentDateObj.getDay();
+              const daysFromMonday = currentDay === 0 ? 6 : currentDay - 1;
+              const weekStart = new Date(currentDateObj);
+              weekStart.setDate(currentDateObj.getDate() - daysFromMonday);
+              const weekEnd = new Date(weekStart);
+              weekEnd.setDate(weekStart.getDate() + 5);
+
+              const mondayStr = weekStart.toISOString().split('T')[0];
+              const tuesdayStr = new Date(weekStart.getTime() + 86400000).toISOString().split('T')[0];
+              const wednesdayStr = new Date(weekStart.getTime() + 2*86400000).toISOString().split('T')[0];
+              const thursdayStr = new Date(weekStart.getTime() + 3*86400000).toISOString().split('T')[0];
+              const fridayStr = new Date(weekStart.getTime() + 4*86400000).toISOString().split('T')[0];
+              const saturdayStr = new Date(weekStart.getTime() + 5*86400000).toISOString().split('T')[0];
+
+              const weekDays = [mondayStr, tuesdayStr, wednesdayStr, thursdayStr, fridayStr, saturdayStr];
+
+              const weekLabel = `${weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${weekEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
+
+              // Category donut data
+              const categoryCounts = schedules?.reduce((acc: Record<string, number>, schedule: any) => {
+                const video = videos?.find((v: any) => v.id === schedule.videoId);
+                if (video) {
+                  const cats = deriveCategories(video.bodyPart, video.equipment);
+                  cats.forEach((c: string) => { acc[c] = (acc[c] || 0) + 1; });
+                }
+                return acc;
+              }, {} as Record<string, number>) || {};
+
+              const CATEGORY_COLORS: Record<string, string> = {
+                HIIT: '#ef4444', Chest: '#3b82f6', Core: '#8b5cf6', Shoulders: '#f59e0b',
+                Back: '#10b981', Legs: '#06b6d4', Triceps: '#f97316', Biceps: '#ec4899',
+                Boxing: '#6366f1', Missing: '#9ca3af',
+              };
+              const totalCats = Object.values(categoryCounts).reduce((a: number, b: number) => a + b, 0);
+              const donutData = Object.entries(categoryCounts)
+                .filter(([, v]) => v > 0)
+                .sort(([, a], [, b]) => (b as number) - (a as number))
+                .map(([name, value]) => ({
+                  name,
+                  value: value as number,
+                  pct: totalCats > 0 ? Math.round(((value as number) / totalCats) * 100) : 0,
+                  color: CATEGORY_COLORS[name] || '#6b7280',
+                }));
+
+              return (
+                <>
+                  {/* Header row: week label + prev/next + actions */}
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => {
+                          const d = new Date(currentDate);
+                          d.setDate(d.getDate() - 7);
+                          setCurrentDate(d.toISOString().split('T')[0]);
+                        }}
+                        className="flex items-center justify-center w-8 h-8 rounded-full border border-gray-200 bg-white hover:bg-gray-50 transition-colors text-gray-600"
+                        aria-label="Previous week"
+                      >
+                        <ChevronLeft className="h-4 w-4" />
+                      </button>
+                      <span className="text-base font-semibold text-gray-900 min-w-[200px] text-center">{weekLabel}</span>
+                      <button
+                        onClick={() => {
+                          const d = new Date(currentDate);
+                          d.setDate(d.getDate() + 7);
+                          setCurrentDate(d.toISOString().split('T')[0]);
+                        }}
+                        className="flex items-center justify-center w-8 h-8 rounded-full border border-gray-200 bg-white hover:bg-gray-50 transition-colors text-gray-600"
+                        aria-label="Next week"
+                      >
+                        <ChevronRight className="h-4 w-4" />
+                      </button>
                     </div>
-                    
-                    {/* Categories Summary Table */}
-                    <div className="bg-white border border-gray-200 rounded-lg shadow-sm">
-                      <div className="px-4 py-3 border-b border-gray-200">
-                        <h4 className="text-sm font-semibold text-gray-800">
-                          Categories - {new Date(currentDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                        </h4>
-                      </div>
-                      <div className="p-4">
-                        <div className="grid grid-cols-9 gap-3">
-                          {(() => {
-                            // Calculate category counts for current day
-                            const categoryCounts = schedules?.reduce((acc: Record<string, number>, schedule: any) => {
-                              const video = videos?.find((v: any) => v.id === schedule.videoId);
-                              if (video) {
-                                const categories = deriveCategories(video.bodyPart, video.equipment);
-                                categories.forEach(category => {
-                                  acc[category] = (acc[category] || 0) + 1;
-                                });
-                              }
-                              return acc;
-                            }, {} as Record<string, number>) || {};
-                            
-                            // All possible categories
-                            const allCategories = ['Shoulders', 'Triceps', 'Back', 'Legs', 'Biceps', 'Chest', 'Core', 'HIIT', 'Missing'];
-                            
-                            return allCategories.map(category => (
-                              <div key={category} className="text-center">
-                                <div className={`inline-block px-3 py-2 rounded text-sm font-medium mb-1 ${
-                                  category === 'Missing' 
-                                    ? 'bg-gray-100 text-gray-800' 
-                                    : category === 'HIIT'
-                                    ? 'bg-red-100 text-red-800'
-                                    : 'bg-blue-100 text-blue-800'
-                                }`}>
-                                  {category}
-                                </div>
-                                <div className="text-lg font-bold text-gray-900">
-                                  {categoryCounts[category] || 0}
-                                </div>
+
+                    {/* Quick copy + Build button */}
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-gray-400 hidden sm:block">Copy:</span>
+                      <button
+                        onClick={() => copyScheduleMutation.mutate({ sourceDate: mondayStr, targetDate: thursdayStr })}
+                        disabled={copyScheduleMutation.isPending}
+                        className="text-xs px-2.5 py-1.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 text-gray-600 transition-colors disabled:opacity-50"
+                        title="Copy Monday → Thursday"
+                      >Mon → Thu</button>
+                      <button
+                        onClick={() => copyScheduleMutation.mutate({ sourceDate: tuesdayStr, targetDate: fridayStr })}
+                        disabled={copyScheduleMutation.isPending}
+                        className="text-xs px-2.5 py-1.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 text-gray-600 transition-colors disabled:opacity-50"
+                        title="Copy Tuesday → Friday"
+                      >Tue → Fri</button>
+                      <button
+                        onClick={() => copyScheduleMutation.mutate({ sourceDate: wednesdayStr, targetDate: saturdayStr })}
+                        disabled={copyScheduleMutation.isPending}
+                        className="text-xs px-2.5 py-1.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 text-gray-600 transition-colors disabled:opacity-50"
+                        title="Copy Wednesday → Saturday"
+                      >Wed → Sat</button>
+                      <Button
+                        onClick={() => fillScheduleMutation.mutate(currentDate)}
+                        disabled={fillScheduleMutation.isPending}
+                        size="sm"
+                        className="bg-gray-900 text-white hover:bg-gray-800 gap-1.5 ml-2"
+                      >
+                        {fillScheduleMutation.isPending ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <Wand2 className="h-3.5 w-3.5" />
+                        )}
+                        {(schedules?.length ?? 0) > 0 ? 'Fill Rounds' : 'Build Workout'}
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* Day pills */}
+                  <div className="flex gap-1.5">
+                    {weekDays.map((dateStr) => {
+                      const d = new Date(dateStr);
+                      const dayName = d.toLocaleDateString('en-US', { weekday: 'short' });
+                      const dayNum = d.getDate();
+                      const daySchedules = weekSchedules?.filter((s: any) => s.scheduleDate === dateStr) || [];
+                      const filled = new Set(daySchedules.map((s: any) => s.roomId)).size;
+                      const isSelected = currentDate === dateStr;
+                      const isComplete = filled >= 10;
+                      return (
+                        <button
+                          key={dateStr}
+                          onClick={() => setCurrentDate(dateStr)}
+                          className={`flex-1 flex flex-col items-center py-2 px-1 rounded-xl border transition-all ${
+                            isSelected
+                              ? 'bg-gray-900 border-gray-900 text-white shadow-md'
+                              : isComplete
+                              ? 'bg-green-50 border-green-200 text-green-800 hover:bg-green-100'
+                              : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'
+                          }`}
+                        >
+                          <span className={`text-[10px] font-medium uppercase tracking-wider ${isSelected ? 'text-gray-300' : isComplete ? 'text-green-600' : 'text-gray-400'}`}>{dayName}</span>
+                          <span className={`text-lg font-bold leading-tight ${isSelected ? 'text-white' : 'text-gray-900'}`}>{dayNum}</span>
+                          <span className={`text-[10px] mt-0.5 ${isSelected ? 'text-gray-400' : isComplete ? 'text-green-500 font-medium' : 'text-gray-400'}`}>
+                            {filled}/10
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Category donut + round grid */}
+                  <div className="flex gap-4 items-start">
+                    {/* Donut chart */}
+                    {donutData.length > 0 && (
+                      <div className="shrink-0 bg-white border border-gray-100 rounded-2xl p-4 shadow-sm w-[220px]">
+                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
+                          {new Date(currentDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} — Focus
+                        </p>
+                        <div className="flex items-center gap-3">
+                          {/* SVG donut */}
+                          <svg width="72" height="72" viewBox="0 0 72 72" className="shrink-0">
+                            {(() => {
+                              const r = 28; const cx = 36; const cy = 36;
+                              const circumference = 2 * Math.PI * r;
+                              let offset = 0;
+                              return donutData.map((d, i) => {
+                                const dash = (d.pct / 100) * circumference;
+                                const gap = circumference - dash;
+                                const el = (
+                                  <circle
+                                    key={d.name}
+                                    cx={cx} cy={cy} r={r}
+                                    fill="none"
+                                    stroke={d.color}
+                                    strokeWidth="12"
+                                    strokeDasharray={`${dash} ${gap}`}
+                                    strokeDashoffset={-offset}
+                                    transform="rotate(-90 36 36)"
+                                    className="transition-all duration-500"
+                                  />
+                                );
+                                offset += dash;
+                                return el;
+                              });
+                            })()}
+                            <circle cx="36" cy="36" r="22" fill="white" />
+                            <text x="36" y="40" textAnchor="middle" className="text-xs font-bold" style={{ fontSize: '11px', fontWeight: 700, fill: '#111' }}>
+                              {donutData[0]?.pct}%
+                            </text>
+                          </svg>
+                          {/* Legend */}
+                          <div className="flex flex-col gap-1 min-w-0">
+                            {donutData.map((d) => (
+                              <div key={d.name} className="flex items-center gap-1.5 min-w-0">
+                                <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: d.color }} />
+                                <span className="text-[10px] text-gray-600 truncate">{d.name}</span>
+                                <span className="text-[10px] font-semibold text-gray-900 ml-auto pl-1">{d.pct}%</span>
                               </div>
-                            ));
-                          })()}
+                            ))}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  </div>
-                  
-                  {/* Copy Schedule Buttons */}
-                  <div className="flex items-center justify-center space-x-2 p-3 bg-gray-50 rounded-lg border border-gray-200">
-                    <span className="text-sm text-gray-600 mr-2">Quick Copy:</span>
-                    {(() => {
-                      // Calculate the current week's Monday to determine copy buttons
-                      const currentDateObj = new Date(currentDate);
-                      const currentDay = currentDateObj.getDay();
-                      const daysFromMonday = currentDay === 0 ? 6 : currentDay - 1;
-                      const weekStart = new Date(currentDateObj);
-                      weekStart.setDate(currentDateObj.getDate() - daysFromMonday);
-                      
-                      // Get dates for the week
-                      const monday = new Date(weekStart);
-                      const tuesday = new Date(weekStart); tuesday.setDate(weekStart.getDate() + 1);
-                      const wednesday = new Date(weekStart); wednesday.setDate(weekStart.getDate() + 2);
-                      const thursday = new Date(weekStart); thursday.setDate(weekStart.getDate() + 3);
-                      const friday = new Date(weekStart); friday.setDate(weekStart.getDate() + 4);
-                      const saturday = new Date(weekStart); saturday.setDate(weekStart.getDate() + 5);
-                      
-                      const mondayStr = monday.toISOString().split('T')[0];
-                      const tuesdayStr = tuesday.toISOString().split('T')[0];
-                      const wednesdayStr = wednesday.toISOString().split('T')[0];
-                      const thursdayStr = thursday.toISOString().split('T')[0];
-                      const fridayStr = friday.toISOString().split('T')[0];
-                      const saturdayStr = saturday.toISOString().split('T')[0];
+                    )}
 
-                      return (
-                        <>
-                          <Button
-                            onClick={() => copyScheduleMutation.mutate({ sourceDate: mondayStr, targetDate: thursdayStr })}
-                            variant="outline"
-                            size="sm"
-                            disabled={copyScheduleMutation.isPending}
-                            className="text-xs"
-                          >
-                            <Copy className="h-3 w-3 mr-1" />
-                            Copy Monday → Thursday
-                          </Button>
-                          <Button
-                            onClick={() => copyScheduleMutation.mutate({ sourceDate: tuesdayStr, targetDate: fridayStr })}
-                            variant="outline"
-                            size="sm"
-                            disabled={copyScheduleMutation.isPending}
-                            className="text-xs"
-                          >
-                            <Copy className="h-3 w-3 mr-1" />
-                            Copy Tuesday → Friday
-                          </Button>
-                          <Button
-                            onClick={() => copyScheduleMutation.mutate({ sourceDate: wednesdayStr, targetDate: saturdayStr })}
-                            variant="outline"
-                            size="sm"
-                            disabled={copyScheduleMutation.isPending}
-                            className="text-xs"
-                          >
-                            <Copy className="h-3 w-3 mr-1" />
-                            Copy Wednesday → Saturday
-                          </Button>
-                        </>
-                      );
-                    })()}
-                  </div>
-                  
-                  <div className="flex space-x-2 overflow-x-auto">
-                    {(() => {
-                      const dates = [];
-                      const startDate = new Date(currentDate);
-                      
-                      // Find Monday of the current week
-                      const currentDay = startDate.getDay();
-                      const daysFromMonday = currentDay === 0 ? 6 : currentDay - 1; // Sunday = 0, Monday = 1
-                      startDate.setDate(startDate.getDate() - daysFromMonday);
-                      
-                      // Generate dates for the week (Monday to Saturday only)
-                      for (let i = 0; i < 6; i++) {
-                        const date = new Date(startDate);
-                        date.setDate(startDate.getDate() + i);
-                        
-                        const dateString = date.toISOString().split('T')[0];
-                        const dayName = date.toLocaleDateString('en-US', { weekday: 'short' });
-                        const dayNumber = date.getDate();
-                        
-                        dates.push({ dateString, dayName, dayNumber, date });
-                      }
-                      
-                      return dates.map(({ dateString, dayName, dayNumber }) => {
-                        // Check if this date has complete schedule (all 10 rounds have at least 1 video)
-                        const dateSchedules = weekSchedules?.filter((s: any) => s.scheduleDate === dateString) || [];
-                        const scheduledRooms = new Set(dateSchedules.map((s: any) => s.roomId));
-                        const totalRounds = 10; // All rounds 1-10
-                        const isCompleteSchedule = scheduledRooms.size === totalRounds;
-                        
+                    {/* ── Round cards grid ──────────────────────────────────── */}
+                    <div className="flex-1 grid grid-cols-2 gap-2">
+                      {roomsWithAssignments.map((room) => {
+                        const isEmpty = room.assignments.length === 0;
+                        const isFull = room.assignments.length >= 2;
                         return (
-                          <Button
-                            key={dateString}
-                            onClick={() => setCurrentDate(dateString)}
-                            variant={currentDate === dateString ? "default" : "outline"}
-                            className={`whitespace-nowrap min-w-[80px] ${
-                              currentDate === dateString 
-                                ? isCompleteSchedule 
-                                  ? "bg-green-600 hover:bg-green-700 text-white" 
-                                  : "bg-[hsl(207,90%,54%)] hover:bg-blue-700 text-white"
-                                : isCompleteSchedule 
-                                ? "bg-green-100 hover:bg-green-200 border-green-300 text-green-800"
-                                : "bg-red-100 hover:bg-red-200 border-red-300 text-red-800"
+                          <div
+                            key={room.id}
+                            className={`rounded-xl border bg-white overflow-hidden transition-shadow hover:shadow-md ${
+                              isEmpty ? 'border-red-100 bg-red-50/30' : isFull ? 'border-green-100' : 'border-amber-100'
                             }`}
                           >
-                            <div className="text-center">
-                              <div className="text-xs">{dayName}</div>
-                              <div className="font-semibold">{dayNumber}</div>
-                              {isCompleteSchedule && currentDate !== dateString && (
-                                <div className="w-2 h-2 bg-green-500 rounded-full mx-auto mt-1"></div>
-                              )}
-                            </div>
-                          </Button>
-                        );
-                      });
-                    })()}
-                  </div>
-                </div>
-
-                {/* Schedule Table */}
-                <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-xs">
-                      <thead className="bg-gray-50 border-b border-gray-200">
-                        <tr>
-                          <th className="text-center p-2 font-medium text-gray-700 w-16 text-xs">Round</th>
-                          <th className="text-left p-2 font-medium text-gray-700 w-64 text-xs">Video</th>
-                          <th className="text-center p-2 font-medium text-gray-700 w-36 text-xs">Reps</th>
-                          <th className="text-center p-2 font-medium text-gray-700 w-36 text-xs">Equipment to use</th>
-                          <th className="text-left p-2 font-medium text-gray-700 w-24 text-xs">Last Used</th>
-                          <th className="text-left p-2 font-medium text-gray-700 w-20 text-xs">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {roomsWithAssignments.map((room, roomIndex) => {
-                          const { colorClass } = getRoomColorClasses(room.number);
-                          
-                          if (room.assignments.length === 0) {
-                            return (
-                              <tr 
-                                key={room.id} 
-                                className={`border-b border-gray-100 hover:bg-blue-50 transition-colors bg-red-50 ${draggedSchedule && draggedSchedule.roomId !== room.id ? 'hover:bg-green-50' : ''}`}
-                                onDragOver={(e) => {
-                                  if (draggedSchedule && draggedSchedule.roomId !== room.id && room.assignments.length < 4) {
-                                    e.preventDefault();
-                                    e.dataTransfer.dropEffect = 'move';
-                                  }
-                                }}
-                                onDrop={(e) => {
-                                  e.preventDefault();
-                                  if (draggedSchedule && draggedSchedule.roomId !== room.id && room.assignments.length < 4) {
-                                    moveScheduleMutation.mutate({
-                                      scheduleId: draggedSchedule.id,
-                                      toRoomId: room.id
-                                    });
-                                  }
-                                }}
-                              >
-                                <td className="p-2 text-center">
-                                  <div className="flex justify-center">
-                                    <div className="w-6 h-6 bg-gray-100 rounded-full flex items-center justify-center border-2 border-gray-300 shadow-sm">
-                                      <span className="text-black text-xs font-bold">{room.number}</span>
-                                    </div>
-                                  </div>
-                                </td>
-                                <td className="p-2 text-gray-500 text-xs">No video assigned</td>
-                                <td className="p-2 text-xs">-</td>
-                                <td className="p-2 text-gray-400 text-xs">-</td>
-                                <td className="p-2 text-xs">-</td>
-                                <td className="p-2">
-                                  <Button
+                            {/* Card header */}
+                            <div className={`flex items-center justify-between px-3 py-2 border-b ${
+                              isEmpty ? 'border-red-100 bg-red-50/40' : isFull ? 'border-green-100 bg-green-50/40' : 'border-amber-100 bg-amber-50/40'
+                            }`}>
+                              <div className="flex items-center gap-2">
+                                <span className={`flex items-center justify-center w-5 h-5 rounded-full text-[10px] font-bold ${
+                                  isEmpty ? 'bg-gray-300 text-gray-600' : isFull ? 'bg-green-600 text-white' : 'bg-amber-500 text-white'
+                                }`}>{room.number}</span>
+                                <span className="text-xs font-semibold text-gray-700">Round {room.number}</span>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${
+                                  isEmpty ? 'bg-red-100 text-red-600' : isFull ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'
+                                }`}>
+                                  {isEmpty ? 'empty' : `${room.assignments.length}/2`}
+                                </span>
+                                {!isFull && (
+                                  <button
                                     onClick={() => handleAssignVideo(null, room.id)}
-                                    variant="outline"
-                                    size="sm"
-                                    className="h-6 px-2 text-xs border-dashed"
+                                    className="w-5 h-5 rounded-full flex items-center justify-center text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
+                                    title="Add video"
                                   >
                                     <Plus className="h-3 w-3" />
-                                  </Button>
-                                </td>
-                              </tr>
-                            );
-                          }
-                          
-                          return room.assignments.map((assignment, index) => (
-                            <tr 
-                              key={assignment.id} 
-                              className={`border-b border-gray-100 hover:bg-blue-50 cursor-move transition-colors bg-green-50 ${draggedSchedule?.id === assignment.id ? 'opacity-50' : ''}`}
-                              draggable="true"
-                              onDragStart={(e) => {
-                                setDraggedSchedule(assignment);
-                                e.dataTransfer.effectAllowed = 'move';
-                              }}
-                              onDragEnd={() => {
-                                setDraggedSchedule(null);
-                              }}
-                            >
-                              {index === 0 && (
-                                <td 
-                                  className={`p-2 text-center transition-colors ${
-                                    draggedSchedule && draggedSchedule.roomId !== room.id ? 'hover:bg-green-100' : ''
-                                  }`} 
-                                  rowSpan={room.assignments.length}
-                                  onDragOver={(e) => {
-                                    if (draggedSchedule && draggedSchedule.roomId !== room.id && room.assignments.length < 4) {
-                                      e.preventDefault();
-                                      e.dataTransfer.dropEffect = 'move';
-                                    }
-                                  }}
-                                  onDrop={(e) => {
-                                    e.preventDefault();
-                                    if (draggedSchedule && draggedSchedule.roomId !== room.id && room.assignments.length < 4) {
-                                      moveScheduleMutation.mutate({
-                                        scheduleId: draggedSchedule.id,
-                                        toRoomId: room.id
-                                      });
-                                    }
-                                  }}
-                                >
-                                  <div className="flex justify-center">
-                                    <div className="w-6 h-6 bg-gray-100 rounded-full flex items-center justify-center border-2 border-gray-300 shadow-sm">
-                                      <span className="text-black text-xs font-bold">{room.number}</span>
-                                    </div>
-                                  </div>
-                                </td>
-                              )}
-                              <td className="p-2">
-                                <div className="flex items-center space-x-2">
-                                  <GripVertical className="h-3 w-3 text-gray-400 cursor-move" />
-                                  <span
-                                    className={`h-2.5 w-2.5 shrink-0 rounded-full ${getIntensityStyle(assignment.video.intensity).dot}`}
-                                    title={`Heart-rate zone: ${getIntensityStyle(assignment.video.intensity).label}`}
-                                  />
-                                  <div className="font-medium text-gray-900 truncate text-xs">
-                                    {assignment.video.title}
-                                  </div>
-                                </div>
-                              </td>
-                              <td className="p-2 text-center">
-                                <Input
-                                  type="text"
-                                  value={scheduleChanges[assignment.id]?.reps !== undefined ? scheduleChanges[assignment.id].reps : assignment.reps}
-                                  onChange={(e) => {
-                                    setScheduleChanges(prev => ({
-                                      ...prev,
-                                      [assignment.id]: {
-                                        ...prev[assignment.id],
-                                        reps: e.target.value
-                                      }
-                                    }));
-                                  }}
-                                  onKeyDown={async (e) => {
-                                    if (e.key === 'Tab' || e.key === 'Enter') {
-                                      const newReps = e.currentTarget.value;
-                                      if (newReps !== String(assignment.reps)) {
-                                        try {
-                                          await apiRequest("PATCH", `/api/schedules/${assignment.id}`, { reps: newReps });
-                                          
-                                          // Update the cache directly to reflect the change
-                                          queryClient.setQueryData(["/api/schedules", "date", currentDate], (oldData: any) => {
-                                            if (!oldData) return oldData;
-                                            return oldData.map((s: any) => 
-                                              s.id === assignment.id ? { ...s, reps: newReps } : s
-                                            );
-                                          });
-                                        } catch (error) {
-                                          console.error('Failed to save reps:', error);
-                                        }
-                                      }
-                                      // Clear local changes
-                                      setScheduleChanges(prev => {
-                                        const newChanges = { ...prev };
-                                        delete newChanges[assignment.id];
-                                        return newChanges;
-                                      });
-                                    }
-                                  }}
-                                  onBlur={async (e) => {
-                                    const newReps = e.target.value;
-                                    if (newReps !== String(assignment.reps)) {
-                                      try {
-                                        await apiRequest("PATCH", `/api/schedules/${assignment.id}`, { reps: newReps });
-                                        
-                                        // Update the cache directly to reflect the change
-                                        queryClient.setQueryData(["/api/schedules", "date", currentDate], (oldData: any) => {
-                                          if (!oldData) return oldData;
-                                          return oldData.map((s: any) => 
-                                            s.id === assignment.id ? { ...s, reps: newReps } : s
-                                          );
-                                        });
-                                      } catch (error) {
-                                        console.error('Failed to save reps:', error);
-                                      }
-                                    }
-                                    // Clear local changes
-                                    setScheduleChanges(prev => {
-                                      const newChanges = { ...prev };
-                                      delete newChanges[assignment.id];
-                                      return newChanges;
-                                    });
-                                  }}
-                                  className="w-32 h-6 text-xs px-2 text-center mx-auto"
-                                />
-                              </td>
-                              <td className="p-2 text-center">
-                                {(() => {
-                                  const videoEquipmentOptions = assignment.video.equipment.split(',').map(e => e.trim()).filter(e => e);
-                                  // Show ALL available equipment as options, but default to assigned equipment
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Video rows */}
+                            {isEmpty ? (
+                              <button
+                                onClick={() => handleAssignVideo(null, room.id)}
+                                className="w-full py-3 text-xs text-gray-400 hover:text-gray-600 hover:bg-gray-50/50 transition-colors text-center"
+                              >
+                                + assign video
+                              </button>
+                            ) : (
+                              <div className="divide-y divide-gray-100">
+                                {room.assignments.map((assignment, idx) => {
+                                  const videoEquipmentOptions = assignment.video.equipment.split(',').map((e: string) => e.trim()).filter((e: string) => e);
                                   const allEquipmentOptions = videoOptions?.equipment || [];
                                   const defaultEquipment = assignment.displayEquipment || videoEquipmentOptions[0] || '';
-                                  
+                                  const repsVal = scheduleChanges[assignment.id]?.reps !== undefined ? scheduleChanges[assignment.id].reps : assignment.reps;
+
                                   return (
-                                    <div className="relative flex justify-center">
-                                      <div className="flex items-center space-x-1">
-                                        <SearchableSelect
-                                          options={allEquipmentOptions}
-                                          value={defaultEquipment}
-                                          onValueChange={async (value) => {
+                                    <div
+                                      key={assignment.id}
+                                      className={`flex items-center gap-2 px-3 py-2 group ${draggedSchedule?.id === assignment.id ? 'opacity-40' : ''}`}
+                                      draggable
+                                      onDragStart={(e) => { setDraggedSchedule(assignment); e.dataTransfer.effectAllowed = 'move'; }}
+                                      onDragEnd={() => setDraggedSchedule(null)}
+                                    >
+                                      <GripVertical className="h-3 w-3 text-gray-300 cursor-grab shrink-0" />
+                                      {/* Thumbnail */}
+                                      <div className="relative shrink-0 w-10 h-10 rounded-lg overflow-hidden bg-gray-100 border border-gray-200">
+                                        {assignment.video.thumbnailUrl ? (
+                                          <img
+                                            src={assignment.video.thumbnailUrl}
+                                            alt={assignment.video.title}
+                                            className="w-full h-full object-cover"
+                                          />
+                                        ) : (
+                                          <div className="w-full h-full bg-gray-200 flex items-center justify-center">
+                                            <Monitor className="h-4 w-4 text-gray-400" />
+                                          </div>
+                                        )}
+                                        {/* Intensity dot badge */}
+                                        <span
+                                          className={`absolute bottom-0.5 right-0.5 w-2 h-2 rounded-full border border-white ${getIntensityStyle(assignment.video.intensity).dot}`}
+                                          title={getIntensityStyle(assignment.video.intensity).label}
+                                        />
+                                      </div>
+                                      {/* Title */}
+                                      <span className="text-xs font-medium text-gray-800 truncate flex-1 min-w-0" title={assignment.video.title}>
+                                        {assignment.video.title}
+                                      </span>
+                                      {/* Reps inline input */}
+                                      <Input
+                                        type="text"
+                                        value={repsVal}
+                                        onChange={(e) => setScheduleChanges(prev => ({ ...prev, [assignment.id]: { ...prev[assignment.id], reps: e.target.value } }))}
+                                        onBlur={async (e) => {
+                                          const newReps = e.target.value;
+                                          if (newReps !== String(assignment.reps)) {
                                             try {
-                                              await apiRequest("PATCH", `/api/schedules/${assignment.id}`, { displayEquipment: value });
-                                              
-                                              // Update the cache directly to reflect the change
+                                              await apiRequest("PATCH", `/api/schedules/${assignment.id}`, { reps: newReps });
                                               queryClient.setQueryData(["/api/schedules", "date", currentDate], (oldData: any) => {
                                                 if (!oldData) return oldData;
-                                                return oldData.map((s: any) => 
-                                                  s.id === assignment.id ? { ...s, displayEquipment: value } : s
-                                                );
+                                                return oldData.map((s: any) => s.id === assignment.id ? { ...s, reps: newReps } : s);
                                               });
-                                              
-                                              // Also invalidate the equipment view cache
-                                              queryClient.invalidateQueries({ queryKey: ["/api/schedules", "all"] });
-                                            } catch (error) {
-                                              console.error('Failed to save equipment:', error);
+                                            } catch {}
+                                          }
+                                          setScheduleChanges(prev => { const n = { ...prev }; delete n[assignment.id]; return n; });
+                                        }}
+                                        onKeyDown={async (e) => {
+                                          if (e.nativeEvent.isComposing) return;
+                                          if (e.key === 'Enter' || e.key === 'Tab') {
+                                            const newReps = e.currentTarget.value;
+                                            if (newReps !== String(assignment.reps)) {
+                                              try {
+                                                await apiRequest("PATCH", `/api/schedules/${assignment.id}`, { reps: newReps });
+                                                queryClient.setQueryData(["/api/schedules", "date", currentDate], (oldData: any) => {
+                                                  if (!oldData) return oldData;
+                                                  return oldData.map((s: any) => s.id === assignment.id ? { ...s, reps: newReps } : s);
+                                                });
+                                              } catch {}
                                             }
-                                          }}
-                                          placeholder="Select equipment"
-                                          className="w-36 h-6 text-xs"
-                                          allowAll={false}
-                                        />
-                                        {/* Equipment Color Badge */}
-                                        {(() => {
-                                          const selectedEquipment = defaultEquipment;
-                                          if (!selectedEquipment) return null;
-                                          
-                                          // Use the same color function as equipment view with more prominent colors
-                                          const getEquipmentColor = (equipment: string) => {
-                                            // Custom colors for specific equipment (more prominent)
-                                            const customColors: { [key: string]: string } = {
-                                              'TRX': 'bg-yellow-400 text-black border-yellow-500',
-                                              'Battle Rope': 'bg-gray-800 text-white border-gray-900',
-                                              'Bodyweight': 'bg-white text-gray-700 border-gray-400',
-                                              'Boxing Bag': 'bg-white text-gray-700 border-gray-400',
-                                              'Multi functional wall': 'bg-white text-gray-700 border-gray-400'
-                                            };
-                                            
-                                            // Check for custom color first
-                                            if (customColors[equipment]) {
-                                              return customColors[equipment];
-                                            }
-                                            
-                                            // More prominent colors
-                                            const colors = [
-                                              'bg-red-500 text-white border-red-600',
-                                              'bg-blue-500 text-white border-blue-600',
-                                              'bg-green-500 text-white border-green-600',
-                                              'bg-purple-500 text-white border-purple-600',
-                                              'bg-pink-500 text-white border-pink-600',
-                                              'bg-indigo-500 text-white border-indigo-600',
-                                              'bg-orange-500 text-white border-orange-600',
-                                              'bg-teal-500 text-white border-teal-600',
-                                              'bg-cyan-500 text-white border-cyan-600',
-                                              'bg-emerald-500 text-white border-emerald-600',
-                                              'bg-lime-500 text-black border-lime-600',
-                                              'bg-amber-500 text-black border-amber-600',
-                                            ];
-                                            
-                                            let hash = 0;
-                                            for (let i = 0; i < equipment.length; i++) {
-                                              hash = ((hash << 5) - hash + equipment.charCodeAt(i)) & 0xffffffff;
-                                            }
-                                            return colors[Math.abs(hash) % colors.length];
-                                          };
-                                          
-                                          return (
-                                            <div className={`w-3 h-3 rounded border ${getEquipmentColor(selectedEquipment)}`} />
-                                          );
-                                        })()}
-                                      </div>
-
+                                            setScheduleChanges(prev => { const n = { ...prev }; delete n[assignment.id]; return n; });
+                                          }
+                                        }}
+                                        className="w-16 h-6 text-[11px] px-1.5 text-center shrink-0 border-gray-200"
+                                      />
+                                      {/* Equipment select */}
+                                      <SearchableSelect
+                                        options={allEquipmentOptions}
+                                        value={defaultEquipment}
+                                        onValueChange={async (value) => {
+                                          try {
+                                            await apiRequest("PATCH", `/api/schedules/${assignment.id}`, { displayEquipment: value });
+                                            queryClient.setQueryData(["/api/schedules", "date", currentDate], (oldData: any) => {
+                                              if (!oldData) return oldData;
+                                              return oldData.map((s: any) => s.id === assignment.id ? { ...s, displayEquipment: value } : s);
+                                            });
+                                            queryClient.invalidateQueries({ queryKey: ["/api/schedules", "all"] });
+                                          } catch {}
+                                        }}
+                                        placeholder="Equip."
+                                        className="w-28 h-6 text-[11px] shrink-0"
+                                        allowAll={false}
+                                      />
+                                      {/* Delete */}
+                                      <button
+                                        onClick={() => deleteScheduleMutation.mutate(assignment.id)}
+                                        className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-600 transition-all shrink-0"
+                                        title="Remove"
+                                      >
+                                        <Trash2 className="h-3 w-3" />
+                                      </button>
                                     </div>
                                   );
-                                })()}
-                              </td>
-                              <td className="p-2">
-                                <span className="text-gray-600 whitespace-nowrap text-xs">
-                                  {assignment.video.lastUsed ? formatTimeAgo(assignment.video.lastUsed) : (
-                                    <span className="text-green-600 font-medium">Never used</span>
-                                  )}
-                                </span>
-                              </td>
-                              <td className="p-2">
-                                <div className="flex items-center justify-end space-x-1">
-                                  {/* Add video button - always visible on the right */}
-                                  {room.assignments.length < 2 && (
-                                    <Button
-                                      onClick={() => handleAssignVideo(null, room.id)}
-                                      variant="outline"
-                                      size="sm"
-                                      className="h-6 px-2 text-xs border-dashed"
-                                    >
-                                      <Plus className="h-3 w-3" />
-                                    </Button>
-                                  )}
-                                  
-                                  {/* Delete button */}
-                                  <Button
-                                    onClick={() => deleteScheduleMutation.mutate(assignment.id)}
-                                    variant="ghost"
-                                    size="sm"
-                                    className="text-red-500 hover:text-red-700 h-6 w-6 p-0"
-                                  >
-                                    <Trash2 className="h-3 w-3" />
-                                  </Button>
-                                </div>
-                              </td>
-                            </tr>
-                          ));
-                        })}
-                      </tbody>
-                    </table>
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
-                </div>
-              </CardContent>
-            </Card>
+                </>
+              );
+            })()}
           </TabsContent>
 
           {/* Workout Builder Tab */}
@@ -2372,272 +2238,130 @@ function TrainerDashboardInner() {
                           </div>
                         </CardHeader>
                         <CardContent className="p-1">
-                          {/* Room Video Display - 4x smaller than actual room display (1920x1080 → 480x270) */}
-                          <div className="bg-white border rounded mb-1 relative overflow-hidden" style={{ width: '480px', height: '270px', aspectRatio: '16/9' }}>
-                            {roomSchedules.length > 0 ? (
-                              <div className={`h-full ${roomSchedules.length <= 2 ? 'flex' : 'grid grid-cols-2 grid-rows-2'}`}>
-                                {roomSchedules.slice(0, 4).map((schedule: any, index: number) => {
-                                  const video = videos?.find((v: any) => v.id === schedule.videoId);
-                                  if (!video) return null;
-                                  
-                                  const displayTitle = liveViewChanges[`${schedule.id}_title`] || schedule.displayTitle || video.title;
-                                  const displayReps = liveViewChanges[`${schedule.id}_reps`] || schedule.reps;
-                                  const displayEquipment = schedule.displayEquipment || video.equipment;
-                                  
-                                  const videoZoom = liveViewVideoZoom[schedule.id] || parseFloat(schedule.zoomLevel || "1");
-                                  const verticalPos = liveViewVerticalPosition[schedule.id] || parseFloat(schedule.verticalPosition || "0");
-                                  
-                                  // Calculate if this is compact mode (3+ videos) for proper scaling
-                                  const isCompactMode = roomSchedules.length >= 3;
-                                  
-                                  return (
-                                    <div key={schedule.id} className={roomSchedules.length === 1 ? "w-1/2 mx-auto h-full relative" : roomSchedules.length <= 2 ? "flex-1 relative" : "relative"}>
-                                      <video
-                                        ref={(videoEl) => {
-                                          if (videoEl) {
-                                            console.log(`Loading video ${video.id} with URL: ${video.url}`);
-                                            videoEl.addEventListener('loadeddata', () => {
-                                              console.log(`Video ${video.id} loaded successfully`);
-                                              videoEl.play().catch(err => console.log('Play failed:', err));
-                                            });
-                                            videoEl.addEventListener('error', (e) => {
-                                              console.error(`Video ${video.id} error loading from ${video.url}:`, e);
-                                            });
-                                            videoEl.addEventListener('loadstart', () => {
-                                              console.log(`Video ${video.id} started loading from ${video.url}`);
-                                            });
-                                          }
-                                        }}
-                                        src={video.url}
-                                        className="w-full h-full"
-                                        style={{
-                                          objectFit: 'contain',
-                                          objectPosition: 'center',
-                                          transform: `scale(${videoZoom}) translateY(${verticalPos}px)`,
-                                          transformOrigin: 'center'
-                                        }}
-                                        loop
-                                        muted
-                                        playsInline
-                                        autoPlay
+                          {/* ── Live preview: exact 1/4-scale replica of the real room screen ── */}
+                          {/* Outer clip box: 480×270 = 1920×1080 ÷ 4                            */}
+                          <div className="relative overflow-hidden rounded border border-gray-200 mb-1" style={{ width: 480, height: 270 }}>
+                            {roomSchedules.length > 0 ? (() => {
+                              const videoCount = Math.min(roomSchedules.length, 4);
+
+                              // Build assignment objects exactly as room/[id]/page.tsx does
+                              const previewAssignments = roomSchedules.slice(0, 4).map((schedule: any) => {
+                                const video = videos?.find((v: any) => v.id === schedule.videoId);
+                                if (!video) return null;
+                                return {
+                                  id: schedule.id,
+                                  roomId: schedule.roomId,
+                                  videoId: schedule.videoId,
+                                  sets: 0,
+                                  reps: liveViewChanges[`${schedule.id}_reps`] ?? schedule.reps ?? '0',
+                                  restTime: 0,
+                                  position: schedule.position || 1,
+                                  isActive: true,
+                                  zoomLevel: String(liveViewVideoZoom[schedule.id] ?? parseFloat(schedule.zoomLevel || '1')),
+                                  verticalPosition: String(liveViewVerticalPosition[schedule.id] ?? parseFloat(schedule.verticalPosition || '0')),
+                                  displayEquipment: schedule.displayEquipment || video.equipment,
+                                  video: {
+                                    ...video,
+                                    title: liveViewChanges[`${schedule.id}_title`] ?? schedule.displayTitle ?? video.title,
+                                    equipment: schedule.displayEquipment || video.equipment,
+                                  },
+                                };
+                              }).filter(Boolean);
+
+                              const getGridClasses = (count: number) => {
+                                switch (count) {
+                                  case 1: return 'flex items-center justify-center';
+                                  case 2: return 'grid grid-cols-2 gap-0 relative';
+                                  default: return 'grid grid-cols-2 grid-rows-2 gap-0 h-full relative';
+                                }
+                              };
+
+                              return (
+                                // Inner full-resolution room canvas scaled down 4×
+                                <div
+                                  style={{
+                                    width: 1920,
+                                    height: 1080,
+                                    transform: 'scale(0.25)',
+                                    transformOrigin: 'top left',
+                                    pointerEvents: 'none', // controls are outside this box
+                                  }}
+                                  className={`bg-white ${getGridClasses(videoCount)}`}
+                                >
+                                  {previewAssignments.map((assignment: any) => (
+                                    <div
+                                      key={assignment.id}
+                                      className={`overflow-hidden ${
+                                        videoCount === 1 ? 'max-w-[50%] h-full' :
+                                        videoCount === 2 ? 'h-full w-full' :
+                                        'w-full'
+                                      }`}
+                                    >
+                                      <VideoPlayer
+                                        assignment={assignment}
+                                        displayMode={videoCount > 1 ? 'split' : 'single'}
+                                        videoCount={videoCount}
+                                        isFullscreen={false}
                                       />
-                                      
-                                      {/* Logo - Top Left (4x smaller than room display) */}
-                                      <div className={`absolute ${isCompactMode ? 'top-2 left-2' : 'top-6 left-6'} z-20`}>
-                                        <img 
-                                          src={tenRoundsLogo}
-                                          alt="10Rounds Logo"
-                                          className={`${isCompactMode ? 'w-4 h-4' : 'w-6 h-6'} object-contain`}
-                                        />
-                                      </div>
-                                      
-                                      {/* Video Title - Top Center (4x smaller than room display) */}
-                                      <div className={`absolute ${isCompactMode ? 'top-2' : 'top-6'} left-1/2 transform -translate-x-1/2 z-10`}>
-                                        <div className="bg-white/90 backdrop-blur-sm rounded-lg text-center" style={{ 
-                                          paddingLeft: isCompactMode ? '3px' : '6px',
-                                          paddingRight: isCompactMode ? '3px' : '6px',
-                                          paddingTop: isCompactMode ? '1.5px' : '3px',
-                                          paddingBottom: isCompactMode ? '1.5px' : '3px'
-                                        }}>
-                                          <h3 className="font-bold text-black" style={{ fontSize: isCompactMode ? '4.5px' : '6px' }}>{displayTitle}</h3>
-                                        </div>
-                                      </div>
-                                      
-                                      {/* Reps Display - Top Right (4x smaller than room display) */}
-                                      <div className={`absolute ${isCompactMode ? 'top-2 right-2' : 'top-6 right-6'} z-20`}>
-                                        <div className={`bg-black/80 backdrop-blur-sm rounded-xl ${isCompactMode ? 'w-16 h-16 px-2 py-2' : 'w-24 h-24 px-4 py-4'} flex flex-col items-center justify-center text-center`} style={{ 
-                                          width: isCompactMode ? '16px' : '24px', 
-                                          height: isCompactMode ? '16px' : '24px',
-                                          padding: isCompactMode ? '2px' : '4px'
-                                        }}>
-                                          {(() => {
-                                            const repsStr = String(displayReps);
-                                            const isOnlyNumber = /^\d+$/.test(repsStr);
-                                            
-                                            if (isOnlyNumber) {
-                                              return (
-                                                <>
-                                                  <div className="font-bold text-white leading-none" style={{ fontSize: isCompactMode ? '4.5px' : '6px' }}>
-                                                    {repsStr}
-                                                  </div>
-                                                  <div className="text-gray-300 uppercase tracking-wider leading-none" style={{ fontSize: isCompactMode ? '3px' : '3.5px' }}>
-                                                    REPS
-                                                  </div>
-                                                </>
-                                              );
-                                            } else {
-                                              const match = repsStr.match(/^(\d+)\s*(.+)$/);
-                                              if (match) {
-                                                const [, number, text] = match;
-                                                return (
-                                                  <div className="text-center leading-tight">
-                                                    <div className="font-bold text-white leading-none" style={{ fontSize: isCompactMode ? '4.5px' : '6px' }}>
-                                                      {number}
-                                                    </div>
-                                                    <div className="text-gray-300 uppercase tracking-wider leading-none" style={{ fontSize: isCompactMode ? '3px' : '3.5px' }}>
-                                                      {text}
-                                                    </div>
-                                                  </div>
-                                                );
-                                              } else {
-                                                return (
-                                                  <div className="font-bold text-white text-center leading-tight" style={{ fontSize: isCompactMode ? '3.5px' : '4.5px' }}>
-                                                    {repsStr}
-                                                  </div>
-                                                );
-                                              }
-                                            }
-                                          })()}
-                                        </div>
-                                        
-                                        {/* Equipment Display - Below reps (scaled for live view) */}
-                                        {(() => {
-                                          if (!displayEquipment) return null;
-                                          const equipment = displayEquipment.split(',')[0].trim();
-                                          if (!equipment) return null;
-                                          
-                                          return (
-                                            <div className="mt-1 bg-black/60 backdrop-blur-sm rounded-lg text-center" style={{
-                                              paddingLeft: isCompactMode ? '2px' : '3px',
-                                              paddingRight: isCompactMode ? '2px' : '3px', 
-                                              paddingTop: isCompactMode ? '1px' : '1.5px',
-                                              paddingBottom: isCompactMode ? '1px' : '1.5px',
-                                              marginTop: '0.25px'
-                                            }}>
-                                              <div className="text-gray-200 uppercase tracking-wide font-medium" style={{ fontSize: isCompactMode ? '3px' : '3.5px' }}>
-                                                {equipment}
-                                              </div>
-                                            </div>
-                                          );
-                                        })()}
-                                      </div>
-                                      
-                                      {/* Individual Video Controls */}
-                                      <div className="absolute bottom-2 right-2 flex flex-col space-y-1">
-                                        {/* Vertical Position Controls */}
-                                        <div className="flex space-x-1">
-                                          <Button
-                                            size="sm"
-                                            variant="outline"
-                                            className="h-6 w-6 p-0 bg-white/90"
-                                            onClick={async () => {
-                                              const newPos = verticalPos - 10;
-                                              setLiveViewVerticalPosition(prev => ({
-                                                ...prev,
-                                                [schedule.id]: newPos
-                                              }));
-                                              
-                                              // Save position to database
-                                              try {
-                                                await apiRequest('PATCH', `/api/schedules/${schedule.id}`, {
-                                                  verticalPosition: newPos.toString()
-                                                });
-                                              } catch (error) {
-                                                console.error('Failed to save vertical position:', error);
-                                              }
-                                            }}
-                                          >
-                                            <ChevronUp className="h-3 w-3" />
-                                          </Button>
-                                          <Button
-                                            size="sm"
-                                            variant="outline"
-                                            className="h-6 w-6 p-0 bg-white/90"
-                                            onClick={async () => {
-                                              const newPos = verticalPos + 10;
-                                              setLiveViewVerticalPosition(prev => ({
-                                                ...prev,
-                                                [schedule.id]: newPos
-                                              }));
-                                              
-                                              // Save position to database
-                                              try {
-                                                await apiRequest('PATCH', `/api/schedules/${schedule.id}`, {
-                                                  verticalPosition: newPos.toString()
-                                                });
-                                              } catch (error) {
-                                                console.error('Failed to save vertical position:', error);
-                                              }
-                                            }}
-                                          >
-                                            <ChevronDown className="h-3 w-3" />
-                                          </Button>
-                                        </div>
-                                        {/* Zoom Controls */}
-                                        <div className="flex space-x-1">
-                                          <Button
-                                            size="sm"
-                                            variant="outline"
-                                            className="h-6 w-6 p-0 bg-white/90"
-                                            onClick={async () => {
-                                              const newZoom = Math.max(videoZoom - 0.1, 0.5);
-                                              setLiveViewVideoZoom(prev => ({
-                                                ...prev,
-                                                [schedule.id]: newZoom
-                                              }));
-                                              
-                                              // Save zoom to database
-                                              try {
-                                                await apiRequest('PATCH', `/api/schedules/${schedule.id}`, {
-                                                  zoomLevel: newZoom.toString()
-                                                });
-                                                // Don't invalidate queries to prevent re-render and position change
-                                              } catch (error) {
-                                                console.error('Failed to save zoom level:', error);
-                                              }
-                                            }}
-                                          >
-                                            <ZoomOut className="h-3 w-3" />
-                                          </Button>
-                                          <Button
-                                            size="sm"
-                                            variant="outline"
-                                            className="h-6 w-6 p-0 bg-white/90"
-                                            onClick={async () => {
-                                              const newZoom = Math.min(videoZoom + 0.1, 2);
-                                              setLiveViewVideoZoom(prev => ({
-                                                ...prev,
-                                                [schedule.id]: newZoom
-                                              }));
-                                              
-                                              // Save zoom to database
-                                              try {
-                                                await apiRequest('PATCH', `/api/schedules/${schedule.id}`, {
-                                                  zoomLevel: newZoom.toString()
-                                                });
-                                                // Don't invalidate queries to prevent re-render and position change
-                                              } catch (error) {
-                                                console.error('Failed to save zoom level:', error);
-                                              }
-                                            }}
-                                          >
-                                            <ZoomIn className="h-3 w-3" />
-                                          </Button>
-                                        </div>
-                                      </div>
                                     </div>
-                                  );
-                                })}
-                                
-                                {/* Vertical divider for 2 videos */}
-                                {roomSchedules.length === 2 && (
-                                  <div className="absolute top-0 left-1/2 h-full w-px bg-black transform -translate-x-px z-10"></div>
-                                )}
-                                
-                                {/* Grid dividers for 3-4 videos */}
-                                {roomSchedules.length >= 3 && (
-                                  <>
-                                    <div className="absolute top-0 left-1/2 h-full w-px bg-black transform -translate-x-px z-10"></div>
-                                    <div className="absolute left-0 top-1/2 w-full h-px bg-black transform -translate-y-px z-10"></div>
-                                  </>
-                                )}
-                              </div>
-                            ) : (
+                                  ))}
+
+                                  {/* Dividers — match real room */}
+                                  {videoCount === 2 && (
+                                    <div className="absolute top-0 left-1/2 h-full w-0.5 bg-black -translate-x-px z-10" />
+                                  )}
+                                  {videoCount >= 3 && (
+                                    <>
+                                      <div className="absolute top-0 left-1/2 h-full w-0.5 bg-black -translate-x-px z-10" />
+                                      <div className="absolute left-0 top-1/2 w-full h-0.5 bg-black -translate-y-px z-10" />
+                                    </>
+                                  )}
+                                </div>
+                              );
+                            })() : (
                               <div className="h-full flex items-center justify-center text-gray-400">
                                 <div className="text-center">
                                   <VideoIcon className="h-8 w-8 mx-auto mb-1" />
                                   <p className="text-xs">No videos</p>
                                 </div>
+                              </div>
+                            )}
+
+                            {/* Zoom / position controls — overlaid on the clipped preview */}
+                            {roomSchedules.length > 0 && (
+                              <div className="absolute bottom-2 right-2 flex flex-col gap-1 z-20">
+                                {roomSchedules.slice(0, 4).map((schedule: any) => {
+                                  const videoZoom = liveViewVideoZoom[schedule.id] || parseFloat(schedule.zoomLevel || '1');
+                                  const verticalPos = liveViewVerticalPosition[schedule.id] || parseFloat(schedule.verticalPosition || '0');
+                                  return (
+                                    <div key={schedule.id} className="flex gap-1">
+                                      <Button size="sm" variant="outline" className="h-5 w-5 p-0 bg-white/90 text-[10px]"
+                                        onClick={async () => {
+                                          const v = verticalPos - 10;
+                                          setLiveViewVerticalPosition(p => ({ ...p, [schedule.id]: v }));
+                                          try { await apiRequest('PATCH', `/api/schedules/${schedule.id}`, { verticalPosition: v.toString() }); } catch {}
+                                        }}><ChevronUp className="h-2.5 w-2.5" /></Button>
+                                      <Button size="sm" variant="outline" className="h-5 w-5 p-0 bg-white/90"
+                                        onClick={async () => {
+                                          const v = verticalPos + 10;
+                                          setLiveViewVerticalPosition(p => ({ ...p, [schedule.id]: v }));
+                                          try { await apiRequest('PATCH', `/api/schedules/${schedule.id}`, { verticalPosition: v.toString() }); } catch {}
+                                        }}><ChevronDown className="h-2.5 w-2.5" /></Button>
+                                      <Button size="sm" variant="outline" className="h-5 w-5 p-0 bg-white/90"
+                                        onClick={async () => {
+                                          const z = Math.max(videoZoom - 0.1, 0.5);
+                                          setLiveViewVideoZoom(p => ({ ...p, [schedule.id]: z }));
+                                          try { await apiRequest('PATCH', `/api/schedules/${schedule.id}`, { zoomLevel: z.toString() }); } catch {}
+                                        }}><ZoomOut className="h-2.5 w-2.5" /></Button>
+                                      <Button size="sm" variant="outline" className="h-5 w-5 p-0 bg-white/90"
+                                        onClick={async () => {
+                                          const z = Math.min(videoZoom + 0.1, 2);
+                                          setLiveViewVideoZoom(p => ({ ...p, [schedule.id]: z }));
+                                          try { await apiRequest('PATCH', `/api/schedules/${schedule.id}`, { zoomLevel: z.toString() }); } catch {}
+                                        }}><ZoomIn className="h-2.5 w-2.5" /></Button>
+                                    </div>
+                                  );
+                                })}
                               </div>
                             )}
                           </div>

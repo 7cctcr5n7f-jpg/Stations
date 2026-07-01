@@ -103,11 +103,8 @@ export type GenerationMode = "single" | "week"
 export type WorkoutFocus =
   | "Balanced"
   | "HIIT Focused"
-  | "Strength Focused"
   | "Functional Fitness"
   | "Boxing Focused"
-  | "Conditioning Focused"
-  | "Endurance Focused"
 
 /** Parameters the trainer picks in the Builder UI for a single generation run.
  *  These layer on top of (and never replace) the permanent BuilderConfig rules. */
@@ -130,7 +127,7 @@ export interface BuilderParams {
 export const DEFAULT_BUILDER_PARAMS: BuilderParams = {
   mode: "week",
   startDate: "",
-  focus: "Balanced",
+  focus: "Balanced" as WorkoutFocus,
   hiitStrengthRatio: 60,
   boxingVolume: 50,
   functionalTraining: 50,

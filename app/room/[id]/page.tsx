@@ -160,7 +160,7 @@ export default function RoomDisplayPage() {
   const [nextDayEquipment, setNextDayEquipment] = useState<string[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const sseRef = useRef<EventSource | null>(null)
+  // dateRef used only for the midnight date-change check
   const dateRef = useRef(currentDate)
   dateRef.current = currentDate
 
@@ -215,37 +215,9 @@ export default function RoomDisplayPage() {
     return () => clearInterval(interval)
   }, [])
 
-  // -- SSE connection for trainer-pushed schedule changes --
-  useEffect(() => {
-    const connect = () => {
-      const es = new EventSource(`/api/schedules/sse?roomId=${roomId}`)
-      sseRef.current = es
-
-      es.onmessage = (e) => {
-        try {
-          const payload = JSON.parse(e.data)
-          // Only react if the event concerns today's date
-          if (payload.date === dateRef.current || !payload.date) {
-            loadSchedule(dateRef.current)
-          }
-        } catch {
-          // Malformed event — ignore
-        }
-      }
-
-      es.onerror = () => {
-        es.close()
-        // Reconnect after 5 s if the connection drops
-        setTimeout(connect, 5_000)
-      }
-    }
-
-    connect()
-
-    return () => {
-      sseRef.current?.close()
-    }
-  }, [roomId, loadSchedule])
+  // SSE removed: workouts only change once per day. Trainers can manually
+  // refresh the page after publishing a new schedule. This prevents the
+  // SSE reconnect loop from causing black-screen flashes during playback.
 
   // -- Fullscreen --
   useEffect(() => {

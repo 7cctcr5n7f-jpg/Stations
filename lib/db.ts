@@ -43,13 +43,25 @@ export function mapVideo(row: any): Video {
   // for rows not yet migrated (should be none after migration).
   const category: string = row.category ?? row.body_part ?? ""
 
+  // Broad category-level terms that should NEVER appear in muscleGroups —
+  // they belong in the category/bodyPart field only.
+  const BROAD_MUSCLE_TERMS = new Set([
+    'legs','core','cardio','shoulders','general','back','chest',
+    'biceps','triceps','arms','none','ladies','hiit','boxing',
+    'upper body','lower body','full body','abdominals','abs',
+  ])
+
   // Resolve muscleGroups: prefer the new `muscle_groups` array column.
   // Fall back to splitting `secondary_muscle` CSV for any un-migrated rows.
+  // In both cases, strip broad category-level terms.
   let muscleGroups: string[] = []
   if (Array.isArray(row.muscle_groups) && row.muscle_groups.length > 0) {
-    muscleGroups = row.muscle_groups
+    muscleGroups = row.muscle_groups.filter((s: string) => !BROAD_MUSCLE_TERMS.has(s.trim().toLowerCase()))
   } else if (row.secondary_muscle) {
-    muscleGroups = row.secondary_muscle.split(",").map((s: string) => s.trim()).filter(Boolean)
+    muscleGroups = row.secondary_muscle
+      .split(",")
+      .map((s: string) => s.trim())
+      .filter((s: string) => s && !BROAD_MUSCLE_TERMS.has(s.toLowerCase()))
   }
 
   const workoutMethods: string[] = Array.isArray(row.workout_methods) ? row.workout_methods : []
