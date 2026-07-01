@@ -1917,7 +1917,7 @@ function TrainerDashboardInner() {
                     <table className="w-full text-xs">
                       <thead className="bg-gray-50 border-b border-gray-200">
                         <tr>
-                          <th className="text-center p-2 font-medium text-gray-700 w-16 text-xs">Round</th>
+                          <th className="text-center p-2 font-medium text-gray-700 w-16 text-xs">#</th>
                           <th className="text-left p-2 font-medium text-gray-700 w-64 text-xs">Video</th>
                           <th className="text-center p-2 font-medium text-gray-700 w-36 text-xs">Reps</th>
                           <th className="text-center p-2 font-medium text-gray-700 w-36 text-xs">Equipment to use</th>
@@ -1928,57 +1928,71 @@ function TrainerDashboardInner() {
                       <tbody>
                         {roomsWithAssignments.map((room, roomIndex) => {
                           const { colorClass } = getRoomColorClasses(room.number);
-                          
-                          if (room.assignments.length === 0) {
-                            return (
-                              <tr 
-                                key={room.id} 
-                                className={`border-b border-gray-100 hover:bg-blue-50 transition-colors bg-red-50 ${draggedSchedule && draggedSchedule.roomId !== room.id ? 'hover:bg-green-50' : ''}`}
-                                onDragOver={(e) => {
-                                  if (draggedSchedule && draggedSchedule.roomId !== room.id && room.assignments.length < 4) {
-                                    e.preventDefault();
-                                    e.dataTransfer.dropEffect = 'move';
-                                  }
-                                }}
-                                onDrop={(e) => {
-                                  e.preventDefault();
-                                  if (draggedSchedule && draggedSchedule.roomId !== room.id && room.assignments.length < 4) {
-                                    moveScheduleMutation.mutate({
-                                      scheduleId: draggedSchedule.id,
-                                      toRoomId: room.id
-                                    });
-                                  }
-                                }}
-                              >
-                                <td className="p-2 text-center">
-                                  <div className="flex justify-center">
-                                    <div className="w-6 h-6 bg-gray-100 rounded-full flex items-center justify-center border-2 border-gray-300 shadow-sm">
-                                      <span className="text-black text-xs font-bold">{room.number}</span>
-                                    </div>
+                          const assignmentCount = room.assignments.length;
+                          const isEmpty = assignmentCount === 0;
+
+                          // Accent colour cycling through rounds 1-10
+                          const accentColors = [
+                            'border-l-rose-400',    // 1
+                            'border-l-orange-400',  // 2
+                            'border-l-amber-400',   // 3
+                            'border-l-yellow-400',  // 4
+                            'border-l-lime-400',    // 5
+                            'border-l-emerald-400', // 6
+                            'border-l-teal-400',    // 7
+                            'border-l-cyan-400',    // 8
+                            'border-l-blue-400',    // 9
+                            'border-l-violet-400',  // 10
+                          ];
+                          const accentColor = accentColors[(room.number - 1) % accentColors.length];
+
+                          // Separator row rendered before every round group
+                          const separatorRow = (
+                            <tr key={`sep-${room.id}`} className="border-t-2 border-gray-200 bg-gray-50/70">
+                              <td colSpan={6} className="px-3 py-1.5">
+                                <div className="flex items-center gap-2">
+                                  {/* Round number badge */}
+                                  <div className="flex items-center justify-center w-6 h-6 rounded-full bg-gray-800 shrink-0">
+                                    <span className="text-white text-[10px] font-bold leading-none">{room.number}</span>
                                   </div>
-                                </td>
-                                <td className="p-2 text-gray-500 text-xs">No video assigned</td>
-                                <td className="p-2 text-xs">-</td>
-                                <td className="p-2 text-gray-400 text-xs">-</td>
-                                <td className="p-2 text-xs">-</td>
-                                <td className="p-2">
-                                  <Button
-                                    onClick={() => handleAssignVideo(null, room.id)}
-                                    variant="outline"
-                                    size="sm"
-                                    className="h-6 px-2 text-xs border-dashed"
-                                  >
-                                    <Plus className="h-3 w-3" />
-                                  </Button>
-                                </td>
-                              </tr>
-                            );
+                                  <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Round {room.number}</span>
+                                  {/* Video count pill */}
+                                  <span className={`ml-1 inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                                    isEmpty
+                                      ? 'bg-red-100 text-red-600'
+                                      : assignmentCount === 2
+                                      ? 'bg-green-100 text-green-700'
+                                      : 'bg-amber-100 text-amber-700'
+                                  }`}>
+                                    {isEmpty ? 'No videos' : `${assignmentCount} video${assignmentCount > 1 ? 's' : ''}`}
+                                  </span>
+                                  {/* Add button in separator for empty rounds */}
+                                  {isEmpty && (
+                                    <Button
+                                      onClick={() => handleAssignVideo(null, room.id)}
+                                      variant="outline"
+                                      size="sm"
+                                      className="ml-auto h-5 px-2 text-[10px] border-dashed text-gray-500"
+                                    >
+                                      <Plus className="h-2.5 w-2.5 mr-1" />
+                                      Assign video
+                                    </Button>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          );
+
+                          if (isEmpty) {
+                            return separatorRow;
                           }
-                          
-                          return room.assignments.map((assignment, index) => (
+
+                          return [
+                            separatorRow,
+                            ...room.assignments.map((assignment, index) => (
                             <tr 
                               key={assignment.id} 
-                              className={`border-b border-gray-100 hover:bg-blue-50 cursor-move transition-colors bg-green-50 ${draggedSchedule?.id === assignment.id ? 'opacity-50' : ''}`}
+                              className={`border-b border-gray-100 hover:bg-blue-50 cursor-move transition-colors border-l-2 ${accentColor} ${draggedSchedule?.id === assignment.id ? 'opacity-50' : ''}`}
                               draggable="true"
                               onDragStart={(e) => {
                                 setDraggedSchedule(assignment);
@@ -1988,35 +2002,12 @@ function TrainerDashboardInner() {
                                 setDraggedSchedule(null);
                               }}
                             >
-                              {index === 0 && (
-                                <td 
-                                  className={`p-2 text-center transition-colors ${
-                                    draggedSchedule && draggedSchedule.roomId !== room.id ? 'hover:bg-green-100' : ''
-                                  }`} 
-                                  rowSpan={room.assignments.length}
-                                  onDragOver={(e) => {
-                                    if (draggedSchedule && draggedSchedule.roomId !== room.id && room.assignments.length < 4) {
-                                      e.preventDefault();
-                                      e.dataTransfer.dropEffect = 'move';
-                                    }
-                                  }}
-                                  onDrop={(e) => {
-                                    e.preventDefault();
-                                    if (draggedSchedule && draggedSchedule.roomId !== room.id && room.assignments.length < 4) {
-                                      moveScheduleMutation.mutate({
-                                        scheduleId: draggedSchedule.id,
-                                        toRoomId: room.id
-                                      });
-                                    }
-                                  }}
-                                >
-                                  <div className="flex justify-center">
-                                    <div className="w-6 h-6 bg-gray-100 rounded-full flex items-center justify-center border-2 border-gray-300 shadow-sm">
-                                      <span className="text-black text-xs font-bold">{room.number}</span>
-                                    </div>
-                                  </div>
-                                </td>
-                              )}
+                              {/* Slot indicator — shows position within the round */}
+                              <td className="p-2 text-center w-16">
+                                <span className="text-[10px] text-gray-400 tabular-nums select-none">
+                                  {index + 1}/{assignmentCount}
+                                </span>
+                              </td>
                               <td className="p-2">
                                 <div className="flex items-center space-x-2">
                                   <GripVertical className="h-3 w-3 text-gray-400 cursor-move" />
@@ -2217,7 +2208,8 @@ function TrainerDashboardInner() {
                                 </div>
                               </td>
                             </tr>
-                          ));
+                          ))
+                          ];
                         })}
                       </tbody>
                     </table>
