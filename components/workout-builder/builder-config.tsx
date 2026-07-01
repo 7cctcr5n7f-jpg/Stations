@@ -10,7 +10,7 @@ import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
-import { Loader2, Plus, Save, Trash2 } from "lucide-react";
+import { Loader2, Plus, Save, Trash2, ThumbsDown, CheckCircle2 } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 
@@ -72,6 +72,7 @@ export function BuilderConfig() {
       <WeeklyTemplatesCard templates={data.templates} onSave={(d) => save.mutate({ section: "template", data: d })} />
       <RoundConfigCard rooms={data.rooms} roundConfigs={data.roundConfigs} onSave={(d) => save.mutate({ section: "roundConfig", data: d })} />
       <EquipmentLimitsCard limits={data.equipmentLimits} onSave={(d) => save.mutate({ section: "equipmentLimits", data: d })} />
+      <RejectionFeedbackCard />
     </div>
   );
 }
@@ -309,6 +310,132 @@ function EquipmentLimitsCard({ limits, onSave }: { limits: { equipment: string; 
             <Save className="mr-2 h-4 w-4" /> Save limits
           </Button>
         </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Rejection Feedback — shows the log of trainer rejections and their status
+// ---------------------------------------------------------------------------
+
+interface FeedbackRow {
+  id: number;
+  created_at: string;
+  room_number: number | null;
+  room_name: string | null;
+  reason: string;
+  equipment: string[];
+  video_titles: string[];
+  applied: boolean;
+}
+
+function RejectionFeedbackCard() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  const { data: feedbackList = [], isLoading } = useQuery<FeedbackRow[]>({
+    queryKey: ["/api/workout-builder/reject"],
+  });
+
+  const deleteFeedback = useMutation({
+    mutationFn: async ({ id, revertConfig }: { id: number; revertConfig: boolean }) =>
+      apiRequest("DELETE", "/api/workout-builder/reject", { id, revertConfig }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/workout-builder/reject"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/workout-builder/config"] });
+      toast({ title: "Feedback removed" });
+    },
+    onError: () => toast({ title: "Failed to remove feedback", variant: "destructive" }),
+  });
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-lg">
+          <ThumbsDown className="h-4 w-4 text-red-500" />
+          Rejection Feedback
+        </CardTitle>
+        <CardDescription>
+          Trainer rejections logged from the Workout Builder. Items marked &quot;Applied&quot; have
+          already updated the round&apos;s Avoid Equipment list.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {isLoading && (
+          <div className="flex items-center gap-2 text-sm text-gray-500 py-4">
+            <Loader2 className="h-4 w-4 animate-spin" /> Loading feedback...
+          </div>
+        )}
+        {!isLoading && feedbackList.length === 0 && (
+          <p className="text-sm text-gray-400 py-4 text-center">
+            No rejection feedback yet. Use the <strong>flag</strong> button on any exercise in a generated workout to log feedback.
+          </p>
+        )}
+        {feedbackList.length > 0 && (
+          <div className="space-y-2">
+            {feedbackList.map((fb) => (
+              <div
+                key={fb.id}
+                className="flex items-start gap-3 rounded-md border border-gray-100 bg-gray-50 p-3"
+              >
+                {/* Round badge */}
+                <div className="shrink-0 flex h-8 w-8 items-center justify-center rounded-full bg-red-100 text-xs font-bold text-red-700">
+                  {fb.room_number ?? "?"}
+                </div>
+
+                {/* Content */}
+                <div className="flex-1 min-w-0 space-y-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-sm font-medium text-gray-900">
+                      Round {fb.room_number} — {fb.room_name}
+                    </span>
+                    {fb.applied ? (
+                      <Badge className="gap-1 bg-green-100 text-green-700 border-green-200 text-xs">
+                        <CheckCircle2 className="h-3 w-3" /> Applied to config
+                      </Badge>
+                    ) : (
+                      <Badge variant="outline" className="text-xs text-gray-500">Log only</Badge>
+                    )}
+                    <span className="text-xs text-gray-400 ml-auto">
+                      {new Date(fb.created_at).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
+                    </span>
+                  </div>
+
+                  <p className="text-sm text-gray-700">{fb.reason}</p>
+
+                  {fb.equipment.length > 0 && (
+                    <div className="flex flex-wrap gap-1">
+                      {fb.equipment.map((e) => (
+                        <span key={e} className="rounded-full bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700 border border-red-200">
+                          {e}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+
+                  {fb.video_titles.length > 0 && (
+                    <p className="text-xs font-medium text-gray-600">
+                      {fb.video_titles[0]}
+                    </p>
+                  )}
+                </div>
+
+                {/* Delete */}
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="shrink-0 text-gray-400 hover:text-red-600"
+                  title="Remove this feedback"
+                  onClick={() => deleteFeedback.mutate({ id: fb.id, revertConfig: fb.applied })}
+                  disabled={deleteFeedback.isPending}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
       </CardContent>
     </Card>
   );

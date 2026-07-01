@@ -39,14 +39,34 @@ export function mapRoom(row: any): Room {
 }
 
 export function mapVideo(row: any): Video {
+  // Resolve category: prefer the new `category` column; fall back to `body_part`
+  // for rows not yet migrated (should be none after migration).
+  const category: string = row.category ?? row.body_part ?? ""
+
+  // Resolve muscleGroups: prefer the new `muscle_groups` array column.
+  // Fall back to splitting `secondary_muscle` CSV for any un-migrated rows.
+  let muscleGroups: string[] = []
+  if (Array.isArray(row.muscle_groups) && row.muscle_groups.length > 0) {
+    muscleGroups = row.muscle_groups
+  } else if (row.secondary_muscle) {
+    muscleGroups = row.secondary_muscle.split(",").map((s: string) => s.trim()).filter(Boolean)
+  }
+
+  const workoutMethods: string[] = Array.isArray(row.workout_methods) ? row.workout_methods : []
+
   return {
     id: row.id,
     title: row.title,
     url: row.url,
     duration: row.duration ?? null,
-    bodyPart: row.body_part ?? "",
+    // New canonical fields
+    category,
+    muscleGroups,
+    workoutMethods,
+    // Deprecated aliases — kept for backward compat
+    bodyPart: category,
+    secondaryMuscle: muscleGroups.join(", ") || null,
     equipment: row.equipment ?? "",
-    secondaryMuscle: row.secondary_muscle ?? null,
     thumbnailUrl: row.thumbnail_url ?? null,
     lastUsed: row.computed_last_used
       ? (typeof row.computed_last_used === "string" ? row.computed_last_used : new Date(row.computed_last_used).toISOString())

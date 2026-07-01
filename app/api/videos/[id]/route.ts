@@ -7,9 +7,14 @@ const columnMap: Record<string, string> = {
   title: "title",
   url: "url",
   duration: "duration",
+  // New canonical fields
+  category: "category",
+  muscleGroups: "muscle_groups",
+  workoutMethods: "workout_methods",
+  // Deprecated aliases — still accepted for backward compat, write both columns
   bodyPart: "body_part",
-  equipment: "equipment",
   secondaryMuscle: "secondary_muscle",
+  equipment: "equipment",
   thumbnailUrl: "thumbnail_url",
   lastUsed: "last_used",
   movementPattern: "movement_pattern",
@@ -31,7 +36,13 @@ const AI_MANAGED_FIELDS = new Set([
   "weightRequired",
   "spaceRequirement",
   "boxingType",
+  "category",
+  "muscleGroups",
+  "workoutMethods",
 ])
+
+// Fields whose DB column type is an array — values must be cast to text[].
+const ARRAY_FIELDS = new Set(["muscleGroups", "workoutMethods"])
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -54,8 +65,20 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     for (const [key, value] of Object.entries(body)) {
       const col = columnMap[key]
       if (!col) continue
-      sets.push(`${col} = $${i++}`)
-      values.push(value)
+      if (ARRAY_FIELDS.has(key)) {
+        // Ensure array values are stored as text[]
+        const arr = Array.isArray(value) ? value : String(value).split(",").map((s: string) => s.trim()).filter(Boolean)
+        sets.push(`${col} = $${i++}::text[]`)
+        values.push(arr)
+      } else {
+        sets.push(`${col} = $${i++}`)
+        values.push(value)
+      }
+      // When saving `category`, also keep legacy `body_part` in sync.
+      if (key === "category") {
+        sets.push(`body_part = $${i++}`)
+        values.push(value)
+      }
       if (!skipManualTracking && AI_MANAGED_FIELDS.has(key)) {
         editedManualFields.push(key)
       }

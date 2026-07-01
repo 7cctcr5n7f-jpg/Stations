@@ -12,14 +12,18 @@ export async function GET() {
     const bodyParts: string[] = []
     const secondaryMuscles: string[] = []
     const equipment: string[] = []
+    const muscleGroups: string[] = []
+    const workoutMethods: string[] = []
 
     for (const row of rows as { category: string; value: string }[]) {
       if (row.category === "bodyPart") bodyParts.push(row.value)
       else if (row.category === "secondaryMuscle") secondaryMuscles.push(row.value)
       else if (row.category === "equipment") equipment.push(row.value)
+      else if (row.category === "muscleGroup") muscleGroups.push(row.value)
+      else if (row.category === "workoutMethod") workoutMethods.push(row.value)
     }
 
-    return NextResponse.json({ bodyParts, secondaryMuscles, equipment })
+    return NextResponse.json({ bodyParts, secondaryMuscles, equipment, muscleGroups, workoutMethods })
   } catch (error) {
     console.error("[v0] Failed to fetch video options:", error)
     return NextResponse.json({ message: "Failed to fetch video options" }, { status: 500 })

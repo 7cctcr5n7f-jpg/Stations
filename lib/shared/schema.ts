@@ -11,15 +11,53 @@ export interface Room {
 
 export type Intensity = "Low" | "Medium" | "High"
 export type SpaceRequirement = "Stationary" | "Small" | "Large"
-export type ExerciseType = "Strength" | "Cardio" | "Conditioning" | "Skill" | "Mobility"
+export type ExerciseType = "Strength" | "HIIT" | "Conditioning" | "Skill" | "Mobility"
+
+// Allowed Category values (single value per exercise).
+export const EXERCISE_CATEGORIES = [
+  "HIIT",
+  "Chest",
+  "Back",
+  "Shoulders",
+  "Arms",
+  "Biceps",
+  "Triceps",
+  "Legs",
+  "Core",
+  "Abs",
+] as const
+export type ExerciseCategory = (typeof EXERCISE_CATEGORIES)[number]
+
+// Supported Workout Methods per exercise.
+export const WORKOUT_METHODS = [
+  "Standard",
+  "Exercise Combination",
+  "Boxing Combination",
+  "Dropset",
+  "Superset",
+  "AMRAP",
+] as const
+export type WorkoutMethod = (typeof WORKOUT_METHODS)[number]
 
 export interface Video {
   id: number
   title: string
   url: string
   duration?: string | null
-  bodyPart: string
+  /** Category — the single primary workout category (HIIT / Chest / Back / etc.). */
+  category: string
+  /**
+   * Muscle Groups — every muscle activated during the exercise (array).
+   * Used for recovery/analytics only; never used for category validation.
+   */
+  muscleGroups: string[]
+  /** Supported Workout Methods for this exercise. */
+  workoutMethods: string[]
   equipment: string
+  // ---- Deprecated aliases kept for backward compat (schedule/room code) ----
+  /** @deprecated use category */
+  bodyPart: string
+  /** @deprecated use muscleGroups */
   secondaryMuscle?: string | null
   thumbnailUrl?: string | null
   lastUsed?: string | null

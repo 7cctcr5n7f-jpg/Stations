@@ -1,9 +1,11 @@
 import type { Video } from "@/lib/shared/schema"
 import type {
+  BuilderParams,
   EngineInput,
   GeneratedRound,
   HeartRate,
   Intensity,
+  MuscleBreakdown,
   RoundConfig,
   RoundExercise,
   WeeklyTemplate,
@@ -37,20 +39,37 @@ function equipmentTokens(v: Video): string[] {
 }
 
 // All muscle-ish text for a video, lowercased, for matching against templates.
+// Uses the new muscleGroups array first; falls back to legacy bodyPart/secondaryMuscle
+// for any un-migrated rows.
 function muscleTokens(v: Video): string[] {
   const out: string[] = []
-  if (v.bodyPart) out.push(norm(v.bodyPart))
-  if (v.secondaryMuscle) {
-    for (const m of v.secondaryMuscle.split(/[,/]/)) {
+  // Prefer the new canonical array of muscle groups
+  if (Array.isArray(v.muscleGroups) && v.muscleGroups.length > 0) {
+    for (const m of v.muscleGroups) {
       const t = norm(m)
       if (t) out.push(t)
+    }
+  } else {
+    // Legacy fallback
+    if (v.bodyPart) out.push(norm(v.bodyPart))
+    if (v.secondaryMuscle) {
+      for (const m of v.secondaryMuscle.split(/[,/]/)) {
+        const t = norm(m)
+        if (t) out.push(t)
+      }
     }
   }
   return out
 }
 
+// The category field is the single workout bucket for filtering.
+// Falls back to bodyPart for legacy rows.
+function exerciseCategory(v: Video): string {
+  return norm(v.category) || norm(v.bodyPart)
+}
+
 function isCore(v: Video): boolean {
-  const tokens = [norm(v.bodyPart), norm(v.exerciseType), ...muscleTokens(v)]
+  const tokens = [exerciseCategory(v), norm(v.exerciseType), ...muscleTokens(v)]
   return tokens.some((t) => t.includes("core") || t.includes("abs") || t.includes("oblique"))
 }
 
@@ -76,7 +95,7 @@ function hasBoxingEquipment(v: Video): boolean {
 function isBoxingExercise(v: Video): boolean {
   if (hasBoxingEquipment(v)) return true
   if (v.boxingType && norm(v.boxingType)) return true
-  const text = [norm(v.exerciseType), norm(v.movementPattern), norm(v.bodyPart), norm(v.equipment)].join(" ")
+  const text = [norm(v.exerciseType), norm(v.movementPattern), exerciseCategory(v), norm(v.equipment)].join(" ")
   return /box|punch|jab|cross|hook|uppercut|strik|bag|pad|spar/.test(text)
 }
 
@@ -122,7 +141,7 @@ function isDropsetCandidate(v: Video, cfg: RoundConfig, isBoxing: boolean): bool
   if (v.intensity === "High") return false
   const et = norm(v.exerciseType)
   if (et && !et.includes("strength") && !et.includes("hypertrophy")) return false
-  const muscles = [norm(v.bodyPart), ...muscleTokens(v)]
+  const muscles = [exerciseCategory(v), ...muscleTokens(v)]
   return muscles.some((m) => ISOLATION_MUSCLES.some((iso) => m.includes(iso)))
 }
 
@@ -131,6 +150,44 @@ function daysSince(iso: string | null | undefined, now: Date): number | null {
   const then = new Date(iso).getTime()
   if (isNaN(then)) return null
   return Math.floor((now.getTime() - then) / (1000 * 60 * 60 * 24))
+}
+
+// ---- params-derived modifiers ----------------------------------------------
+
+interface EngineModifiers {
+  /** Fraction 0–1 representing HIIT weight (1 = full HIIT bias). */
+  hiitBias: number
+  /** Whether this is a boxing-focused run. */
+  boxingFocused: boolean
+  /** Whether this is a strength-focused run. */
+  strengthFocused: boolean
+  /** Whether this is a functional-fitness run. */
+  functionalFocused: boolean
+  /** Intensity override: High for Advanced, Low for Beginner, null for Intermediate. */
+  intensityOverride: HeartRate | null
+  /** Boxing volume fraction 0–1 for second-exercise selection on boxing rounds. */
+  boxingVolumeFraction: number
+}
+
+function resolveModifiers(params: BuilderParams | undefined): EngineModifiers {
+  if (!params) {
+    return {
+      hiitBias: 0.6,
+      boxingFocused: false,
+      strengthFocused: false,
+      functionalFocused: false,
+      intensityOverride: null,
+      boxingVolumeFraction: 0.5,
+    }
+  }
+  return {
+    hiitBias: params.hiitStrengthRatio / 100,
+    boxingFocused: params.focus === "Boxing Focused",
+    strengthFocused: params.focus === "Strength Focused",
+    functionalFocused: params.focus === "Functional Fitness",
+    intensityOverride: null,
+    boxingVolumeFraction: params.boxingVolume / 100,
+  }
 }
 
 // ---- scoring ---------------------------------------------------------------
@@ -159,9 +216,18 @@ function scoreCandidate(
   lastScheduledIso: string | null,
   usedEquipmentCounts: Record<string, number>,
   now: Date,
+  mods: EngineModifiers,
 ): ScoredCandidate {
   const reasons: string[] = []
   let score = 0
+
+  const cat = exerciseCategory(video)
+  const isHiit = cat.includes("hiit") || norm(video.exerciseType).includes("hiit") || norm(video.exerciseType).includes("cardio")
+  const isStrength = cat.includes("chest") || cat.includes("back") || cat.includes("shoulder") ||
+    cat.includes("bicep") || cat.includes("tricep") || cat.includes("legs") || cat.includes("arm") ||
+    norm(video.exerciseType).includes("strength") || norm(video.exerciseType).includes("hypertrophy")
+  const isBoxingEx = isBoxingExercise(video)
+  const isFunctional = norm(video.movementPattern).includes("functional") || norm(video.exerciseType).includes("functional")
 
   // 1) Template muscle match
   if (template && (template.primaryMuscles.length || template.secondaryMuscles.length)) {
@@ -170,13 +236,12 @@ function scoreCandidate(
     const secondaryHit = template.secondaryMuscles.some((m) => mt.some((t) => t.includes(norm(m)) || norm(m).includes(t)))
     if (primaryHit) {
       score += W.templateMuscle
-      reasons.push(`Targets today's primary muscle group (${video.bodyPart})`)
+      reasons.push(`Targets today's primary muscle group (${video.category || video.bodyPart})`)
     } else if (secondaryHit) {
       score += W.templateMuscle * 0.5
       reasons.push(`Hits a secondary muscle group for today`)
     }
   } else {
-    // No template -> neutral credit so generation still works
     score += W.templateMuscle * 0.4
   }
 
@@ -190,7 +255,6 @@ function scoreCandidate(
     score += W.rotationFreshness
     reasons.push(`Last used ${since}d ago (outside ${reuseWeeks}-week rotation)`)
   } else {
-    // Linearly penalize recency inside the window
     const frac = since / windowDays
     score += W.rotationFreshness * frac
     reasons.push(`Used ${since}d ago — partially fresh`)
@@ -201,7 +265,7 @@ function scoreCandidate(
   const pref = cfg.preferredEquipment.map(norm)
   const avoid = cfg.avoidEquipment.map(norm)
   if (avoid.length && tokens.some((t) => avoid.includes(t))) {
-    score -= W.equipmentPref // strong negative; usually filtered out earlier
+    score -= W.equipmentPref
     reasons.push("Uses avoided equipment")
   } else if (pref.length && tokens.some((t) => pref.includes(t))) {
     score += W.equipmentPref
@@ -210,8 +274,11 @@ function scoreCandidate(
     score += W.equipmentPref * 0.5
   }
 
-  // 4) Intensity / heart-rate fit
-  const desiredHr = cfg.preferredHeartRate ?? (cfg.preferredIntensity ? INTENSITY_TO_HR[cfg.preferredIntensity] : null)
+  // 4) Intensity / heart-rate fit — builder difficulty can override per-station preference
+  const desiredHr =
+    mods.intensityOverride ??
+    cfg.preferredHeartRate ??
+    (cfg.preferredIntensity ? INTENSITY_TO_HR[cfg.preferredIntensity] : null)
   if (desiredHr && video.intensity) {
     const videoHr = INTENSITY_TO_HR[video.intensity as Intensity]
     if (videoHr === desiredHr) {
@@ -244,9 +311,74 @@ function scoreCandidate(
     score += W.variety * 0.4
   }
 
+  // 7) Builder params bonus/penalty — layered on top of the base score
+  // HIIT bias: favour HIIT exercises proportionally; penalise strength when HIIT heavy
+  if (isHiit && mods.hiitBias > 0.5) {
+    score += Math.round((mods.hiitBias - 0.5) * 20) // up to +10
+    if (mods.hiitBias > 0.7) reasons.push("Fits HIIT-focused programme")
+  } else if (isStrength && mods.hiitBias < 0.5) {
+    score += Math.round((0.5 - mods.hiitBias) * 20) // up to +10
+    if (mods.hiitBias < 0.3) reasons.push("Fits strength-focused programme")
+  }
+
+  // Boxing focus bonus
+  if (mods.boxingFocused && isBoxingEx) {
+    score += 8
+    reasons.push("Boxing-focused programme")
+  }
+
+  // Functional bonus
+  if (mods.functionalFocused && isFunctional) {
+    score += 6
+    reasons.push("Functional Fitness programme")
+  }
+
+  // Strength-focused: extra credit for strength/hypertrophy exercises
+  if (mods.strengthFocused && isStrength) {
+    score += 6
+    reasons.push("Strength-focused programme")
+  }
+
   // Clamp 0-100
   score = Math.max(0, Math.min(100, Math.round(score)))
   return { video, score, reasons }
+}
+
+/** Derive sensible default reps for an exercise based on its category and methods. */
+function defaultReps(video: Video): string {
+  const methods = (video.workoutMethods ?? []).map((m) => m.toLowerCase())
+  if (methods.includes("amrap")) return "AMRAP"
+  if (methods.includes("dropset")) return "Dropset"
+
+  const cat = norm(video.category ?? "")
+  const type = norm(video.exerciseType ?? "")
+  const isBoxing = isBoxingExercise(video)
+  const isSuperSet = methods.includes("superset")
+
+  // Boxing: short combos (≤3 moves based on title) need many more rounds
+  // than long combination sequences. We detect short combos by looking at
+  // how many punch-type words appear in the title/boxingType.
+  if (isBoxing) {
+    const comboText = ((video.title ?? "") + " " + (video.boxingType ?? "")).toLowerCase()
+    const PUNCH_WORDS = ["jab", "cross", "hook", "uppercut", "left", "right", "1", "2", "3", "4", "5", "6"]
+    const punchCount = PUNCH_WORDS.filter((w) => comboText.includes(w)).length
+    const isShortCombo = punchCount <= 3
+    return isShortCombo ? "10-20 rounds" : "5 rounds min"
+  }
+
+  // Conditioning / HIIT — usually time or AMRAP
+  if (cat === "hiit" || type === "hiit" || type === "conditioning") return "AMRAP"
+
+  // Core / Abs — higher rep range
+  if (cat === "core" || cat === "abs") return "20"
+
+  // Strength / hypertrophy categories — standard rep range
+  if (["chest", "back", "shoulders", "arms", "biceps", "triceps", "legs"].includes(cat)) {
+    return isSuperSet ? "10-12" : "12"
+  }
+
+  // Default fallback
+  return "10"
 }
 
 // Build a RoundExercise from a scored candidate.
@@ -262,7 +394,7 @@ function makeExercise(sc: ScoredCandidate, cfg: RoundConfig): RoundExercise {
     videoId: sc.video.id,
     video: sc.video,
     heartRate: hr,
-    reps: null,
+    reps: defaultReps(sc.video),
     score: sc.score,
     reasons: [...sc.reasons],
     warnings: [],
@@ -320,7 +452,10 @@ export function generateWorkout(input: EngineInput): WorkoutDraft {
     videos,
     lastScheduledById,
     lockedByRoomId = {},
+    params,
   } = input
+
+  const mods = resolveModifiers(params)
 
   const limits: Record<string, number> = {}
   for (const l of equipmentLimits) limits[norm(l.equipment)] = l.maxStations
@@ -366,7 +501,7 @@ export function generateWorkout(input: EngineInput): WorkoutDraft {
     const scoreAll = (pool: Video[]) =>
       pool
         .map((v) =>
-          scoreCandidate(v, cfg, template, settings.reuseWeeks, lastScheduledById[v.id] ?? null, usedEquipmentCounts, now),
+          scoreCandidate(v, cfg, template, settings.reuseWeeks, lastScheduledById[v.id] ?? null, usedEquipmentCounts, now, mods),
         )
         .sort((a, b) => b.score - a.score)
 
@@ -469,6 +604,7 @@ export function generateWorkout(input: EngineInput): WorkoutDraft {
     : 0
 
   const summary = buildSummary(rounds, template, settings)
+  const muscleBreakdown = buildMuscleBreakdown(rounds)
 
   return {
     date: input.date,
@@ -477,33 +613,130 @@ export function generateWorkout(input: EngineInput): WorkoutDraft {
     rounds,
     score: overall,
     summary,
+    muscleBreakdown,
     warnings,
   }
 }
 
+// Keywords that classify a movement as push or pull from the movementPattern / exerciseType fields.
+const PUSH_PATTERNS = ["push", "press", "extend", "extension", "fly", "flye", "dip", "bench", "chest", "tricep", "shoulder press"]
+const PULL_PATTERNS = ["pull", "row", "curl", "chin", "lat", "deadlift", "shrug", "rear delt", "bicep", "hamstring", "rdl", "hinge"]
+
+function classifyPushPull(v: Video): "push" | "pull" | "other" {
+  const text = [
+    norm(v.movementPattern ?? ""),
+    norm(v.exerciseType ?? ""),
+    norm(v.category ?? ""),
+    norm(v.bodyPart ?? ""),
+    norm(v.title ?? ""),
+  ].join(" ")
+  const isPush = PUSH_PATTERNS.some((p) => text.includes(p))
+  const isPull = PULL_PATTERNS.some((p) => text.includes(p))
+  if (isPush && !isPull) return "push"
+  if (isPull && !isPush) return "pull"
+  if (isPush && isPull) {
+    // compound — assign to the more specific pattern match
+    const pushScore = PUSH_PATTERNS.filter((p) => text.includes(p)).length
+    const pullScore = PULL_PATTERNS.filter((p) => text.includes(p)).length
+    return pushScore >= pullScore ? "push" : "pull"
+  }
+  return "other"
+}
+
+function buildMuscleBreakdown(rounds: GeneratedRound[]): MuscleBreakdown {
+  let pushCount = 0
+  let pullCount = 0
+  const muscleCounts: Record<string, number> = {}
+
+  for (const r of rounds) {
+    for (const ex of r.exercises) {
+      const dir = classifyPushPull(ex.video)
+      if (dir === "push") pushCount++
+      else if (dir === "pull") pullCount++
+
+      // Collect all muscleGroups (canonical array), fall back to bodyPart + secondaryMuscle
+      const groups: string[] = []
+      if (Array.isArray(ex.video.muscleGroups) && ex.video.muscleGroups.length > 0) {
+        groups.push(...ex.video.muscleGroups)
+      } else {
+        if (ex.video.bodyPart) groups.push(ex.video.bodyPart)
+        if (ex.video.secondaryMuscle) {
+          groups.push(...ex.video.secondaryMuscle.split(/[,/]/).map((s) => s.trim()))
+        }
+      }
+      for (const g of groups) {
+        const key = g.trim()
+        if (key) muscleCounts[key] = (muscleCounts[key] ?? 0) + 1
+      }
+    }
+  }
+
+  // Sort muscles by frequency (most-worked first), deduplicated
+  const muscles = Object.entries(muscleCounts)
+    .sort((a, b) => b[1] - a[1])
+    .map(([m]) => m)
+
+  return { pushCount, pullCount, muscles }
+}
+
 function buildSummary(rounds: GeneratedRound[], template: WeeklyTemplate | null, settings: { reuseWeeks: number }): string[] {
   const out: string[] = []
-  if (template?.label) out.push(`Built for ${template.label}.`)
-  if (template?.primaryMuscles?.length) {
-    out.push(`Primary focus: ${template.primaryMuscles.join(", ")}.`)
-  }
-  const hrCounts = { green: 0, orange: 0, red: 0 } as Record<HeartRate, number>
-  let exerciseCount = 0
+
+  // Line 1 — primary focus + any other categories present
+  const allCategories: string[] = []
   for (const r of rounds) {
     for (const e of r.exercises) {
-      exerciseCount++
-      if (e.heartRate) hrCounts[e.heartRate]++
+      const cat = exerciseCategory(e.video)
+      if (cat) allCategories.push(cat)
+    }
+  }
+  const catCounts: Record<string, number> = {}
+  for (const c of allCategories) catCounts[c] = (catCounts[c] ?? 0) + 1
+
+  const primary = template?.primaryMuscles?.length
+    ? template.primaryMuscles.join(" + ")
+    : null
+  const otherCats = Object.entries(catCounts)
+    .filter(([c]) => {
+      if (!primary) return false
+      return !primary.toLowerCase().includes(c.toLowerCase())
+    })
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3)
+    .map(([c]) => c)
+
+  if (primary) {
+    const label = template?.label ? `${template.label} — ` : ""
+    out.push(
+      otherCats.length
+        ? `${label}Primary focus: ${primary}. Also includes: ${otherCats.join(", ")}.`
+        : `${label}Primary focus: ${primary}.`,
+    )
+  } else if (template?.label) {
+    out.push(`Built for ${template.label}.`)
+  }
+
+  // Line 2 — HIIT exercise count
+  let hiitCount = 0
+  for (const r of rounds) {
+    for (const e of r.exercises) {
+      const cat = exerciseCategory(e.video)
+      const type = norm(e.video.exerciseType)
+      if (cat === "hiit" || type === "hiit" || type === "conditioning" || e.heartRate === "red") {
+        hiitCount++
+      }
     }
   }
   const dropsets = rounds.filter((r) => r.dropset).length
   const boxing = rounds.filter((r) => r.isBoxingRound).length
-  out.push(
-    `${rounds.length} rounds · ${exerciseCount} exercises (2 per station by default${dropsets ? `, ${dropsets} dropset${dropsets > 1 ? "s" : ""}` : ""}).`,
-  )
-  if (boxing) {
-    out.push(`${boxing} boxing stations — gloves stay on, so any second exercise is glove-compatible.`)
-  }
-  out.push(`Heart-rate spread — Low: ${hrCounts.green}, Medium: ${hrCounts.orange}, High: ${hrCounts.red}.`)
-  out.push(`No exercise repeats within the last ${settings.reuseWeeks} weeks where possible.`)
+  const parts: string[] = []
+  if (hiitCount > 0) parts.push(`${hiitCount} HIIT exercise${hiitCount !== 1 ? "s" : ""}`)
+  if (dropsets > 0) parts.push(`${dropsets} dropset${dropsets !== 1 ? "s" : ""}`)
+  if (boxing > 0) parts.push(`${boxing} boxing round${boxing !== 1 ? "s" : ""}`)
+  if (parts.length) out.push(parts.join(" · ") + ".")
+
+  // Line 3 — rotation / no-repeat guarantee
+  out.push(`No repeats within the last ${settings.reuseWeeks} weeks where possible.`)
+
   return out
 }

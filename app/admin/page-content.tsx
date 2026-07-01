@@ -645,9 +645,16 @@ function TrainerDashboardInner() {
       // Update the local cache immediately for fast UI response
       queryClient.setQueryData(["/api/videos"], (oldData: any) => {
         if (!oldData) return oldData;
-        return oldData.map((video: any) => 
-          video.id === variables.videoId ? { ...video, [variables.field]: variables.value } : video
-        );
+        return oldData.map((video: any) => {
+          if (video.id !== variables.videoId) return video;
+          const patch: any = { [variables.field]: variables.value };
+          // Keep deprecated aliases in sync for display consistency
+          if (variables.field === "category") patch.bodyPart = variables.value;
+          if (variables.field === "muscleGroups" && Array.isArray(variables.value)) {
+            patch.secondaryMuscle = variables.value.join(", ");
+          }
+          return { ...video, ...patch };
+        });
       });
       // Invalidate video options to refresh dropdown options
       queryClient.invalidateQueries({ queryKey: ["/api/video-options"] });
@@ -826,6 +833,15 @@ function TrainerDashboardInner() {
       queryClient.invalidateQueries({ queryKey: ["/api/video-options"] });
     } catch (error) {
       console.error('Failed to save new body part:', error);
+    }
+  };
+
+  const handleNewMuscleGroup = async (newMuscle: string) => {
+    try {
+      await apiRequest("POST", '/api/video-options/add-muscle-group', { muscleGroup: newMuscle });
+      queryClient.invalidateQueries({ queryKey: ["/api/video-options"] });
+    } catch (error) {
+      console.error('Failed to save new muscle group:', error);
     }
   };
 
@@ -1442,59 +1458,46 @@ function TrainerDashboardInner() {
                               </div>
                             </td>
 
-                            {/* Primary + Secondary muscles */}
+                            {/* Category + Muscle Groups */}
                             <td className="p-2 max-w-[160px]">
-                              {inlineEditingField?.videoId === video.id && inlineEditingField?.field === "bodyPart" ? (
+                              {inlineEditingField?.videoId === video.id && inlineEditingField?.field === "muscleGroups" ? (
                                 <SimpleMultiSelect
-                                  options={videoOptions?.bodyParts || []}
-                                  selectedValues={video.bodyPart && video.bodyPart !== "General" ? video.bodyPart.split(",").map(s => s.trim()).filter(s => s !== "General") : []}
-                                  onSelectionChange={(values) => updateVideoInlineMutation.mutate({ videoId: video.id, field: "bodyPart", value: values.join(", ") })}
+                                  options={(videoOptions as any)?.muscleGroups || videoOptions?.secondaryMuscles || []}
+                                  selectedValues={Array.isArray(video.muscleGroups) ? video.muscleGroups : (video.secondaryMuscle ? video.secondaryMuscle.split(",").map((s: string) => s.trim()).filter((s: string) => s !== "none" && s !== "") : [])}
+                                  onSelectionChange={(values) => updateVideoInlineMutation.mutate({ videoId: video.id, field: "muscleGroups", value: values })}
                                   onClose={() => setInlineEditingField(null)}
-                                  onNewItemAdded={handleNewPrimaryMuscle}
-                                  placeholder="Primary muscles"
-                                  className="h-6 text-xs"
-                                />
-                              ) : inlineEditingField?.videoId === video.id && inlineEditingField?.field === "secondaryMuscle" ? (
-                                <SimpleMultiSelect
-                                  options={videoOptions?.secondaryMuscles || []}
-                                  selectedValues={video.secondaryMuscle ? video.secondaryMuscle.split(",").map(s => s.trim()).filter(s => s !== "none" && s !== "") : []}
-                                  onSelectionChange={(values) => updateVideoInlineMutation.mutate({ videoId: video.id, field: "secondaryMuscle", value: values.join(", ") })}
-                                  onClose={() => setInlineEditingField(null)}
-                                  onNewItemAdded={handleNewSecondaryMuscle}
-                                  placeholder="Secondary muscles"
+                                  onNewItemAdded={handleNewMuscleGroup}
+                                  placeholder="Muscle groups"
                                   className="h-6 text-xs"
                                 />
                               ) : (
                                 <div className="flex flex-wrap gap-1 items-center">
-                                  {/* Primary pills */}
-                                  {!video.bodyPart || video.bodyPart === "General" ? (
+                                  {/* Category pill */}
+                                  {video.category ? (
+                                    <button
+                                      className="rounded px-1.5 py-0.5 text-[10px] font-semibold bg-green-50 text-green-800 hover:bg-green-100 transition-colors border border-green-200"
+                                      onClick={() => setInlineEditingField({ videoId: video.id, field: "bodyPart" })}
+                                      title="Edit category"
+                                    >
+                                      {video.category}
+                                    </button>
+                                  ) : (
                                     <button
                                       className="rounded px-1.5 py-0.5 text-[10px] bg-red-50 text-red-600 hover:bg-red-100 transition-colors"
                                       onClick={() => setInlineEditingField({ videoId: video.id, field: "bodyPart" })}
-                                      title="Set primary muscles"
+                                      title="Set category"
                                     >
-                                      + set muscle
+                                      + set
                                     </button>
-                                  ) : (
-                                    video.bodyPart.split(",").map((p, i) => (
-                                      <button
-                                        key={i}
-                                        className="rounded px-1.5 py-0.5 text-[10px] font-medium bg-green-50 text-green-800 hover:bg-green-100 transition-colors"
-                                        onClick={() => setInlineEditingField({ videoId: video.id, field: "bodyPart" })}
-                                        title="Edit primary muscles"
-                                      >
-                                        {p.trim()}
-                                      </button>
-                                    ))
                                   )}
-                                  {/* Secondary pills — dimmer */}
-                                  {video.secondaryMuscle ? (
-                                    video.secondaryMuscle.split(",").map((m, i) => (
+                                  {/* Muscle group pills */}
+                                  {Array.isArray(video.muscleGroups) && video.muscleGroups.length > 0 ? (
+                                    video.muscleGroups.slice(0, 3).map((m: string, i: number) => (
                                       <button
                                         key={i}
                                         className="rounded px-1.5 py-0.5 text-[10px] font-medium bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors"
-                                        onClick={() => setInlineEditingField({ videoId: video.id, field: "secondaryMuscle" })}
-                                        title="Edit secondary muscles"
+                                        onClick={() => setInlineEditingField({ videoId: video.id, field: "muscleGroups" })}
+                                        title="Edit muscle groups"
                                       >
                                         {m.trim()}
                                       </button>
@@ -1502,8 +1505,8 @@ function TrainerDashboardInner() {
                                   ) : (
                                     <button
                                       className="rounded px-1 py-0.5 text-[10px] text-gray-300 hover:text-gray-500 hover:bg-gray-100 transition-colors"
-                                      onClick={() => setInlineEditingField({ videoId: video.id, field: "secondaryMuscle" })}
-                                      title="Add secondary muscles"
+                                      onClick={() => setInlineEditingField({ videoId: video.id, field: "muscleGroups" })}
+                                      title="Add muscle groups"
                                     >
                                       +
                                     </button>

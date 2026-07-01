@@ -24,8 +24,9 @@ interface VideoEditModalProps {
 
 interface VideoEditData {
   title: string;
-  primaryMuscles: string[];
-  secondaryMuscles: string[];
+  category: string;
+  muscleGroups: string[];
+  workoutMethods: string[];
   equipment: string[];
   movementPattern: string;
   intensity: string;
@@ -36,14 +37,17 @@ interface VideoEditData {
   boxingType: string;
 }
 
-const EXERCISE_TYPES = ["Strength", "Cardio", "Conditioning", "Skill", "Mobility"];
+const EXERCISE_TYPES = ["Strength", "HIIT", "Conditioning", "Skill", "Mobility"];
+const EXERCISE_CATEGORIES = ["HIIT", "Chest", "Back", "Shoulders", "Arms", "Biceps", "Triceps", "Legs", "Core", "Abs"];
+const WORKOUT_METHODS = ["Standard", "Exercise Combination", "Boxing Combination", "Dropset", "Superset", "AMRAP"];
 const SPACE_REQUIREMENTS = ["Stationary", "Small", "Large"];
 
 export default function VideoEditModal({ isOpen, onClose, video }: VideoEditModalProps) {
   const [formData, setFormData] = useState<VideoEditData>({
     title: "",
-    primaryMuscles: [],
-    secondaryMuscles: [],
+    category: "",
+    muscleGroups: [],
+    workoutMethods: [],
     equipment: [],
     movementPattern: "",
     intensity: "",
@@ -60,20 +64,15 @@ export default function VideoEditModal({ isOpen, onClose, video }: VideoEditModa
   const queryClient = useQueryClient();
 
   // Fetch video options for dynamic dropdowns
-  const { data: videoOptions } = useQuery<{bodyParts: string[], secondaryMuscles: string[], equipment: string[]}>({
+  const { data: videoOptions } = useQuery<{bodyParts: string[], secondaryMuscles: string[], equipment: string[], muscleGroups: string[], workoutMethods: string[]}>({
     queryKey: ["/api/video-options"],
     enabled: isOpen,
   });
 
   // Get unique values from existing videos
-  const uniquePrimaryMuscles = useMemo(() => {
-    if (!videoOptions?.bodyParts) return [];
-    return videoOptions.bodyParts.sort((a: string, b: string) => a.toLowerCase().localeCompare(b.toLowerCase()));
-  }, [videoOptions]);
-
-  const uniqueSecondaryMuscles = useMemo(() => {
-    if (!videoOptions?.secondaryMuscles) return [];
-    return videoOptions.secondaryMuscles.sort((a: string, b: string) => a.toLowerCase().localeCompare(b.toLowerCase()));
+  const uniqueMuscleGroups = useMemo(() => {
+    const base = videoOptions?.muscleGroups ?? videoOptions?.secondaryMuscles ?? [];
+    return base.sort((a: string, b: string) => a.toLowerCase().localeCompare(b.toLowerCase()));
   }, [videoOptions]);
 
   const uniqueEquipment = useMemo(() => {
@@ -86,8 +85,11 @@ export default function VideoEditModal({ isOpen, onClose, video }: VideoEditModa
     if (video) {
       setFormData({
         title: video.title,
-        primaryMuscles: video.bodyPart ? video.bodyPart.split(',').map(item => item.trim()) : [],
-        secondaryMuscles: video.secondaryMuscle && video.secondaryMuscle !== "" ? video.secondaryMuscle.split(',').map(item => item.trim()) : [],
+        category: video.category ?? video.bodyPart ?? "",
+        muscleGroups: Array.isArray(video.muscleGroups) && video.muscleGroups.length > 0
+          ? video.muscleGroups
+          : video.secondaryMuscle ? video.secondaryMuscle.split(',').map(item => item.trim()).filter(Boolean) : [],
+        workoutMethods: Array.isArray(video.workoutMethods) ? video.workoutMethods : [],
         equipment: video.equipment ? video.equipment.split(',').map(item => item.trim()) : [],
         movementPattern: video.movementPattern ?? "",
         intensity: video.intensity ?? "",
@@ -100,45 +102,33 @@ export default function VideoEditModal({ isOpen, onClose, video }: VideoEditModa
     }
   }, [video]);
 
-  // Optimized handlers using SimpleMultiSelect
-  const handlePrimaryMuscleChange = (muscles: string[]) => {
-    setFormData(prev => ({
-      ...prev,
-      primaryMuscles: muscles
-    }));
-  };
-
-  const handleSecondaryMuscleChange = (muscles: string[]) => {
-    setFormData(prev => ({
-      ...prev,
-      secondaryMuscles: muscles
-    }));
+  const handleMuscleGroupChange = (muscles: string[]) => {
+    setFormData(prev => ({ ...prev, muscleGroups: muscles }));
   };
 
   const handleEquipmentChange = (equipment: string[]) => {
-    setFormData(prev => ({
-      ...prev,
-      equipment: equipment
-    }));
+    setFormData(prev => ({ ...prev, equipment: equipment }));
+  };
+
+  const handleWorkoutMethodToggle = (method: string) => {
+    setFormData(prev => {
+      const current = prev.workoutMethods;
+      return {
+        ...prev,
+        workoutMethods: current.includes(method)
+          ? current.filter(m => m !== method)
+          : [...current, method],
+      };
+    });
   };
 
   // Handle new custom entries
-  const handleNewPrimaryMuscle = async (newMuscle: string) => {
+  const handleNewMuscleGroup = async (newMuscle: string) => {
     try {
-      await apiRequest("POST", '/api/video-options/add-body-part', { bodyPart: newMuscle });
-      // Refresh video options to include the new entry
+      await apiRequest("POST", '/api/video-options/add-muscle-group', { muscleGroup: newMuscle });
       queryClient.invalidateQueries({ queryKey: ["/api/video-options"] });
     } catch (error) {
-      console.error('Failed to save new body part:', error);
-    }
-  };
-
-  const handleNewSecondaryMuscle = async (newMuscle: string) => {
-    try {
-      await apiRequest("POST", '/api/video-options/add-secondary-muscle', { secondaryMuscle: newMuscle });
-      queryClient.invalidateQueries({ queryKey: ["/api/video-options"] });
-    } catch (error) {
-      console.error('Failed to save new secondary muscle:', error);
+      console.error('Failed to save new muscle group:', error);
     }
   };
 
@@ -153,20 +143,22 @@ export default function VideoEditModal({ isOpen, onClose, video }: VideoEditModa
 
   const updateVideoMutation = useMutation({
     mutationFn: async (data: VideoEditData) => {
-      // Update each field individually using the correct API format
-      const updates = [
-        { field: 'title', value: data.title },
-        { field: 'bodyPart', value: data.primaryMuscles.join(', ') },
-        { field: 'secondaryMuscle', value: data.secondaryMuscles.join(', ') },
-        { field: 'equipment', value: data.equipment.join(', ') },
-        { field: 'movementPattern', value: data.movementPattern },
-        { field: 'intensity', value: data.intensity },
-        { field: 'exerciseType', value: data.exerciseType },
-        { field: 'explosive', value: data.explosive },
-        { field: 'weightRequired', value: data.weightRequired },
-        { field: 'spaceRequirement', value: data.spaceRequirement },
-        { field: 'boxingType', value: data.boxingType },
-      ];
+      // Send all fields in one request for efficiency
+      const payload: Record<string, unknown> = {
+        title: data.title,
+        category: data.category,
+        muscleGroups: data.muscleGroups,
+        workoutMethods: data.workoutMethods,
+        equipment: data.equipment.join(', '),
+        movementPattern: data.movementPattern,
+        intensity: data.intensity,
+        exerciseType: data.exerciseType,
+        explosive: data.explosive,
+        weightRequired: data.weightRequired,
+        spaceRequirement: data.spaceRequirement,
+        boxingType: data.boxingType,
+      };
+      const updates = Object.entries(payload).map(([field, value]) => ({ field, value }));
 
       // Execute all updates
       for (const update of updates) {
@@ -231,6 +223,13 @@ export default function VideoEditModal({ isOpen, onClose, video }: VideoEditModa
       if (updated) {
         setFormData(prev => ({
           ...prev,
+          category: updated.category ?? prev.category,
+          muscleGroups: Array.isArray(updated.muscleGroups) && updated.muscleGroups.length > 0
+            ? updated.muscleGroups
+            : prev.muscleGroups,
+          workoutMethods: Array.isArray(updated.workoutMethods) && updated.workoutMethods.length > 0
+            ? updated.workoutMethods
+            : prev.workoutMethods,
           movementPattern: updated.movementPattern ?? prev.movementPattern,
           intensity: updated.intensity ?? prev.intensity,
           exerciseType: (updated.exerciseType as string) ?? prev.exerciseType,
@@ -250,8 +249,9 @@ export default function VideoEditModal({ isOpen, onClose, video }: VideoEditModa
   const handleClose = () => {
     setFormData({
       title: "",
-      primaryMuscles: [],
-      secondaryMuscles: [],
+      category: "",
+      muscleGroups: [],
+      workoutMethods: [],
       equipment: [],
       movementPattern: "",
       intensity: "",
@@ -266,10 +266,10 @@ export default function VideoEditModal({ isOpen, onClose, video }: VideoEditModa
   };
 
   const handleSubmit = () => {
-    if (!formData.title || formData.primaryMuscles.length === 0 || formData.equipment.length === 0) {
+    if (!formData.title || !formData.category || formData.equipment.length === 0) {
       toast({
         title: "Missing required fields",
-        description: "Please fill in title, at least one primary muscle, and at least one equipment",
+        description: "Please fill in title, category, and at least one equipment item",
         variant: "destructive"
       });
       return;
@@ -324,30 +324,59 @@ export default function VideoEditModal({ isOpen, onClose, video }: VideoEditModa
             />
           </div>
 
-          {/* Primary Muscles */}
+          {/* Category */}
           <div className="space-y-2">
-            <Label className="text-sm font-medium">Primary Muscles *</Label>
+            <Label className="text-sm font-medium">Category *</Label>
+            <Select
+              value={formData.category || "unset"}
+              onValueChange={(value) =>
+                setFormData(prev => ({ ...prev, category: value === "unset" ? "" : value }))
+              }
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select category..." />
+              </SelectTrigger>
+              <SelectContent>
+                {EXERCISE_CATEGORIES.map((c) => (
+                  <SelectItem key={c} value={c}>{c}</SelectItem>
+                ))}
+                <SelectItem value="unset">Unset</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Muscle Groups */}
+          <div className="space-y-2">
+            <Label className="text-sm font-medium">Muscle Groups</Label>
             <SimpleMultiSelect
-              options={uniquePrimaryMuscles}
-              selectedValues={formData.primaryMuscles}
-              onSelectionChange={handlePrimaryMuscleChange}
-              onNewItemAdded={handleNewPrimaryMuscle}
-              placeholder="Select primary muscles..."
+              options={uniqueMuscleGroups}
+              selectedValues={formData.muscleGroups}
+              onSelectionChange={handleMuscleGroupChange}
+              onNewItemAdded={handleNewMuscleGroup}
+              placeholder="Select muscle groups..."
               className="w-full"
             />
           </div>
 
-          {/* Secondary Muscles */}
+          {/* Workout Methods */}
           <div className="space-y-2">
-            <Label className="text-sm font-medium">Secondary Muscles</Label>
-            <SimpleMultiSelect
-              options={uniqueSecondaryMuscles}
-              selectedValues={formData.secondaryMuscles}
-              onSelectionChange={handleSecondaryMuscleChange}
-              onNewItemAdded={handleNewSecondaryMuscle}
-              placeholder="Select secondary muscles..."
-              className="w-full"
-            />
+            <Label className="text-sm font-medium">Workout Methods</Label>
+            <div className="flex flex-wrap gap-2">
+              {WORKOUT_METHODS.map((method) => (
+                <button
+                  key={method}
+                  type="button"
+                  onClick={() => handleWorkoutMethodToggle(method)}
+                  className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
+                    formData.workoutMethods.includes(method)
+                      ? "bg-blue-600 text-white border-blue-600"
+                      : "bg-white text-gray-700 border-gray-300 hover:border-blue-400"
+                  }`}
+                >
+                  {method}
+                </button>
+              ))}
+            </div>
           </div>
 
           {/* Equipment */}
