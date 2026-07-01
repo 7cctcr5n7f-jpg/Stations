@@ -700,26 +700,38 @@ function TrainerDashboardInner() {
       // reliable way to avoid Vercel AI Gateway per-minute rate limits —
       // batching multiple generateObject calls in one request fires them all
       // concurrently and exhausts the quota immediately.
-      while (safety < 2000 && consecutiveErrors < 8) {
+      let lastErrorMessage = "";
+
+      while (safety < 2000 && consecutiveErrors < 5) {
         safety++;
         let data: any = null;
         try {
           const res = await apiRequest("POST", "/api/videos/ai-metadata", { mode: "fill" });
           if (!res.ok) {
             consecutiveErrors++;
-            // Exponential back-off: 2s, 4s, 8s…
             await new Promise((r) => setTimeout(r, 2000 * consecutiveErrors));
             continue;
           }
           data = await res.json();
           consecutiveErrors = 0;
-        } catch (fetchErr) {
+          lastErrorMessage = "";
+        } catch (fetchErr: any) {
           consecutiveErrors++;
+          lastErrorMessage = fetchErr?.message ?? "Network error";
           await new Promise((r) => setTimeout(r, 2000 * consecutiveErrors));
           continue;
         }
 
         processed += data.processedCount ?? 0;
+
+        // If all videos in this batch errored, capture the first error message.
+        if ((data.processedCount ?? 0) === 0 && data.errors?.length > 0) {
+          consecutiveErrors++;
+          lastErrorMessage = data.errors[0]?.error ?? "AI generation failed";
+          await new Promise((r) => setTimeout(r, 2000 * consecutiveErrors));
+          continue;
+        }
+        consecutiveErrors = 0;
 
         // Server re-queries remaining after every update — use it for the bar.
         const remaining: number = data.remaining ?? 0;
@@ -747,9 +759,8 @@ function TrainerDashboardInner() {
 
         if (data.done || remaining === 0) break;
 
-        // ~600ms between calls keeps us well under AI Gateway rate limits
-        // while still processing ~100 videos/minute.
-        await new Promise((r) => setTimeout(r, 600));
+        // Small pause between calls to stay within gateway rate limits.
+        await new Promise((r) => setTimeout(r, 300));
       }
 
       // Final refresh so the table reflects all changes.
@@ -758,6 +769,17 @@ function TrainerDashboardInner() {
       const collectedTerms = Object.values(allUnknownMap);
       if (collectedTerms.length > 0) {
         setUnknownTerms(collectedTerms);
+      }
+
+      // If we stopped due to consecutive errors, show what went wrong.
+      if (consecutiveErrors >= 5) {
+        setAiProgress(null);
+        toast({
+          title: "AI metadata stopped",
+          description: lastErrorMessage || "Too many consecutive errors. Please try again.",
+          variant: "destructive",
+        });
+        return;
       }
 
       setAiProgress({ running: false, processed: total, total });
