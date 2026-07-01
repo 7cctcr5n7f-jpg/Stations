@@ -14,7 +14,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
 import { SimpleMultiSelect } from "@/components/simple-multi-select";
 import { getIntensityStyle, INTENSITY_LEVELS } from "@/lib/intensity";
-import type { Video } from "@shared/schema";
+import type { Video } from "@/lib/shared/schema";
 
 interface VideoEditModalProps {
   isOpen: boolean;

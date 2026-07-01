@@ -2,7 +2,7 @@
 
 import { Card, CardContent } from "@/components/ui/card";
 import { getRoomColorClasses } from "@/lib/utils";
-import type { Room } from "@shared/schema";
+import type { Room } from "@/lib/shared/schema";
 
 interface RoomCardProps {
   room: Room;

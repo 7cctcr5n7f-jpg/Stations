@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useRef, useCallback } from "react";
+import { generateVideoThumbnail } from "@/lib/generate-thumbnail";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -147,7 +148,26 @@ export default function VideoUploadModal({ isOpen, onClose }: VideoUploadModalPr
         throw new Error(errorData.message || 'Failed to upload video');
       }
 
-      return response.json();
+      const video = await response.json();
+
+      // Auto-generate thumbnail from the uploaded video file in the background.
+      // We use the local File object (still in memory) so we can capture a frame
+      // without needing the browser to re-fetch from R2.
+      try {
+        const localUrl = URL.createObjectURL(data.file);
+        const thumbBlob = await generateVideoThumbnail(localUrl, 1);
+        URL.revokeObjectURL(localUrl);
+        await fetch(`/api/videos/${video.id}/thumbnail`, {
+          method: "POST",
+          headers: { "content-type": "image/jpeg" },
+          body: thumbBlob,
+        });
+      } catch (thumbErr) {
+        // Thumbnail failure is non-fatal — the video was uploaded successfully.
+        console.warn("[upload] thumbnail generation failed:", thumbErr);
+      }
+
+      return video;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/videos"] });
@@ -185,7 +205,23 @@ export default function VideoUploadModal({ isOpen, onClose }: VideoUploadModalPr
           throw new Error(`Failed to upload ${videoData.title}: ${errorData.message}`);
         }
 
-        return response.json();
+        const video = await response.json();
+
+        // Auto-generate thumbnail from the local File still in memory.
+        try {
+          const localUrl = URL.createObjectURL(videoData.file);
+          const thumbBlob = await generateVideoThumbnail(localUrl, 1);
+          URL.revokeObjectURL(localUrl);
+          await fetch(`/api/videos/${video.id}/thumbnail`, {
+            method: "POST",
+            headers: { "content-type": "image/jpeg" },
+            body: thumbBlob,
+          });
+        } catch (thumbErr) {
+          console.warn("[batch-upload] thumbnail generation failed:", thumbErr);
+        }
+
+        return video;
       });
 
       return Promise.all(uploadPromises);

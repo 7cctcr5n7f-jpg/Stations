@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation"
 import { useQuery } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
 import { ArrowLeft } from "lucide-react"
-import type { Room } from "@shared/schema"
+import type { Room } from "@/lib/shared/schema"
 
 export default function RoomSelectionPage() {
   const router = useRouter()

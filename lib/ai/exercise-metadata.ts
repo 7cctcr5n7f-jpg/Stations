@@ -8,7 +8,16 @@ export const exerciseMetadataSchema = z.object({
     .describe(
       "Primary movement pattern, e.g. Squat, Hinge, Lunge, Push, Pull, Carry, Rotation, Gait/Locomotion, Punch, Kick, Jump/Plyometric.",
     ),
-  intensity: z.enum(["Low", "Medium", "High"]).describe("Typical cardiovascular/effort intensity of the exercise."),
+  intensity: z
+    .enum(["Low", "Medium", "High"])
+    .describe(
+      "Intensity based SOLELY on how much the exercise elevates heart rate during steady-state performance. " +
+      "Low = heart rate barely rises (isolated strength moves: chest fly, bicep curl, tricep extension, lateral raise, leg extension, etc.). " +
+      "Medium = moderate cardiovascular demand — heart rate elevates but stays sub-threshold (compound lifts: squat, deadlift, bench press, row, overhead press, lunges). " +
+      "High = significant heart rate spike (HIIT, conditioning, battle ropes, burpees, jump rope, sprints, sled, circuits, boxing/striking). " +
+      "NOTE: Muscle engagement and effort level do NOT determine intensity — only heart rate spike does. " +
+      "Isolation exercises are ALWAYS Low even when they feel hard.",
+    ),
   exerciseType: z
     .enum(["Strength", "Cardio", "Conditioning", "Skill", "Mobility"])
     .describe("The primary training category for the exercise."),
@@ -141,8 +150,13 @@ export async function generateExerciseMetadata(
       "If the name is ambiguous or generic, lower the confidence accordingly. " +
       "Always use the provided Exercise Dictionary to resolve abbreviations before guessing.\n\n" +
       "HARD RULES (non-negotiable):\n" +
-      "- Any boxing or striking exercise (punches, combos, bag work, pad work, footwork drills, hooks, jabs, uppercuts, crosses, etc.) MUST have intensity = 'High'.\n" +
-      "- Always populate primaryMuscles and secondaryMuscles — never return empty arrays unless you have absolutely no information." +
+      "- Intensity is determined ONLY by heart rate spike, not by muscular effort or perceived difficulty.\n" +
+      "  Low: isolation/accessory movements (fly, curl, extension, raise, press isolations) — heart rate barely moves.\n" +
+      "  Medium: compound strength movements (squat, deadlift, bench press, row, overhead press, lunge) — moderate heart rate.\n" +
+      "  High: conditioning/HIIT/boxing (battle ropes, burpees, sprints, circuits, any striking drill) — significant heart rate spike.\n" +
+      "- Any boxing or striking exercise MUST have intensity = 'High'.\n" +
+      "- Always populate primaryMuscles and secondaryMuscles with realistic anatomical muscles — never return empty arrays. " +
+      "For a chest fly, secondaryMuscles should include ['Anterior Deltoid', 'Biceps'] even if minor." +
       glossaryBlock,
     prompt:
       `Classify this exercise.\n\nName: "${video.title}"` +

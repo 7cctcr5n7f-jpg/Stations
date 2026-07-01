@@ -157,10 +157,20 @@ export async function POST(req: NextRequest) {
           !manualFields.includes("primaryMuscles") &&
           primaryMusclesStr !== null &&
           (!row.body_part || row.body_part === "General" || row.body_part === "")
+
+        // A secondary_muscle value is considered a placeholder when it:
+        //  - is empty/null, OR
+        //  - exactly matches the primary body_part (trainer left the default), OR
+        //  - is a single muscle that duplicates the primary (e.g. "Chest" when body_part is "Chest")
+        const secondaryIsPlaceholder =
+          !row.secondary_muscle ||
+          row.secondary_muscle.trim() === "" ||
+          row.secondary_muscle.trim().toLowerCase() === (row.body_part ?? "").trim().toLowerCase()
+
         const shouldUpdateSecondary =
           !manualFields.includes("secondaryMuscles") &&
           secondaryMusclesStr !== null &&
-          (!row.secondary_muscle || row.secondary_muscle === "")
+          secondaryIsPlaceholder
 
         const updated = await sql`
           UPDATE videos SET
@@ -182,10 +192,32 @@ export async function POST(req: NextRequest) {
       } catch (err: any) {
         console.error(`[v0] AI metadata failed for video ${row.id}:`, err?.message)
         errors.push({ id: row.id, error: err?.message ?? "unknown error" })
+
+        // If this was a rate-limit error, stamp ai_generated_at so the video
+        // is not re-fetched in every subsequent batch, causing an infinite loop.
+        // The video will still show ai_confidence = null so a trainer can spot it.
+        const isRateLimit =
+          err?.message?.includes("rate-limit") ||
+          err?.message?.includes("429") ||
+          err?.name === "GatewayRateLimitError"
+        if (isRateLimit) {
+          try {
+            await sql`
+              UPDATE videos
+              SET ai_generated_at = NOW()
+              WHERE id = ${row.id} AND ai_generated_at IS NULL
+            `
+          } catch {}
+        }
       }
     }
 
-    const remaining = Math.max(totalMatching - processed.length, 0)
+    // Re-query the true remaining count AFTER all updates (including rate-limit
+    // stamps) so the client gets an accurate picture and doesn't stop early.
+    const remainingRows = await sql`
+      SELECT COUNT(*)::int AS c FROM videos WHERE ai_generated_at IS NULL
+    `
+    const remaining = remainingRows[0]?.c ?? 0
     const unknownTerms = Object.values(unknownTermMap)
 
     return NextResponse.json({
@@ -193,8 +225,10 @@ export async function POST(req: NextRequest) {
       processed,
       errors,
       remaining,
-      done: processed.length === 0 || remaining === 0,
-      unknownTerms,       // [ { term, videoIds, videoTitles } ]
+      // Only signal done when there is genuinely nothing left — never stop
+      // just because this batch had zero successes (e.g. all rate-limited).
+      done: remaining === 0,
+      unknownTerms,
       glossarySize: glossary.length,
     })
   } catch (error: any) {
