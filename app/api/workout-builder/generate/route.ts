@@ -120,18 +120,32 @@ export async function POST(request: NextRequest) {
     // Track used video IDs across the whole week for better rotation
     const weekUsedVideoIds = new Set<number>()
 
-    for (const date of dates) {
+    // Mirror pairs: Mon(idx 0) ↔ Thu(idx 3), Tue(idx 1) ↔ Fri(idx 4), Wed(idx 2) ↔ Sat(idx 5)
+    // We store video IDs used on each day so the mirror day can exclude them.
+    const videosByDayIndex: number[][] = []
+
+    for (let dayIndex = 0; dayIndex < dates.length; dayIndex++) {
+      const date = dates[dayIndex]
       const weekday = new Date(date + "T12:00:00").getDay()
       const template = templateByWeekday.get(weekday) ?? null
 
-      // For weekly generation, pass a modified lastScheduledById that also
-      // penalises videos already used earlier this week
+      // Build a modified lastScheduledById that penalises videos used earlier this week.
+      // For mirror days (Thu/Fri/Sat), also hard-exclude the videos from the corresponding
+      // earlier day (Mon/Tue/Wed) so the workout is noticeably different.
       const lastScheduledWithWeek = { ...videoData.lastScheduledById }
       for (const id of weekUsedVideoIds) {
         if (!lastScheduledWithWeek[id]) {
-          // Mark as "used today" so freshness score treats it as recent
           lastScheduledWithWeek[id] = date
         }
+      }
+
+      // Mirror day exclusion: mark the counterpart day's videos as "used today"
+      // so they are deprioritised (freshness score pushes them down)
+      const mirrorIdx = dayIndex - 3 // Thu→Mon, Fri→Tue, Sat→Wed
+      const mirrorVideos = mirrorIdx >= 0 ? (videosByDayIndex[mirrorIdx] ?? []) : []
+      for (const id of mirrorVideos) {
+        // Override to today's date regardless of previous value — strong freshness penalty
+        lastScheduledWithWeek[id] = date
       }
 
       const dayDraft = generateWorkout({
@@ -143,7 +157,7 @@ export async function POST(request: NextRequest) {
         settings,
         videos: videoData.videos,
         lastScheduledById: lastScheduledWithWeek,
-        lockedByRoomId: {}, // week generation doesn't carry per-day locks from UI
+        lockedByRoomId: {},
         params,
       })
 
@@ -153,10 +167,15 @@ export async function POST(request: NextRequest) {
       })
       dayDraft.rounds.sort((a, b) => a.roomNumber - b.roomNumber)
 
-      // Register all used video IDs to avoid same exercise in same week
+      // Record this day's video IDs for mirror-day exclusion and week-wide rotation
+      const dayVideoIds: number[] = []
       for (const rd of dayDraft.rounds) {
-        for (const ex of rd.exercises) weekUsedVideoIds.add(ex.videoId)
+        for (const ex of rd.exercises) {
+          weekUsedVideoIds.add(ex.videoId)
+          dayVideoIds.push(ex.videoId)
+        }
       }
+      videosByDayIndex[dayIndex] = dayVideoIds
 
       days.push(dayDraft)
     }

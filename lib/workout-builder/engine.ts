@@ -354,8 +354,16 @@ function defaultReps(video: Video): string {
   const isBoxing = isBoxingExercise(video)
   const isSuperSet = methods.includes("superset")
 
-  // Boxing: rounds / combos rather than a rep count
-  if (isBoxing) return "3 rounds"
+  // Boxing: short combos (≤3 moves based on title) need many more rounds
+  // than long combination sequences. We detect short combos by looking at
+  // how many punch-type words appear in the title/boxingType.
+  if (isBoxing) {
+    const comboText = ((video.title ?? "") + " " + (video.boxingType ?? "")).toLowerCase()
+    const PUNCH_WORDS = ["jab", "cross", "hook", "uppercut", "left", "right", "1", "2", "3", "4", "5", "6"]
+    const punchCount = PUNCH_WORDS.filter((w) => comboText.includes(w)).length
+    const isShortCombo = punchCount <= 3
+    return isShortCombo ? "10-20 rounds" : "5 rounds min"
+  }
 
   // Conditioning / HIIT — usually time or AMRAP
   if (cat === "hiit" || type === "hiit" || type === "conditioning") return "AMRAP"
@@ -609,27 +617,62 @@ export function generateWorkout(input: EngineInput): WorkoutDraft {
 
 function buildSummary(rounds: GeneratedRound[], template: WeeklyTemplate | null, settings: { reuseWeeks: number }): string[] {
   const out: string[] = []
-  if (template?.label) out.push(`Built for ${template.label}.`)
-  if (template?.primaryMuscles?.length) {
-    out.push(`Primary focus: ${template.primaryMuscles.join(", ")}.`)
-  }
-  const hrCounts = { green: 0, orange: 0, red: 0 } as Record<HeartRate, number>
-  let exerciseCount = 0
+
+  // Line 1 — primary focus + any other categories present
+  const allCategories: string[] = []
   for (const r of rounds) {
     for (const e of r.exercises) {
-      exerciseCount++
-      if (e.heartRate) hrCounts[e.heartRate]++
+      const cat = exerciseCategory(e.video)
+      if (cat) allCategories.push(cat)
+    }
+  }
+  const catCounts: Record<string, number> = {}
+  for (const c of allCategories) catCounts[c] = (catCounts[c] ?? 0) + 1
+
+  const primary = template?.primaryMuscles?.length
+    ? template.primaryMuscles.join(" + ")
+    : null
+  const otherCats = Object.entries(catCounts)
+    .filter(([c]) => {
+      if (!primary) return false
+      return !primary.toLowerCase().includes(c.toLowerCase())
+    })
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3)
+    .map(([c]) => c)
+
+  if (primary) {
+    const label = template?.label ? `${template.label} — ` : ""
+    out.push(
+      otherCats.length
+        ? `${label}Primary focus: ${primary}. Also includes: ${otherCats.join(", ")}.`
+        : `${label}Primary focus: ${primary}.`,
+    )
+  } else if (template?.label) {
+    out.push(`Built for ${template.label}.`)
+  }
+
+  // Line 2 — HIIT exercise count
+  let hiitCount = 0
+  for (const r of rounds) {
+    for (const e of r.exercises) {
+      const cat = exerciseCategory(e.video)
+      const type = norm(e.video.exerciseType)
+      if (cat === "hiit" || type === "hiit" || type === "conditioning" || e.heartRate === "red") {
+        hiitCount++
+      }
     }
   }
   const dropsets = rounds.filter((r) => r.dropset).length
   const boxing = rounds.filter((r) => r.isBoxingRound).length
-  out.push(
-    `${rounds.length} rounds · ${exerciseCount} exercises (2 per station by default${dropsets ? `, ${dropsets} dropset${dropsets > 1 ? "s" : ""}` : ""}).`,
-  )
-  if (boxing) {
-    out.push(`${boxing} boxing stations — gloves stay on, so any second exercise is glove-compatible.`)
-  }
-  out.push(`Heart-rate spread — Low: ${hrCounts.green}, Medium: ${hrCounts.orange}, High: ${hrCounts.red}.`)
-  out.push(`No exercise repeats within the last ${settings.reuseWeeks} weeks where possible.`)
+  const parts: string[] = []
+  if (hiitCount > 0) parts.push(`${hiitCount} HIIT exercise${hiitCount !== 1 ? "s" : ""}`)
+  if (dropsets > 0) parts.push(`${dropsets} dropset${dropsets !== 1 ? "s" : ""}`)
+  if (boxing > 0) parts.push(`${boxing} boxing round${boxing !== 1 ? "s" : ""}`)
+  if (parts.length) out.push(parts.join(" · ") + ".")
+
+  // Line 3 — rotation / no-repeat guarantee
+  out.push(`No repeats within the last ${settings.reuseWeeks} weeks where possible.`)
+
   return out
 }
