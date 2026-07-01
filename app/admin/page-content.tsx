@@ -27,7 +27,7 @@ import { UnknownTermsBanner, UnknownTermsReviewDialog, type UnknownTerm } from "
 import { 
   Dumbbell, LogOut, TrendingUp, Play, Video as VideoIcon, Calendar, 
   DoorOpen, Plus, Trash2, Edit, Clock, CheckCircle, Download, Wifi, WifiOff,
-  Monitor, ZoomIn, ZoomOut, Save, ChevronsUpDown, ChevronUp, ChevronDown, GripVertical, X, Copy,
+  Monitor, ZoomIn, ZoomOut, Save, ChevronsUpDown, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, GripVertical, X, Copy,
   Sparkles, AlertCircle, Loader2, Search, CalendarDays, BookOpen, Image,
   Wand2, Settings2
 } from "lucide-react";
@@ -1688,535 +1688,352 @@ function TrainerDashboardInner() {
           </TabsContent>
 
           {/* Schedule Tab */}
-          <TabsContent value="schedule" className="space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>Weekly Schedule</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                {/* Date Selector */}
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-4">
-                      <h3 className="text-lg font-semibold">Schedule Calendar</h3>
-                      <div className="flex space-x-2">
-                        <Button
-                          onClick={() => {
-                            const currentWeekStart = new Date(currentDate);
-                            currentWeekStart.setDate(currentWeekStart.getDate() - 7);
-                            setCurrentDate(currentWeekStart.toISOString().split('T')[0]);
-                          }}
-                          variant="outline"
-                          size="sm"
-                        >
-                          Previous Week
-                        </Button>
-                        <Button
-                          onClick={() => {
-                            const currentWeekStart = new Date(currentDate);
-                            currentWeekStart.setDate(currentWeekStart.getDate() + 7);
-                            setCurrentDate(currentWeekStart.toISOString().split('T')[0]);
-                          }}
-                          variant="outline"
-                          size="sm"
-                        >
-                          Next Week
-                        </Button>
-                        <Button
-                          onClick={() => fillScheduleMutation.mutate(currentDate)}
-                          disabled={fillScheduleMutation.isPending}
-                          size="sm"
-                          className="bg-blue-600 text-white hover:bg-blue-700"
-                          title={
-                            (schedules?.length ?? 0) > 0
-                              ? "Keep existing rounds and auto-fill the empty ones"
-                              : "Auto-build a full workout for this day"
-                          }
-                        >
-                          {fillScheduleMutation.isPending ? (
-                            <Loader2 className="mr-1 h-4 w-4 animate-spin" />
-                          ) : (
-                            <Wand2 className="mr-1 h-4 w-4" />
-                          )}
-                          {(schedules?.length ?? 0) > 0 ? "Fill Empty Rounds" : "Build Workout"}
-                        </Button>
-                      </div>
+          <TabsContent value="schedule" className="space-y-4">
+            {/* ── Week navigator ───────────────────────────────────────────── */}
+            {(() => {
+              const currentDateObj = new Date(currentDate);
+              const currentDay = currentDateObj.getDay();
+              const daysFromMonday = currentDay === 0 ? 6 : currentDay - 1;
+              const weekStart = new Date(currentDateObj);
+              weekStart.setDate(currentDateObj.getDate() - daysFromMonday);
+              const weekEnd = new Date(weekStart);
+              weekEnd.setDate(weekStart.getDate() + 5);
+
+              const mondayStr = weekStart.toISOString().split('T')[0];
+              const tuesdayStr = new Date(weekStart.getTime() + 86400000).toISOString().split('T')[0];
+              const wednesdayStr = new Date(weekStart.getTime() + 2*86400000).toISOString().split('T')[0];
+              const thursdayStr = new Date(weekStart.getTime() + 3*86400000).toISOString().split('T')[0];
+              const fridayStr = new Date(weekStart.getTime() + 4*86400000).toISOString().split('T')[0];
+              const saturdayStr = new Date(weekStart.getTime() + 5*86400000).toISOString().split('T')[0];
+
+              const weekDays = [mondayStr, tuesdayStr, wednesdayStr, thursdayStr, fridayStr, saturdayStr];
+
+              const weekLabel = `${weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${weekEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
+
+              // Category donut data
+              const categoryCounts = schedules?.reduce((acc: Record<string, number>, schedule: any) => {
+                const video = videos?.find((v: any) => v.id === schedule.videoId);
+                if (video) {
+                  const cats = deriveCategories(video.bodyPart, video.equipment);
+                  cats.forEach((c: string) => { acc[c] = (acc[c] || 0) + 1; });
+                }
+                return acc;
+              }, {} as Record<string, number>) || {};
+
+              const CATEGORY_COLORS: Record<string, string> = {
+                HIIT: '#ef4444', Chest: '#3b82f6', Core: '#8b5cf6', Shoulders: '#f59e0b',
+                Back: '#10b981', Legs: '#06b6d4', Triceps: '#f97316', Biceps: '#ec4899',
+                Boxing: '#6366f1', Missing: '#9ca3af',
+              };
+              const totalCats = Object.values(categoryCounts).reduce((a: number, b: number) => a + b, 0);
+              const donutData = Object.entries(categoryCounts)
+                .filter(([, v]) => v > 0)
+                .sort(([, a], [, b]) => (b as number) - (a as number))
+                .map(([name, value]) => ({
+                  name,
+                  value: value as number,
+                  pct: totalCats > 0 ? Math.round(((value as number) / totalCats) * 100) : 0,
+                  color: CATEGORY_COLORS[name] || '#6b7280',
+                }));
+
+              return (
+                <>
+                  {/* Header row: week label + prev/next + actions */}
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => {
+                          const d = new Date(currentDate);
+                          d.setDate(d.getDate() - 7);
+                          setCurrentDate(d.toISOString().split('T')[0]);
+                        }}
+                        className="flex items-center justify-center w-8 h-8 rounded-full border border-gray-200 bg-white hover:bg-gray-50 transition-colors text-gray-600"
+                        aria-label="Previous week"
+                      >
+                        <ChevronLeft className="h-4 w-4" />
+                      </button>
+                      <span className="text-base font-semibold text-gray-900 min-w-[200px] text-center">{weekLabel}</span>
+                      <button
+                        onClick={() => {
+                          const d = new Date(currentDate);
+                          d.setDate(d.getDate() + 7);
+                          setCurrentDate(d.toISOString().split('T')[0]);
+                        }}
+                        className="flex items-center justify-center w-8 h-8 rounded-full border border-gray-200 bg-white hover:bg-gray-50 transition-colors text-gray-600"
+                        aria-label="Next week"
+                      >
+                        <ChevronRight className="h-4 w-4" />
+                      </button>
                     </div>
-                    
-                    {/* Categories Summary Table */}
-                    <div className="bg-white border border-gray-200 rounded-lg shadow-sm">
-                      <div className="px-4 py-3 border-b border-gray-200">
-                        <h4 className="text-sm font-semibold text-gray-800">
-                          Categories - {new Date(currentDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                        </h4>
-                      </div>
-                      <div className="p-4">
-                        <div className="grid grid-cols-9 gap-3">
-                          {(() => {
-                            // Calculate category counts for current day
-                            const categoryCounts = schedules?.reduce((acc: Record<string, number>, schedule: any) => {
-                              const video = videos?.find((v: any) => v.id === schedule.videoId);
-                              if (video) {
-                                const categories = deriveCategories(video.bodyPart, video.equipment);
-                                categories.forEach(category => {
-                                  acc[category] = (acc[category] || 0) + 1;
-                                });
-                              }
-                              return acc;
-                            }, {} as Record<string, number>) || {};
-                            
-                            // All possible categories
-                            const allCategories = ['Shoulders', 'Triceps', 'Back', 'Legs', 'Biceps', 'Chest', 'Core', 'HIIT', 'Missing'];
-                            
-                            return allCategories.map(category => (
-                              <div key={category} className="text-center">
-                                <div className={`inline-block px-3 py-2 rounded text-sm font-medium mb-1 ${
-                                  category === 'Missing' 
-                                    ? 'bg-gray-100 text-gray-800' 
-                                    : category === 'HIIT'
-                                    ? 'bg-red-100 text-red-800'
-                                    : 'bg-blue-100 text-blue-800'
-                                }`}>
-                                  {category}
-                                </div>
-                                <div className="text-lg font-bold text-gray-900">
-                                  {categoryCounts[category] || 0}
-                                </div>
+
+                    {/* Quick copy + Build button */}
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-gray-400 hidden sm:block">Copy:</span>
+                      <button
+                        onClick={() => copyScheduleMutation.mutate({ sourceDate: mondayStr, targetDate: thursdayStr })}
+                        disabled={copyScheduleMutation.isPending}
+                        className="text-xs px-2.5 py-1.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 text-gray-600 transition-colors disabled:opacity-50"
+                        title="Copy Monday → Thursday"
+                      >Mon → Thu</button>
+                      <button
+                        onClick={() => copyScheduleMutation.mutate({ sourceDate: tuesdayStr, targetDate: fridayStr })}
+                        disabled={copyScheduleMutation.isPending}
+                        className="text-xs px-2.5 py-1.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 text-gray-600 transition-colors disabled:opacity-50"
+                        title="Copy Tuesday → Friday"
+                      >Tue → Fri</button>
+                      <button
+                        onClick={() => copyScheduleMutation.mutate({ sourceDate: wednesdayStr, targetDate: saturdayStr })}
+                        disabled={copyScheduleMutation.isPending}
+                        className="text-xs px-2.5 py-1.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 text-gray-600 transition-colors disabled:opacity-50"
+                        title="Copy Wednesday → Saturday"
+                      >Wed → Sat</button>
+                      <Button
+                        onClick={() => fillScheduleMutation.mutate(currentDate)}
+                        disabled={fillScheduleMutation.isPending}
+                        size="sm"
+                        className="bg-gray-900 text-white hover:bg-gray-800 gap-1.5 ml-2"
+                      >
+                        {fillScheduleMutation.isPending ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <Wand2 className="h-3.5 w-3.5" />
+                        )}
+                        {(schedules?.length ?? 0) > 0 ? 'Fill Rounds' : 'Build Workout'}
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* Day pills */}
+                  <div className="flex gap-1.5">
+                    {weekDays.map((dateStr) => {
+                      const d = new Date(dateStr);
+                      const dayName = d.toLocaleDateString('en-US', { weekday: 'short' });
+                      const dayNum = d.getDate();
+                      const daySchedules = weekSchedules?.filter((s: any) => s.scheduleDate === dateStr) || [];
+                      const filled = new Set(daySchedules.map((s: any) => s.roomId)).size;
+                      const isSelected = currentDate === dateStr;
+                      const isComplete = filled >= 10;
+                      return (
+                        <button
+                          key={dateStr}
+                          onClick={() => setCurrentDate(dateStr)}
+                          className={`flex-1 flex flex-col items-center py-2 px-1 rounded-xl border transition-all ${
+                            isSelected
+                              ? 'bg-gray-900 border-gray-900 text-white shadow-md'
+                              : isComplete
+                              ? 'bg-green-50 border-green-200 text-green-800 hover:bg-green-100'
+                              : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'
+                          }`}
+                        >
+                          <span className={`text-[10px] font-medium uppercase tracking-wider ${isSelected ? 'text-gray-300' : isComplete ? 'text-green-600' : 'text-gray-400'}`}>{dayName}</span>
+                          <span className={`text-lg font-bold leading-tight ${isSelected ? 'text-white' : 'text-gray-900'}`}>{dayNum}</span>
+                          <span className={`text-[10px] mt-0.5 ${isSelected ? 'text-gray-400' : isComplete ? 'text-green-500 font-medium' : 'text-gray-400'}`}>
+                            {filled}/10
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Category donut + round grid */}
+                  <div className="flex gap-4 items-start">
+                    {/* Donut chart */}
+                    {donutData.length > 0 && (
+                      <div className="shrink-0 bg-white border border-gray-100 rounded-2xl p-4 shadow-sm w-[220px]">
+                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
+                          {new Date(currentDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} — Focus
+                        </p>
+                        <div className="flex items-center gap-3">
+                          {/* SVG donut */}
+                          <svg width="72" height="72" viewBox="0 0 72 72" className="shrink-0">
+                            {(() => {
+                              const r = 28; const cx = 36; const cy = 36;
+                              const circumference = 2 * Math.PI * r;
+                              let offset = 0;
+                              return donutData.map((d, i) => {
+                                const dash = (d.pct / 100) * circumference;
+                                const gap = circumference - dash;
+                                const el = (
+                                  <circle
+                                    key={d.name}
+                                    cx={cx} cy={cy} r={r}
+                                    fill="none"
+                                    stroke={d.color}
+                                    strokeWidth="12"
+                                    strokeDasharray={`${dash} ${gap}`}
+                                    strokeDashoffset={-offset}
+                                    transform="rotate(-90 36 36)"
+                                    className="transition-all duration-500"
+                                  />
+                                );
+                                offset += dash;
+                                return el;
+                              });
+                            })()}
+                            <circle cx="36" cy="36" r="22" fill="white" />
+                            <text x="36" y="40" textAnchor="middle" className="text-xs font-bold" style={{ fontSize: '11px', fontWeight: 700, fill: '#111' }}>
+                              {donutData[0]?.pct}%
+                            </text>
+                          </svg>
+                          {/* Legend */}
+                          <div className="flex flex-col gap-1 min-w-0">
+                            {donutData.map((d) => (
+                              <div key={d.name} className="flex items-center gap-1.5 min-w-0">
+                                <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: d.color }} />
+                                <span className="text-[10px] text-gray-600 truncate">{d.name}</span>
+                                <span className="text-[10px] font-semibold text-gray-900 ml-auto pl-1">{d.pct}%</span>
                               </div>
-                            ));
-                          })()}
+                            ))}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  </div>
-                  
-                  {/* Copy Schedule Buttons */}
-                  <div className="flex items-center justify-center space-x-2 p-3 bg-gray-50 rounded-lg border border-gray-200">
-                    <span className="text-sm text-gray-600 mr-2">Quick Copy:</span>
-                    {(() => {
-                      // Calculate the current week's Monday to determine copy buttons
-                      const currentDateObj = new Date(currentDate);
-                      const currentDay = currentDateObj.getDay();
-                      const daysFromMonday = currentDay === 0 ? 6 : currentDay - 1;
-                      const weekStart = new Date(currentDateObj);
-                      weekStart.setDate(currentDateObj.getDate() - daysFromMonday);
-                      
-                      // Get dates for the week
-                      const monday = new Date(weekStart);
-                      const tuesday = new Date(weekStart); tuesday.setDate(weekStart.getDate() + 1);
-                      const wednesday = new Date(weekStart); wednesday.setDate(weekStart.getDate() + 2);
-                      const thursday = new Date(weekStart); thursday.setDate(weekStart.getDate() + 3);
-                      const friday = new Date(weekStart); friday.setDate(weekStart.getDate() + 4);
-                      const saturday = new Date(weekStart); saturday.setDate(weekStart.getDate() + 5);
-                      
-                      const mondayStr = monday.toISOString().split('T')[0];
-                      const tuesdayStr = tuesday.toISOString().split('T')[0];
-                      const wednesdayStr = wednesday.toISOString().split('T')[0];
-                      const thursdayStr = thursday.toISOString().split('T')[0];
-                      const fridayStr = friday.toISOString().split('T')[0];
-                      const saturdayStr = saturday.toISOString().split('T')[0];
+                    )}
 
-                      return (
-                        <>
-                          <Button
-                            onClick={() => copyScheduleMutation.mutate({ sourceDate: mondayStr, targetDate: thursdayStr })}
-                            variant="outline"
-                            size="sm"
-                            disabled={copyScheduleMutation.isPending}
-                            className="text-xs"
-                          >
-                            <Copy className="h-3 w-3 mr-1" />
-                            Copy Monday → Thursday
-                          </Button>
-                          <Button
-                            onClick={() => copyScheduleMutation.mutate({ sourceDate: tuesdayStr, targetDate: fridayStr })}
-                            variant="outline"
-                            size="sm"
-                            disabled={copyScheduleMutation.isPending}
-                            className="text-xs"
-                          >
-                            <Copy className="h-3 w-3 mr-1" />
-                            Copy Tuesday → Friday
-                          </Button>
-                          <Button
-                            onClick={() => copyScheduleMutation.mutate({ sourceDate: wednesdayStr, targetDate: saturdayStr })}
-                            variant="outline"
-                            size="sm"
-                            disabled={copyScheduleMutation.isPending}
-                            className="text-xs"
-                          >
-                            <Copy className="h-3 w-3 mr-1" />
-                            Copy Wednesday → Saturday
-                          </Button>
-                        </>
-                      );
-                    })()}
-                  </div>
-                  
-                  <div className="flex space-x-2 overflow-x-auto">
-                    {(() => {
-                      const dates = [];
-                      const startDate = new Date(currentDate);
-                      
-                      // Find Monday of the current week
-                      const currentDay = startDate.getDay();
-                      const daysFromMonday = currentDay === 0 ? 6 : currentDay - 1; // Sunday = 0, Monday = 1
-                      startDate.setDate(startDate.getDate() - daysFromMonday);
-                      
-                      // Generate dates for the week (Monday to Saturday only)
-                      for (let i = 0; i < 6; i++) {
-                        const date = new Date(startDate);
-                        date.setDate(startDate.getDate() + i);
-                        
-                        const dateString = date.toISOString().split('T')[0];
-                        const dayName = date.toLocaleDateString('en-US', { weekday: 'short' });
-                        const dayNumber = date.getDate();
-                        
-                        dates.push({ dateString, dayName, dayNumber, date });
-                      }
-                      
-                      return dates.map(({ dateString, dayName, dayNumber }) => {
-                        // Check if this date has complete schedule (all 10 rounds have at least 1 video)
-                        const dateSchedules = weekSchedules?.filter((s: any) => s.scheduleDate === dateString) || [];
-                        const scheduledRooms = new Set(dateSchedules.map((s: any) => s.roomId));
-                        const totalRounds = 10; // All rounds 1-10
-                        const isCompleteSchedule = scheduledRooms.size === totalRounds;
-                        
+                    {/* ── Round cards grid ──────────────────────────────────── */}
+                    <div className="flex-1 grid grid-cols-2 gap-2">
+                      {roomsWithAssignments.map((room) => {
+                        const isEmpty = room.assignments.length === 0;
+                        const isFull = room.assignments.length >= 2;
                         return (
-                          <Button
-                            key={dateString}
-                            onClick={() => setCurrentDate(dateString)}
-                            variant={currentDate === dateString ? "default" : "outline"}
-                            className={`whitespace-nowrap min-w-[80px] ${
-                              currentDate === dateString 
-                                ? isCompleteSchedule 
-                                  ? "bg-green-600 hover:bg-green-700 text-white" 
-                                  : "bg-[hsl(207,90%,54%)] hover:bg-blue-700 text-white"
-                                : isCompleteSchedule 
-                                ? "bg-green-100 hover:bg-green-200 border-green-300 text-green-800"
-                                : "bg-red-100 hover:bg-red-200 border-red-300 text-red-800"
+                          <div
+                            key={room.id}
+                            className={`rounded-xl border bg-white overflow-hidden transition-shadow hover:shadow-md ${
+                              isEmpty ? 'border-red-100 bg-red-50/30' : isFull ? 'border-green-100' : 'border-amber-100'
                             }`}
                           >
-                            <div className="text-center">
-                              <div className="text-xs">{dayName}</div>
-                              <div className="font-semibold">{dayNumber}</div>
-                              {isCompleteSchedule && currentDate !== dateString && (
-                                <div className="w-2 h-2 bg-green-500 rounded-full mx-auto mt-1"></div>
-                              )}
-                            </div>
-                          </Button>
-                        );
-                      });
-                    })()}
-                  </div>
-                </div>
-
-                {/* Schedule Table */}
-                <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-xs">
-                      <thead className="bg-gray-50 border-b border-gray-200">
-                        <tr>
-                          <th className="text-center p-2 font-medium text-gray-700 w-16 text-xs">#</th>
-                          <th className="text-left p-2 font-medium text-gray-700 w-64 text-xs">Video</th>
-                          <th className="text-center p-2 font-medium text-gray-700 w-36 text-xs">Reps</th>
-                          <th className="text-center p-2 font-medium text-gray-700 w-36 text-xs">Equipment to use</th>
-                          <th className="text-left p-2 font-medium text-gray-700 w-24 text-xs">Last Used</th>
-                          <th className="text-left p-2 font-medium text-gray-700 w-20 text-xs">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {roomsWithAssignments.map((room, roomIndex) => {
-                          const { colorClass } = getRoomColorClasses(room.number);
-                          const assignmentCount = room.assignments.length;
-                          const isEmpty = assignmentCount === 0;
-
-                          // Accent colour cycling through rounds 1-10
-                          const accentColors = [
-                            'border-l-rose-400',    // 1
-                            'border-l-orange-400',  // 2
-                            'border-l-amber-400',   // 3
-                            'border-l-yellow-400',  // 4
-                            'border-l-lime-400',    // 5
-                            'border-l-emerald-400', // 6
-                            'border-l-teal-400',    // 7
-                            'border-l-cyan-400',    // 8
-                            'border-l-blue-400',    // 9
-                            'border-l-violet-400',  // 10
-                          ];
-                          const accentColor = accentColors[(room.number - 1) % accentColors.length];
-
-                          // Separator row rendered before every round group
-                          const separatorRow = (
-                            <tr key={`sep-${room.id}`} className="border-t-2 border-gray-200 bg-gray-50/70">
-                              <td colSpan={6} className="px-3 py-1.5">
-                                <div className="flex items-center gap-2">
-                                  {/* Round number badge */}
-                                  <div className="flex items-center justify-center w-6 h-6 rounded-full bg-gray-800 shrink-0">
-                                    <span className="text-white text-[10px] font-bold leading-none">{room.number}</span>
-                                  </div>
-                                  <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Round {room.number}</span>
-                                  {/* Video count pill */}
-                                  <span className={`ml-1 inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-                                    isEmpty
-                                      ? 'bg-red-100 text-red-600'
-                                      : assignmentCount === 2
-                                      ? 'bg-green-100 text-green-700'
-                                      : 'bg-amber-100 text-amber-700'
-                                  }`}>
-                                    {isEmpty ? 'No videos' : `${assignmentCount} video${assignmentCount > 1 ? 's' : ''}`}
-                                  </span>
-                                  {/* Add button in separator for empty rounds */}
-                                  {isEmpty && (
-                                    <Button
-                                      onClick={() => handleAssignVideo(null, room.id)}
-                                      variant="outline"
-                                      size="sm"
-                                      className="ml-auto h-5 px-2 text-[10px] border-dashed text-gray-500"
-                                    >
-                                      <Plus className="h-2.5 w-2.5 mr-1" />
-                                      Assign video
-                                    </Button>
-                                  )}
-                                </div>
-                              </td>
-                            </tr>
-                          );
-
-                          if (isEmpty) {
-                            return separatorRow;
-                          }
-
-                          return [
-                            separatorRow,
-                            ...room.assignments.map((assignment, index) => (
-                            <tr 
-                              key={assignment.id} 
-                              className={`border-b border-gray-100 hover:bg-blue-50 cursor-move transition-colors border-l-2 ${accentColor} ${draggedSchedule?.id === assignment.id ? 'opacity-50' : ''}`}
-                              draggable="true"
-                              onDragStart={(e) => {
-                                setDraggedSchedule(assignment);
-                                e.dataTransfer.effectAllowed = 'move';
-                              }}
-                              onDragEnd={() => {
-                                setDraggedSchedule(null);
-                              }}
-                            >
-                              {/* Slot indicator — shows position within the round */}
-                              <td className="p-2 text-center w-16">
-                                <span className="text-[10px] text-gray-400 tabular-nums select-none">
-                                  {index + 1}/{assignmentCount}
+                            {/* Card header */}
+                            <div className={`flex items-center justify-between px-3 py-2 border-b ${
+                              isEmpty ? 'border-red-100 bg-red-50/40' : isFull ? 'border-green-100 bg-green-50/40' : 'border-amber-100 bg-amber-50/40'
+                            }`}>
+                              <div className="flex items-center gap-2">
+                                <span className={`flex items-center justify-center w-5 h-5 rounded-full text-[10px] font-bold ${
+                                  isEmpty ? 'bg-gray-300 text-gray-600' : isFull ? 'bg-green-600 text-white' : 'bg-amber-500 text-white'
+                                }`}>{room.number}</span>
+                                <span className="text-xs font-semibold text-gray-700">Round {room.number}</span>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${
+                                  isEmpty ? 'bg-red-100 text-red-600' : isFull ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'
+                                }`}>
+                                  {isEmpty ? 'empty' : `${room.assignments.length}/2`}
                                 </span>
-                              </td>
-                              <td className="p-2">
-                                <div className="flex items-center space-x-2">
-                                  <GripVertical className="h-3 w-3 text-gray-400 cursor-move" />
-                                  <span
-                                    className={`h-2.5 w-2.5 shrink-0 rounded-full ${getIntensityStyle(assignment.video.intensity).dot}`}
-                                    title={`Heart-rate zone: ${getIntensityStyle(assignment.video.intensity).label}`}
-                                  />
-                                  <div className="font-medium text-gray-900 truncate text-xs">
-                                    {assignment.video.title}
-                                  </div>
-                                </div>
-                              </td>
-                              <td className="p-2 text-center">
-                                <Input
-                                  type="text"
-                                  value={scheduleChanges[assignment.id]?.reps !== undefined ? scheduleChanges[assignment.id].reps : assignment.reps}
-                                  onChange={(e) => {
-                                    setScheduleChanges(prev => ({
-                                      ...prev,
-                                      [assignment.id]: {
-                                        ...prev[assignment.id],
-                                        reps: e.target.value
-                                      }
-                                    }));
-                                  }}
-                                  onKeyDown={async (e) => {
-                                    if (e.key === 'Tab' || e.key === 'Enter') {
-                                      const newReps = e.currentTarget.value;
-                                      if (newReps !== String(assignment.reps)) {
-                                        try {
-                                          await apiRequest("PATCH", `/api/schedules/${assignment.id}`, { reps: newReps });
-                                          
-                                          // Update the cache directly to reflect the change
-                                          queryClient.setQueryData(["/api/schedules", "date", currentDate], (oldData: any) => {
-                                            if (!oldData) return oldData;
-                                            return oldData.map((s: any) => 
-                                              s.id === assignment.id ? { ...s, reps: newReps } : s
-                                            );
-                                          });
-                                        } catch (error) {
-                                          console.error('Failed to save reps:', error);
-                                        }
-                                      }
-                                      // Clear local changes
-                                      setScheduleChanges(prev => {
-                                        const newChanges = { ...prev };
-                                        delete newChanges[assignment.id];
-                                        return newChanges;
-                                      });
-                                    }
-                                  }}
-                                  onBlur={async (e) => {
-                                    const newReps = e.target.value;
-                                    if (newReps !== String(assignment.reps)) {
-                                      try {
-                                        await apiRequest("PATCH", `/api/schedules/${assignment.id}`, { reps: newReps });
-                                        
-                                        // Update the cache directly to reflect the change
-                                        queryClient.setQueryData(["/api/schedules", "date", currentDate], (oldData: any) => {
-                                          if (!oldData) return oldData;
-                                          return oldData.map((s: any) => 
-                                            s.id === assignment.id ? { ...s, reps: newReps } : s
-                                          );
-                                        });
-                                      } catch (error) {
-                                        console.error('Failed to save reps:', error);
-                                      }
-                                    }
-                                    // Clear local changes
-                                    setScheduleChanges(prev => {
-                                      const newChanges = { ...prev };
-                                      delete newChanges[assignment.id];
-                                      return newChanges;
-                                    });
-                                  }}
-                                  className="w-32 h-6 text-xs px-2 text-center mx-auto"
-                                />
-                              </td>
-                              <td className="p-2 text-center">
-                                {(() => {
-                                  const videoEquipmentOptions = assignment.video.equipment.split(',').map(e => e.trim()).filter(e => e);
-                                  // Show ALL available equipment as options, but default to assigned equipment
+                                {!isFull && (
+                                  <button
+                                    onClick={() => handleAssignVideo(null, room.id)}
+                                    className="w-5 h-5 rounded-full flex items-center justify-center text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
+                                    title="Add video"
+                                  >
+                                    <Plus className="h-3 w-3" />
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Video rows */}
+                            {isEmpty ? (
+                              <button
+                                onClick={() => handleAssignVideo(null, room.id)}
+                                className="w-full py-3 text-xs text-gray-400 hover:text-gray-600 hover:bg-gray-50/50 transition-colors text-center"
+                              >
+                                + assign video
+                              </button>
+                            ) : (
+                              <div className="divide-y divide-gray-100">
+                                {room.assignments.map((assignment, idx) => {
+                                  const videoEquipmentOptions = assignment.video.equipment.split(',').map((e: string) => e.trim()).filter((e: string) => e);
                                   const allEquipmentOptions = videoOptions?.equipment || [];
                                   const defaultEquipment = assignment.displayEquipment || videoEquipmentOptions[0] || '';
-                                  
+                                  const repsVal = scheduleChanges[assignment.id]?.reps !== undefined ? scheduleChanges[assignment.id].reps : assignment.reps;
+
                                   return (
-                                    <div className="relative flex justify-center">
-                                      <div className="flex items-center space-x-1">
-                                        <SearchableSelect
-                                          options={allEquipmentOptions}
-                                          value={defaultEquipment}
-                                          onValueChange={async (value) => {
+                                    <div
+                                      key={assignment.id}
+                                      className={`flex items-center gap-2 px-3 py-2 group ${draggedSchedule?.id === assignment.id ? 'opacity-40' : ''}`}
+                                      draggable
+                                      onDragStart={(e) => { setDraggedSchedule(assignment); e.dataTransfer.effectAllowed = 'move'; }}
+                                      onDragEnd={() => setDraggedSchedule(null)}
+                                    >
+                                      <GripVertical className="h-3 w-3 text-gray-300 cursor-grab shrink-0" />
+                                      <span className={`w-2 h-2 rounded-full shrink-0 ${getIntensityStyle(assignment.video.intensity).dot}`} title={getIntensityStyle(assignment.video.intensity).label} />
+                                      {/* Title */}
+                                      <span className="text-xs font-medium text-gray-800 truncate flex-1 min-w-0" title={assignment.video.title}>
+                                        {assignment.video.title}
+                                      </span>
+                                      {/* Reps inline input */}
+                                      <Input
+                                        type="text"
+                                        value={repsVal}
+                                        onChange={(e) => setScheduleChanges(prev => ({ ...prev, [assignment.id]: { ...prev[assignment.id], reps: e.target.value } }))}
+                                        onBlur={async (e) => {
+                                          const newReps = e.target.value;
+                                          if (newReps !== String(assignment.reps)) {
                                             try {
-                                              await apiRequest("PATCH", `/api/schedules/${assignment.id}`, { displayEquipment: value });
-                                              
-                                              // Update the cache directly to reflect the change
+                                              await apiRequest("PATCH", `/api/schedules/${assignment.id}`, { reps: newReps });
                                               queryClient.setQueryData(["/api/schedules", "date", currentDate], (oldData: any) => {
                                                 if (!oldData) return oldData;
-                                                return oldData.map((s: any) => 
-                                                  s.id === assignment.id ? { ...s, displayEquipment: value } : s
-                                                );
+                                                return oldData.map((s: any) => s.id === assignment.id ? { ...s, reps: newReps } : s);
                                               });
-                                              
-                                              // Also invalidate the equipment view cache
-                                              queryClient.invalidateQueries({ queryKey: ["/api/schedules", "all"] });
-                                            } catch (error) {
-                                              console.error('Failed to save equipment:', error);
+                                            } catch {}
+                                          }
+                                          setScheduleChanges(prev => { const n = { ...prev }; delete n[assignment.id]; return n; });
+                                        }}
+                                        onKeyDown={async (e) => {
+                                          if (e.nativeEvent.isComposing) return;
+                                          if (e.key === 'Enter' || e.key === 'Tab') {
+                                            const newReps = e.currentTarget.value;
+                                            if (newReps !== String(assignment.reps)) {
+                                              try {
+                                                await apiRequest("PATCH", `/api/schedules/${assignment.id}`, { reps: newReps });
+                                                queryClient.setQueryData(["/api/schedules", "date", currentDate], (oldData: any) => {
+                                                  if (!oldData) return oldData;
+                                                  return oldData.map((s: any) => s.id === assignment.id ? { ...s, reps: newReps } : s);
+                                                });
+                                              } catch {}
                                             }
-                                          }}
-                                          placeholder="Select equipment"
-                                          className="w-36 h-6 text-xs"
-                                          allowAll={false}
-                                        />
-                                        {/* Equipment Color Badge */}
-                                        {(() => {
-                                          const selectedEquipment = defaultEquipment;
-                                          if (!selectedEquipment) return null;
-                                          
-                                          // Use the same color function as equipment view with more prominent colors
-                                          const getEquipmentColor = (equipment: string) => {
-                                            // Custom colors for specific equipment (more prominent)
-                                            const customColors: { [key: string]: string } = {
-                                              'TRX': 'bg-yellow-400 text-black border-yellow-500',
-                                              'Battle Rope': 'bg-gray-800 text-white border-gray-900',
-                                              'Bodyweight': 'bg-white text-gray-700 border-gray-400',
-                                              'Boxing Bag': 'bg-white text-gray-700 border-gray-400',
-                                              'Multi functional wall': 'bg-white text-gray-700 border-gray-400'
-                                            };
-                                            
-                                            // Check for custom color first
-                                            if (customColors[equipment]) {
-                                              return customColors[equipment];
-                                            }
-                                            
-                                            // More prominent colors
-                                            const colors = [
-                                              'bg-red-500 text-white border-red-600',
-                                              'bg-blue-500 text-white border-blue-600',
-                                              'bg-green-500 text-white border-green-600',
-                                              'bg-purple-500 text-white border-purple-600',
-                                              'bg-pink-500 text-white border-pink-600',
-                                              'bg-indigo-500 text-white border-indigo-600',
-                                              'bg-orange-500 text-white border-orange-600',
-                                              'bg-teal-500 text-white border-teal-600',
-                                              'bg-cyan-500 text-white border-cyan-600',
-                                              'bg-emerald-500 text-white border-emerald-600',
-                                              'bg-lime-500 text-black border-lime-600',
-                                              'bg-amber-500 text-black border-amber-600',
-                                            ];
-                                            
-                                            let hash = 0;
-                                            for (let i = 0; i < equipment.length; i++) {
-                                              hash = ((hash << 5) - hash + equipment.charCodeAt(i)) & 0xffffffff;
-                                            }
-                                            return colors[Math.abs(hash) % colors.length];
-                                          };
-                                          
-                                          return (
-                                            <div className={`w-3 h-3 rounded border ${getEquipmentColor(selectedEquipment)}`} />
-                                          );
-                                        })()}
-                                      </div>
-
+                                            setScheduleChanges(prev => { const n = { ...prev }; delete n[assignment.id]; return n; });
+                                          }
+                                        }}
+                                        className="w-16 h-6 text-[11px] px-1.5 text-center shrink-0 border-gray-200"
+                                      />
+                                      {/* Equipment select */}
+                                      <SearchableSelect
+                                        options={allEquipmentOptions}
+                                        value={defaultEquipment}
+                                        onValueChange={async (value) => {
+                                          try {
+                                            await apiRequest("PATCH", `/api/schedules/${assignment.id}`, { displayEquipment: value });
+                                            queryClient.setQueryData(["/api/schedules", "date", currentDate], (oldData: any) => {
+                                              if (!oldData) return oldData;
+                                              return oldData.map((s: any) => s.id === assignment.id ? { ...s, displayEquipment: value } : s);
+                                            });
+                                            queryClient.invalidateQueries({ queryKey: ["/api/schedules", "all"] });
+                                          } catch {}
+                                        }}
+                                        placeholder="Equip."
+                                        className="w-28 h-6 text-[11px] shrink-0"
+                                        allowAll={false}
+                                      />
+                                      {/* Delete */}
+                                      <button
+                                        onClick={() => deleteScheduleMutation.mutate(assignment.id)}
+                                        className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-600 transition-all shrink-0"
+                                        title="Remove"
+                                      >
+                                        <Trash2 className="h-3 w-3" />
+                                      </button>
                                     </div>
                                   );
-                                })()}
-                              </td>
-                              <td className="p-2">
-                                <span className="text-gray-600 whitespace-nowrap text-xs">
-                                  {assignment.video.lastUsed ? formatTimeAgo(assignment.video.lastUsed) : (
-                                    <span className="text-green-600 font-medium">Never used</span>
-                                  )}
-                                </span>
-                              </td>
-                              <td className="p-2">
-                                <div className="flex items-center justify-end space-x-1">
-                                  {/* Add video button - always visible on the right */}
-                                  {room.assignments.length < 2 && (
-                                    <Button
-                                      onClick={() => handleAssignVideo(null, room.id)}
-                                      variant="outline"
-                                      size="sm"
-                                      className="h-6 px-2 text-xs border-dashed"
-                                    >
-                                      <Plus className="h-3 w-3" />
-                                    </Button>
-                                  )}
-                                  
-                                  {/* Delete button */}
-                                  <Button
-                                    onClick={() => deleteScheduleMutation.mutate(assignment.id)}
-                                    variant="ghost"
-                                    size="sm"
-                                    className="text-red-500 hover:text-red-700 h-6 w-6 p-0"
-                                  >
-                                    <Trash2 className="h-3 w-3" />
-                                  </Button>
-                                </div>
-                              </td>
-                            </tr>
-                          ))
-                          ];
-                        })}
-                      </tbody>
-                    </table>
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
-                </div>
-              </CardContent>
-            </Card>
+                </>
+              );
+            })()}
           </TabsContent>
 
           {/* Workout Builder Tab */}
