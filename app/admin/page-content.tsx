@@ -10,6 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import VideoPlayer from "@/components/video-player";
 import VideoAssignmentModal from "@/components/video-assignment-modal";
 import VideoUploadModal from "@/components/video-upload-modal";
 import VideoEditModal from "@/components/video-edit-modal";
