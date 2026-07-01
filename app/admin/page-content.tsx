@@ -693,78 +693,63 @@ function TrainerDashboardInner() {
 
       let processed = 0;
       let consecutiveErrors = 0;
-      // Track batches with zero progress to detect true "stuck" situations
-      let emptyBatches = 0;
       let safety = 0;
       const allUnknownMap: Record<string, UnknownTerm> = {};
 
-      while (safety < 500 && consecutiveErrors < 5 && emptyBatches < 3) {
+      // Process one video per request. Single-call-per-request is the only
+      // reliable way to avoid Vercel AI Gateway per-minute rate limits —
+      // batching multiple generateObject calls in one request fires them all
+      // concurrently and exhausts the quota immediately.
+      while (safety < 2000 && consecutiveErrors < 8) {
         safety++;
         let data: any = null;
         try {
-          const res = await apiRequest("POST", "/api/videos/ai-metadata", { mode: "fill", batchSize: 5 });
+          const res = await apiRequest("POST", "/api/videos/ai-metadata", { mode: "fill" });
           if (!res.ok) {
             consecutiveErrors++;
-            await new Promise((r) => setTimeout(r, 3000 * consecutiveErrors));
+            // Exponential back-off: 2s, 4s, 8s…
+            await new Promise((r) => setTimeout(r, 2000 * consecutiveErrors));
             continue;
           }
           data = await res.json();
           consecutiveErrors = 0;
         } catch (fetchErr) {
           consecutiveErrors++;
-          await new Promise((r) => setTimeout(r, 3000 * consecutiveErrors));
+          await new Promise((r) => setTimeout(r, 2000 * consecutiveErrors));
           continue;
         }
 
-        const batchProcessed: number = data.processedCount ?? 0;
-        processed += batchProcessed;
+        processed += data.processedCount ?? 0;
 
-        // Use server's authoritative remaining count to drive the progress bar.
-        // This is accurate because the server re-queries after every batch.
+        // Server re-queries remaining after every update — use it for the bar.
         const remaining: number = data.remaining ?? 0;
-        const serverDone = data.done === true || remaining === 0;
+        setAiProgress({ running: true, processed: total - remaining, total });
 
-        // Update progress: total - remaining gives us cumulative done count
-        setAiProgress({ running: true, processed: Math.max(processed, total - remaining), total });
-
-        // Merge unknown terms from this batch
+        // Merge unknown terms
         if (Array.isArray(data.unknownTerms)) {
           for (const t of data.unknownTerms as UnknownTerm[]) {
             if (!allUnknownMap[t.term]) {
               allUnknownMap[t.term] = { term: t.term, videoIds: [], videoTitles: [] };
             }
             for (const id of t.videoIds) {
-              if (!allUnknownMap[t.term].videoIds.includes(id)) {
-                allUnknownMap[t.term].videoIds.push(id);
-              }
+              if (!allUnknownMap[t.term].videoIds.includes(id)) allUnknownMap[t.term].videoIds.push(id);
             }
             for (const title of t.videoTitles) {
-              if (!allUnknownMap[t.term].videoTitles.includes(title)) {
-                allUnknownMap[t.term].videoTitles.push(title);
-              }
+              if (!allUnknownMap[t.term].videoTitles.includes(title)) allUnknownMap[t.term].videoTitles.push(title);
             }
           }
         }
 
-        // Refresh the table every few batches so trainers see progress live.
-        if (safety % 3 === 0) {
+        // Refresh table every 10 videos so the trainer sees progress live.
+        if (safety % 10 === 0) {
           queryClient.invalidateQueries({ queryKey: ["/api/videos"] });
         }
 
-        if (serverDone) break;
+        if (data.done || remaining === 0) break;
 
-        // If zero videos were processed this batch (all errored), increment
-        // the empty-batch counter and wait before retrying.
-        if (batchProcessed === 0) {
-          emptyBatches++;
-          setAiProgress((p) => p ? ({ ...p, rateLimited: true }) : p);
-          await new Promise((r) => setTimeout(r, 8000));
-        } else {
-          emptyBatches = 0;
-          setAiProgress((p) => p ? ({ ...p, rateLimited: false }) : p);
-          // Brief pause between successful batches to avoid rate-limiting.
-          await new Promise((r) => setTimeout(r, 1200));
-        }
+        // ~600ms between calls keeps us well under AI Gateway rate limits
+        // while still processing ~100 videos/minute.
+        await new Promise((r) => setTimeout(r, 600));
       }
 
       // Final refresh so the table reflects all changes.

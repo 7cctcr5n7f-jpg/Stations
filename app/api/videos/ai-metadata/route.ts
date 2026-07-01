@@ -94,7 +94,11 @@ export async function POST(req: NextRequest) {
     const ids: number[] | undefined = Array.isArray(body.ids)
       ? body.ids.map((n: any) => Number(n)).filter((n: number) => Number.isFinite(n))
       : undefined
-    const batchSize: number = Math.min(Math.max(Number(body.batchSize) || 8, 1), 15)
+    // Always process ONE video per request to avoid hitting Vercel AI Gateway
+    // rate limits. Concurrent AI calls (even within the same request) share
+    // the same per-minute token quota — firing 5 at once exhausts it instantly.
+    // The client loops calling this endpoint, creating natural pacing.
+    const batchSize = 1
 
     // Load the exercise dictionary once for the whole batch
     const glossary = await loadGlossary()
