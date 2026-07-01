@@ -26,10 +26,23 @@ export async function GET(request: NextRequest) {
         ORDER BY room_id ASC, position ASC, id ASC
       `
     } else {
-      rows = await sql`
-        SELECT * FROM schedules
-        ORDER BY schedule_date DESC, room_id ASC, position ASC, id ASC
-      `
+      // Default: return schedules within a rolling ±30-day window around today
+      // so the payload stays small as historical data accumulates.
+      // Pass ?window=all to override (used by admin exports / builder).
+      const windowAll = searchParams.get("window") === "all"
+      if (windowAll) {
+        rows = await sql`
+          SELECT * FROM schedules
+          ORDER BY schedule_date DESC, room_id ASC, position ASC, id ASC
+        `
+      } else {
+        rows = await sql`
+          SELECT * FROM schedules
+          WHERE schedule_date >= CURRENT_DATE - INTERVAL '7 days'
+            AND schedule_date <= CURRENT_DATE + INTERVAL '30 days'
+          ORDER BY schedule_date ASC, room_id ASC, position ASC, id ASC
+        `
+      }
     }
 
     return NextResponse.json(rows.map(mapSchedule))

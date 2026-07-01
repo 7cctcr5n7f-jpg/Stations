@@ -493,7 +493,7 @@ function TrainerDashboardInner() {
     });
   }, [videos]);
 
-  const filteredVideos = videos?.filter(video => {
+  const filteredVideos = useMemo(() => videos?.filter(video => {
     // Check category filter first
     if (videoFilters.category.length > 0) {
       const videoCategories = deriveCategories(video.bodyPart, video.equipment);
@@ -593,9 +593,9 @@ function TrainerDashboardInner() {
     }
     
     return true;
-  })?.sort((a, b) => a.title.toLowerCase().localeCompare(b.title.toLowerCase())) || [];
+  })?.sort((a, b) => a.title.toLowerCase().localeCompare(b.title.toLowerCase())) || [], [videos, videoFilters]);
 
-  const roomsWithAssignments: RoomWithAssignments[] = rooms?.map(room => {
+  const roomsWithAssignments: RoomWithAssignments[] = useMemo(() => rooms?.map(room => {
     // Use schedules for the selected date instead of room assignments
     const roomSchedules = (schedules || []).filter((s: any) => s.roomId === room.id && s.scheduleDate === currentDate);
     const assignmentsWithVideos = roomSchedules.map((schedule: any) => {
@@ -608,7 +608,7 @@ function TrainerDashboardInner() {
     }).filter((a: any) => a.video);
     
     return { ...room, assignments: assignmentsWithVideos };
-  }) || [];
+  }) || [], [rooms, schedules, videos, currentDate]);
 
   const handleAssignVideo = (video: Video | null, roomId?: number) => {
     setSelectedVideo(video);
