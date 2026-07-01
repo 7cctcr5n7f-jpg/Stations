@@ -369,7 +369,7 @@ function RejectionFeedbackCard() {
         )}
         {!isLoading && feedbackList.length === 0 && (
           <p className="text-sm text-gray-400 py-4 text-center">
-            No rejection feedback yet. Use the <strong>Reject</strong> button on a generated round to log feedback.
+            No rejection feedback yet. Use the <strong>flag</strong> button on any exercise in a generated workout to log feedback.
           </p>
         )}
         {feedbackList.length > 0 && (
@@ -415,8 +415,8 @@ function RejectionFeedbackCard() {
                   )}
 
                   {fb.video_titles.length > 0 && (
-                    <p className="text-xs text-gray-400">
-                      Exercises: {fb.video_titles.join(", ")}
+                    <p className="text-xs font-medium text-gray-600">
+                      {fb.video_titles[0]}
                     </p>
                   )}
                 </div>

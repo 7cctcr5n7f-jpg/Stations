@@ -101,14 +101,14 @@ function scoreColor(score: number): string {
   return "text-red-600";
 }
 
-// Target round for the rejection dialog
+// Target exercise for the rejection dialog
 interface RejectTarget {
   roomId: number;
   roomNumber: number;
   roomName: string;
-  equipmentList: string[]; // unique equipment tokens from this round's exercises
-  videoIds: number[];
-  videoTitles: string[];
+  videoId: number;
+  videoTitle: string;
+  equipmentList: string[]; // equipment tokens from this specific exercise
 }
 
 export function WorkoutBuilder() {
@@ -272,21 +272,18 @@ export function WorkoutBuilder() {
     });
   }
 
-  function openReject(round: GeneratedRound) {
-    // Collect unique equipment tokens from all exercises in this round
-    const equipSet = new Set<string>();
-    for (const ex of round.exercises) {
-      if (ex.video.equipment) {
-        ex.video.equipment.split(",").map((e) => e.trim()).filter(Boolean).forEach((e) => equipSet.add(e));
-      }
-    }
+  function openRejectExercise(round: GeneratedRound, ex: GeneratedRound["exercises"][number]) {
+    const equipmentList = (ex.video.equipment ?? "")
+      .split(",")
+      .map((e) => e.trim())
+      .filter(Boolean);
     setRejectTarget({
       roomId: round.roomId,
       roomNumber: round.roomNumber,
       roomName: round.roomName,
-      equipmentList: Array.from(equipSet),
-      videoIds: round.exercises.map((e) => e.videoId),
-      videoTitles: round.exercises.map((e) => e.video.title),
+      videoId: ex.videoId,
+      videoTitle: ex.video.title,
+      equipmentList,
     });
   }
 
@@ -463,15 +460,6 @@ export function WorkoutBuilder() {
                     <Button
                       variant="ghost"
                       size="icon"
-                      title="Reject this round — report why it won't work"
-                      onClick={() => openReject(r)}
-                      className="text-red-400 hover:text-red-600 hover:bg-red-50"
-                    >
-                      <ThumbsDown className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
                       title={r.locked ? "Unlock" : "Lock"}
                       onClick={() => toggleLock(r.roomId)}
                     >
@@ -527,6 +515,15 @@ export function WorkoutBuilder() {
                           </p>
                         </div>
                         <div className="flex shrink-0 items-center gap-1">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            title="Report a problem with this exercise"
+                            onClick={() => openRejectExercise(r, ex)}
+                            className="text-red-400 hover:text-red-600 hover:bg-red-50"
+                          >
+                            <ThumbsDown className="h-4 w-4" />
+                          </Button>
                           <Button
                             variant="ghost"
                             size="icon"
@@ -682,7 +679,6 @@ export function WorkoutBuilder() {
           onClose={() => setRejectTarget(null)}
           onSubmit={async (payload) => {
             await apiRequest("POST", "/api/workout-builder/reject", payload);
-            // Invalidate the feedback list shown in Builder Config
             queryClient.invalidateQueries({ queryKey: ["/api/workout-builder/reject"] });
             toast({
               title: "Feedback saved",
@@ -719,7 +715,8 @@ interface RejectionDialogProps {
 
 function RejectionDialog({ target, onClose, onSubmit }: RejectionDialogProps) {
   const [reason, setReason] = useState("");
-  const [selectedEquipment, setSelectedEquipment] = useState<string[]>([]);
+  // Pre-select all equipment from this exercise — trainer can deselect if needed
+  const [selectedEquipment, setSelectedEquipment] = useState<string[]>(target.equipmentList);
   const [applyToConfig, setApplyToConfig] = useState(true);
   const [submitting, setSubmitting] = useState(false);
 
@@ -739,8 +736,8 @@ function RejectionDialog({ target, onClose, onSubmit }: RejectionDialogProps) {
         roomName: target.roomName,
         reason: reason.trim(),
         equipment: selectedEquipment,
-        videoIds: target.videoIds,
-        videoTitles: target.videoTitles,
+        videoIds: [target.videoId],
+        videoTitles: [target.videoTitle],
         applyToConfig,
       });
     } finally {
@@ -754,27 +751,19 @@ function RejectionDialog({ target, onClose, onSubmit }: RejectionDialogProps) {
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <ThumbsDown className="h-4 w-4 text-red-500" />
-            Reject Round {target.roomNumber} — {target.roomName}
+            Flag exercise — Round {target.roomNumber}
           </DialogTitle>
           <DialogDescription>
-            Tell the builder why this round won&apos;t work. Your feedback is stored
-            and can train the AI to avoid this in future workouts.
+            <span className="font-medium text-gray-900">{target.videoTitle}</span>
+            {" "}won&apos;t work at this station. Your feedback trains the builder to avoid this in future workouts.
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 py-2">
-          {/* Exercises in this round — for context */}
-          <div className="rounded-md bg-gray-50 px-3 py-2 text-sm text-gray-600">
-            <p className="font-medium text-gray-700 mb-1">Exercises in this round:</p>
-            {target.videoTitles.map((t, i) => (
-              <p key={i} className="text-xs">{i + 1}. {t}</p>
-            ))}
-          </div>
-
-          {/* Equipment chips — tap to flag which equipment is the problem */}
+          {/* Equipment chips — pre-selected, trainer can deselect what's fine */}
           {target.equipmentList.length > 0 && (
             <div className="space-y-2">
-              <Label className="text-sm font-medium">Which equipment is the problem?</Label>
+              <Label className="text-sm font-medium">Which equipment is unavailable?</Label>
               <div className="flex flex-wrap gap-2">
                 {target.equipmentList.map((e) => (
                   <button
@@ -784,14 +773,14 @@ function RejectionDialog({ target, onClose, onSubmit }: RejectionDialogProps) {
                     className={`rounded-full px-3 py-1 text-xs font-medium border transition-colors ${
                       selectedEquipment.includes(e)
                         ? "bg-red-600 text-white border-red-600"
-                        : "bg-white text-gray-700 border-gray-300 hover:border-red-400"
+                        : "bg-white text-gray-500 border-gray-200 line-through"
                     }`}
                   >
                     {e}
                   </button>
                 ))}
               </div>
-              <p className="text-xs text-gray-400">Tap any equipment that is unavailable or unsuitable.</p>
+              <p className="text-xs text-gray-400">All equipment pre-selected. Deselect any that is available.</p>
             </div>
           )}
 
@@ -802,7 +791,7 @@ function RejectionDialog({ target, onClose, onSubmit }: RejectionDialogProps) {
             </Label>
             <Textarea
               id="reject-reason"
-              placeholder="e.g. No tubes at this station. Avoid R.TUBE for Round 2."
+              placeholder={`e.g. No tubes at Round ${target.roomNumber} — avoid R.TUBE here.`}
               value={reason}
               onChange={(e) => setReason(e.target.value)}
               rows={3}
@@ -824,7 +813,7 @@ function RejectionDialog({ target, onClose, onSubmit }: RejectionDialogProps) {
               </Label>
               <p className="text-xs text-gray-500 mt-0.5">
                 The selected equipment will be added to the &quot;Avoid equipment&quot; list in the
-                Builder Config for this round, so it&apos;s excluded from future auto-generated workouts.
+                Builder Config for this round so it&apos;s excluded from future auto-generated workouts.
               </p>
             </div>
           </div>
