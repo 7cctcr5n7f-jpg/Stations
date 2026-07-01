@@ -2237,272 +2237,130 @@ function TrainerDashboardInner() {
                           </div>
                         </CardHeader>
                         <CardContent className="p-1">
-                          {/* Room Video Display - 4x smaller than actual room display (1920x1080 → 480x270) */}
-                          <div className="bg-white border rounded mb-1 relative overflow-hidden" style={{ width: '480px', height: '270px', aspectRatio: '16/9' }}>
-                            {roomSchedules.length > 0 ? (
-                              <div className={`h-full ${roomSchedules.length <= 2 ? 'flex' : 'grid grid-cols-2 grid-rows-2'}`}>
-                                {roomSchedules.slice(0, 4).map((schedule: any, index: number) => {
-                                  const video = videos?.find((v: any) => v.id === schedule.videoId);
-                                  if (!video) return null;
-                                  
-                                  const displayTitle = liveViewChanges[`${schedule.id}_title`] || schedule.displayTitle || video.title;
-                                  const displayReps = liveViewChanges[`${schedule.id}_reps`] || schedule.reps;
-                                  const displayEquipment = schedule.displayEquipment || video.equipment;
-                                  
-                                  const videoZoom = liveViewVideoZoom[schedule.id] || parseFloat(schedule.zoomLevel || "1");
-                                  const verticalPos = liveViewVerticalPosition[schedule.id] || parseFloat(schedule.verticalPosition || "0");
-                                  
-                                  // Calculate if this is compact mode (3+ videos) for proper scaling
-                                  const isCompactMode = roomSchedules.length >= 3;
-                                  
-                                  return (
-                                    <div key={schedule.id} className={roomSchedules.length === 1 ? "w-1/2 mx-auto h-full relative" : roomSchedules.length <= 2 ? "flex-1 relative" : "relative"}>
-                                      <video
-                                        ref={(videoEl) => {
-                                          if (videoEl) {
-                                            console.log(`Loading video ${video.id} with URL: ${video.url}`);
-                                            videoEl.addEventListener('loadeddata', () => {
-                                              console.log(`Video ${video.id} loaded successfully`);
-                                              videoEl.play().catch(err => console.log('Play failed:', err));
-                                            });
-                                            videoEl.addEventListener('error', (e) => {
-                                              console.error(`Video ${video.id} error loading from ${video.url}:`, e);
-                                            });
-                                            videoEl.addEventListener('loadstart', () => {
-                                              console.log(`Video ${video.id} started loading from ${video.url}`);
-                                            });
-                                          }
-                                        }}
-                                        src={video.url}
-                                        className="w-full h-full"
-                                        style={{
-                                          objectFit: 'contain',
-                                          objectPosition: 'center',
-                                          transform: `scale(${videoZoom}) translateY(${verticalPos}px)`,
-                                          transformOrigin: 'center'
-                                        }}
-                                        loop
-                                        muted
-                                        playsInline
-                                        autoPlay
+                          {/* ── Live preview: exact 1/4-scale replica of the real room screen ── */}
+                          {/* Outer clip box: 480×270 = 1920×1080 ÷ 4                            */}
+                          <div className="relative overflow-hidden rounded border border-gray-200 mb-1" style={{ width: 480, height: 270 }}>
+                            {roomSchedules.length > 0 ? (() => {
+                              const videoCount = Math.min(roomSchedules.length, 4);
+
+                              // Build assignment objects exactly as room/[id]/page.tsx does
+                              const previewAssignments = roomSchedules.slice(0, 4).map((schedule: any) => {
+                                const video = videos?.find((v: any) => v.id === schedule.videoId);
+                                if (!video) return null;
+                                return {
+                                  id: schedule.id,
+                                  roomId: schedule.roomId,
+                                  videoId: schedule.videoId,
+                                  sets: 0,
+                                  reps: liveViewChanges[`${schedule.id}_reps`] ?? schedule.reps ?? '0',
+                                  restTime: 0,
+                                  position: schedule.position || 1,
+                                  isActive: true,
+                                  zoomLevel: String(liveViewVideoZoom[schedule.id] ?? parseFloat(schedule.zoomLevel || '1')),
+                                  verticalPosition: String(liveViewVerticalPosition[schedule.id] ?? parseFloat(schedule.verticalPosition || '0')),
+                                  displayEquipment: schedule.displayEquipment || video.equipment,
+                                  video: {
+                                    ...video,
+                                    title: liveViewChanges[`${schedule.id}_title`] ?? schedule.displayTitle ?? video.title,
+                                    equipment: schedule.displayEquipment || video.equipment,
+                                  },
+                                };
+                              }).filter(Boolean);
+
+                              const getGridClasses = (count: number) => {
+                                switch (count) {
+                                  case 1: return 'flex items-center justify-center';
+                                  case 2: return 'grid grid-cols-2 gap-0 relative';
+                                  default: return 'grid grid-cols-2 grid-rows-2 gap-0 h-full relative';
+                                }
+                              };
+
+                              return (
+                                // Inner full-resolution room canvas scaled down 4×
+                                <div
+                                  style={{
+                                    width: 1920,
+                                    height: 1080,
+                                    transform: 'scale(0.25)',
+                                    transformOrigin: 'top left',
+                                    pointerEvents: 'none', // controls are outside this box
+                                  }}
+                                  className={`bg-white ${getGridClasses(videoCount)}`}
+                                >
+                                  {previewAssignments.map((assignment: any) => (
+                                    <div
+                                      key={assignment.id}
+                                      className={`overflow-hidden ${
+                                        videoCount === 1 ? 'max-w-[50%] h-full' :
+                                        videoCount === 2 ? 'h-full w-full' :
+                                        'w-full'
+                                      }`}
+                                    >
+                                      <VideoPlayer
+                                        assignment={assignment}
+                                        displayMode={videoCount > 1 ? 'split' : 'single'}
+                                        videoCount={videoCount}
+                                        isFullscreen={false}
                                       />
-                                      
-                                      {/* Logo - Top Left (4x smaller than room display) */}
-                                      <div className={`absolute ${isCompactMode ? 'top-2 left-2' : 'top-6 left-6'} z-20`}>
-                                        <img 
-                                          src={tenRoundsLogo}
-                                          alt="10Rounds Logo"
-                                          className={`${isCompactMode ? 'w-4 h-4' : 'w-6 h-6'} object-contain`}
-                                        />
-                                      </div>
-                                      
-                                      {/* Video Title - Top Center (4x smaller than room display) */}
-                                      <div className={`absolute ${isCompactMode ? 'top-2' : 'top-6'} left-1/2 transform -translate-x-1/2 z-10`}>
-                                        <div className="bg-white/90 backdrop-blur-sm rounded-lg text-center" style={{ 
-                                          paddingLeft: isCompactMode ? '3px' : '6px',
-                                          paddingRight: isCompactMode ? '3px' : '6px',
-                                          paddingTop: isCompactMode ? '1.5px' : '3px',
-                                          paddingBottom: isCompactMode ? '1.5px' : '3px'
-                                        }}>
-                                          <h3 className="font-bold text-black" style={{ fontSize: isCompactMode ? '4.5px' : '6px' }}>{displayTitle}</h3>
-                                        </div>
-                                      </div>
-                                      
-                                      {/* Reps Display - Top Right (4x smaller than room display) */}
-                                      <div className={`absolute ${isCompactMode ? 'top-2 right-2' : 'top-6 right-6'} z-20`}>
-                                        <div className={`bg-black/80 backdrop-blur-sm rounded-xl ${isCompactMode ? 'w-16 h-16 px-2 py-2' : 'w-24 h-24 px-4 py-4'} flex flex-col items-center justify-center text-center`} style={{ 
-                                          width: isCompactMode ? '16px' : '24px', 
-                                          height: isCompactMode ? '16px' : '24px',
-                                          padding: isCompactMode ? '2px' : '4px'
-                                        }}>
-                                          {(() => {
-                                            const repsStr = String(displayReps);
-                                            const isOnlyNumber = /^\d+$/.test(repsStr);
-                                            
-                                            if (isOnlyNumber) {
-                                              return (
-                                                <>
-                                                  <div className="font-bold text-white leading-none" style={{ fontSize: isCompactMode ? '4.5px' : '6px' }}>
-                                                    {repsStr}
-                                                  </div>
-                                                  <div className="text-gray-300 uppercase tracking-wider leading-none" style={{ fontSize: isCompactMode ? '3px' : '3.5px' }}>
-                                                    REPS
-                                                  </div>
-                                                </>
-                                              );
-                                            } else {
-                                              const match = repsStr.match(/^(\d+)\s*(.+)$/);
-                                              if (match) {
-                                                const [, number, text] = match;
-                                                return (
-                                                  <div className="text-center leading-tight">
-                                                    <div className="font-bold text-white leading-none" style={{ fontSize: isCompactMode ? '4.5px' : '6px' }}>
-                                                      {number}
-                                                    </div>
-                                                    <div className="text-gray-300 uppercase tracking-wider leading-none" style={{ fontSize: isCompactMode ? '3px' : '3.5px' }}>
-                                                      {text}
-                                                    </div>
-                                                  </div>
-                                                );
-                                              } else {
-                                                return (
-                                                  <div className="font-bold text-white text-center leading-tight" style={{ fontSize: isCompactMode ? '3.5px' : '4.5px' }}>
-                                                    {repsStr}
-                                                  </div>
-                                                );
-                                              }
-                                            }
-                                          })()}
-                                        </div>
-                                        
-                                        {/* Equipment Display - Below reps (scaled for live view) */}
-                                        {(() => {
-                                          if (!displayEquipment) return null;
-                                          const equipment = displayEquipment.split(',')[0].trim();
-                                          if (!equipment) return null;
-                                          
-                                          return (
-                                            <div className="mt-1 bg-black/60 backdrop-blur-sm rounded-lg text-center" style={{
-                                              paddingLeft: isCompactMode ? '2px' : '3px',
-                                              paddingRight: isCompactMode ? '2px' : '3px', 
-                                              paddingTop: isCompactMode ? '1px' : '1.5px',
-                                              paddingBottom: isCompactMode ? '1px' : '1.5px',
-                                              marginTop: '0.25px'
-                                            }}>
-                                              <div className="text-gray-200 uppercase tracking-wide font-medium" style={{ fontSize: isCompactMode ? '3px' : '3.5px' }}>
-                                                {equipment}
-                                              </div>
-                                            </div>
-                                          );
-                                        })()}
-                                      </div>
-                                      
-                                      {/* Individual Video Controls */}
-                                      <div className="absolute bottom-2 right-2 flex flex-col space-y-1">
-                                        {/* Vertical Position Controls */}
-                                        <div className="flex space-x-1">
-                                          <Button
-                                            size="sm"
-                                            variant="outline"
-                                            className="h-6 w-6 p-0 bg-white/90"
-                                            onClick={async () => {
-                                              const newPos = verticalPos - 10;
-                                              setLiveViewVerticalPosition(prev => ({
-                                                ...prev,
-                                                [schedule.id]: newPos
-                                              }));
-                                              
-                                              // Save position to database
-                                              try {
-                                                await apiRequest('PATCH', `/api/schedules/${schedule.id}`, {
-                                                  verticalPosition: newPos.toString()
-                                                });
-                                              } catch (error) {
-                                                console.error('Failed to save vertical position:', error);
-                                              }
-                                            }}
-                                          >
-                                            <ChevronUp className="h-3 w-3" />
-                                          </Button>
-                                          <Button
-                                            size="sm"
-                                            variant="outline"
-                                            className="h-6 w-6 p-0 bg-white/90"
-                                            onClick={async () => {
-                                              const newPos = verticalPos + 10;
-                                              setLiveViewVerticalPosition(prev => ({
-                                                ...prev,
-                                                [schedule.id]: newPos
-                                              }));
-                                              
-                                              // Save position to database
-                                              try {
-                                                await apiRequest('PATCH', `/api/schedules/${schedule.id}`, {
-                                                  verticalPosition: newPos.toString()
-                                                });
-                                              } catch (error) {
-                                                console.error('Failed to save vertical position:', error);
-                                              }
-                                            }}
-                                          >
-                                            <ChevronDown className="h-3 w-3" />
-                                          </Button>
-                                        </div>
-                                        {/* Zoom Controls */}
-                                        <div className="flex space-x-1">
-                                          <Button
-                                            size="sm"
-                                            variant="outline"
-                                            className="h-6 w-6 p-0 bg-white/90"
-                                            onClick={async () => {
-                                              const newZoom = Math.max(videoZoom - 0.1, 0.5);
-                                              setLiveViewVideoZoom(prev => ({
-                                                ...prev,
-                                                [schedule.id]: newZoom
-                                              }));
-                                              
-                                              // Save zoom to database
-                                              try {
-                                                await apiRequest('PATCH', `/api/schedules/${schedule.id}`, {
-                                                  zoomLevel: newZoom.toString()
-                                                });
-                                                // Don't invalidate queries to prevent re-render and position change
-                                              } catch (error) {
-                                                console.error('Failed to save zoom level:', error);
-                                              }
-                                            }}
-                                          >
-                                            <ZoomOut className="h-3 w-3" />
-                                          </Button>
-                                          <Button
-                                            size="sm"
-                                            variant="outline"
-                                            className="h-6 w-6 p-0 bg-white/90"
-                                            onClick={async () => {
-                                              const newZoom = Math.min(videoZoom + 0.1, 2);
-                                              setLiveViewVideoZoom(prev => ({
-                                                ...prev,
-                                                [schedule.id]: newZoom
-                                              }));
-                                              
-                                              // Save zoom to database
-                                              try {
-                                                await apiRequest('PATCH', `/api/schedules/${schedule.id}`, {
-                                                  zoomLevel: newZoom.toString()
-                                                });
-                                                // Don't invalidate queries to prevent re-render and position change
-                                              } catch (error) {
-                                                console.error('Failed to save zoom level:', error);
-                                              }
-                                            }}
-                                          >
-                                            <ZoomIn className="h-3 w-3" />
-                                          </Button>
-                                        </div>
-                                      </div>
                                     </div>
-                                  );
-                                })}
-                                
-                                {/* Vertical divider for 2 videos */}
-                                {roomSchedules.length === 2 && (
-                                  <div className="absolute top-0 left-1/2 h-full w-px bg-black transform -translate-x-px z-10"></div>
-                                )}
-                                
-                                {/* Grid dividers for 3-4 videos */}
-                                {roomSchedules.length >= 3 && (
-                                  <>
-                                    <div className="absolute top-0 left-1/2 h-full w-px bg-black transform -translate-x-px z-10"></div>
-                                    <div className="absolute left-0 top-1/2 w-full h-px bg-black transform -translate-y-px z-10"></div>
-                                  </>
-                                )}
-                              </div>
-                            ) : (
+                                  ))}
+
+                                  {/* Dividers — match real room */}
+                                  {videoCount === 2 && (
+                                    <div className="absolute top-0 left-1/2 h-full w-0.5 bg-black -translate-x-px z-10" />
+                                  )}
+                                  {videoCount >= 3 && (
+                                    <>
+                                      <div className="absolute top-0 left-1/2 h-full w-0.5 bg-black -translate-x-px z-10" />
+                                      <div className="absolute left-0 top-1/2 w-full h-0.5 bg-black -translate-y-px z-10" />
+                                    </>
+                                  )}
+                                </div>
+                              );
+                            })() : (
                               <div className="h-full flex items-center justify-center text-gray-400">
                                 <div className="text-center">
                                   <VideoIcon className="h-8 w-8 mx-auto mb-1" />
                                   <p className="text-xs">No videos</p>
                                 </div>
+                              </div>
+                            )}
+
+                            {/* Zoom / position controls — overlaid on the clipped preview */}
+                            {roomSchedules.length > 0 && (
+                              <div className="absolute bottom-2 right-2 flex flex-col gap-1 z-20">
+                                {roomSchedules.slice(0, 4).map((schedule: any) => {
+                                  const videoZoom = liveViewVideoZoom[schedule.id] || parseFloat(schedule.zoomLevel || '1');
+                                  const verticalPos = liveViewVerticalPosition[schedule.id] || parseFloat(schedule.verticalPosition || '0');
+                                  return (
+                                    <div key={schedule.id} className="flex gap-1">
+                                      <Button size="sm" variant="outline" className="h-5 w-5 p-0 bg-white/90 text-[10px]"
+                                        onClick={async () => {
+                                          const v = verticalPos - 10;
+                                          setLiveViewVerticalPosition(p => ({ ...p, [schedule.id]: v }));
+                                          try { await apiRequest('PATCH', `/api/schedules/${schedule.id}`, { verticalPosition: v.toString() }); } catch {}
+                                        }}><ChevronUp className="h-2.5 w-2.5" /></Button>
+                                      <Button size="sm" variant="outline" className="h-5 w-5 p-0 bg-white/90"
+                                        onClick={async () => {
+                                          const v = verticalPos + 10;
+                                          setLiveViewVerticalPosition(p => ({ ...p, [schedule.id]: v }));
+                                          try { await apiRequest('PATCH', `/api/schedules/${schedule.id}`, { verticalPosition: v.toString() }); } catch {}
+                                        }}><ChevronDown className="h-2.5 w-2.5" /></Button>
+                                      <Button size="sm" variant="outline" className="h-5 w-5 p-0 bg-white/90"
+                                        onClick={async () => {
+                                          const z = Math.max(videoZoom - 0.1, 0.5);
+                                          setLiveViewVideoZoom(p => ({ ...p, [schedule.id]: z }));
+                                          try { await apiRequest('PATCH', `/api/schedules/${schedule.id}`, { zoomLevel: z.toString() }); } catch {}
+                                        }}><ZoomOut className="h-2.5 w-2.5" /></Button>
+                                      <Button size="sm" variant="outline" className="h-5 w-5 p-0 bg-white/90"
+                                        onClick={async () => {
+                                          const z = Math.min(videoZoom + 0.1, 2);
+                                          setLiveViewVideoZoom(p => ({ ...p, [schedule.id]: z }));
+                                          try { await apiRequest('PATCH', `/api/schedules/${schedule.id}`, { zoomLevel: z.toString() }); } catch {}
+                                        }}><ZoomIn className="h-2.5 w-2.5" /></Button>
+                                    </div>
+                                  );
+                                })}
                               </div>
                             )}
                           </div>
