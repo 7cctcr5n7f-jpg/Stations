@@ -20,12 +20,15 @@ async function publishDay(date: string, rounds: GeneratedRound[], replace: boole
   for (const r of filled) {
     let position = 1
     for (const ex of r.exercises) {
+      // Dropset rounds always publish "Dropset" regardless of exercise-level reps.
+      // For all other rounds use the engine-assigned reps string, falling back to "0".
+      const repsValue = r.dropset ? "Dropset" : String(ex.reps ?? "0")
       const rows = await sql`
         INSERT INTO schedules
           (room_id, video_id, schedule_date, reps, position, display_title, display_equipment,
            zoom_level, vertical_position, sets, rest_time, is_active, heart_rate_zone)
         VALUES
-          (${r.roomId}, ${ex.videoId}, ${date}, ${String(ex.reps ?? "0")}, ${position},
+          (${r.roomId}, ${ex.videoId}, ${date}, ${repsValue}, ${position},
            ${null}, ${null}, ${"1"}, ${"0"}, ${1}, ${0}, ${true}, ${ex.heartRate ?? null})
         RETURNING *
       `

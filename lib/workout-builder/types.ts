@@ -47,7 +47,8 @@ export interface RoundExercise {
   videoId: number
   video: Video
   heartRate: HeartRate | null
-  reps: number | null
+  /** Published reps value. A number string (e.g. "10") or text like "Dropset" or "AMRAP". */
+  reps: string | null
   score: number // 0-100 for this individual pick
   reasons: string[]
   warnings: string[]
@@ -97,8 +98,6 @@ export type WorkoutFocus =
   | "Conditioning Focused"
   | "Endurance Focused"
 
-export type DifficultyLevel = "Beginner" | "Intermediate" | "Advanced"
-
 /** Parameters the trainer picks in the Builder UI for a single generation run.
  *  These layer on top of (and never replace) the permanent BuilderConfig rules. */
 export interface BuilderParams {
@@ -112,7 +111,6 @@ export interface BuilderParams {
   boxingVolume: number
   /** 0–100. Influences functional / movement-pattern variety. Default 50. */
   functionalTraining: number
-  difficulty: DifficultyLevel
   includeWeeklyChallenge: boolean
   /** Minimum acceptable programme score (per day). Default 80. */
   minScore: number
@@ -125,7 +123,6 @@ export const DEFAULT_BUILDER_PARAMS: BuilderParams = {
   hiitStrengthRatio: 60,
   boxingVolume: 50,
   functionalTraining: 50,
-  difficulty: "Intermediate",
   includeWeeklyChallenge: true,
   minScore: 80,
 }

@@ -72,7 +72,6 @@ import { useToast } from "@/hooks/use-toast";
 import type { Video } from "@/lib/shared/schema";
 import type {
   BuilderParams,
-  DifficultyLevel,
   GenerationMode,
   WorkoutFocus,
 } from "@/lib/workout-builder/types";
@@ -87,7 +86,7 @@ interface RoundExercise {
   videoId: number;
   video: Video;
   heartRate: HeartRate | null;
-  reps: number | null;
+  reps: string | null;
   score: number;
   reasons: string[];
   warnings: string[];
@@ -141,8 +140,6 @@ const WORKOUT_FOCUSES: WorkoutFocus[] = [
   "Conditioning Focused",
   "Endurance Focused",
 ];
-
-const DIFFICULTY_LEVELS: DifficultyLevel[] = ["Beginner", "Intermediate", "Advanced"];
 
 // Returns the Monday of the week containing `date`
 function getMondayOf(date: Date): Date {
@@ -326,7 +323,6 @@ export function WorkoutBuilder() {
     hiitStrengthRatio: 60,
     boxingVolume: 50,
     functionalTraining: 50,
-    difficulty: "Intermediate",
     includeWeeklyChallenge: true,
     minScore: 80,
   });
@@ -457,7 +453,7 @@ export function WorkoutBuilder() {
       heartRate:
         video.intensity === "High" ? "red" :
         video.intensity === "Medium" ? "orange" : "green",
-      reps: null,
+      reps: "10",
       score: 100,
       reasons: ["Manually selected by trainer"],
       warnings: [],
@@ -523,62 +519,53 @@ export function WorkoutBuilder() {
           BUILDER CONTROLS CARD
       ================================================================ */}
       <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base">Generation Settings</CardTitle>
-          <CardDescription>Choose what to generate. Equipment rules and round constraints come from Builder Config.</CardDescription>
+        <CardHeader className="pb-4">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <CardTitle className="text-base">Generation Settings</CardTitle>
+              <CardDescription className="mt-0.5">Equipment rules and round constraints come from Builder Config.</CardDescription>
+            </div>
+            {/* Mode toggle pill */}
+            <div className="flex rounded-lg border bg-muted p-0.5 shrink-0">
+              {(["week", "single"] as GenerationMode[]).map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  onClick={() => patchParams({ mode, startDate: mode === "week" ? toIso(getMondayOf(new Date())) : new Date().toISOString().split("T")[0] })}
+                  className={cn(
+                    "rounded-md px-3 py-1 text-xs font-medium transition-colors",
+                    params.mode === mode
+                      ? "bg-background text-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  {mode === "week" ? "Training Week" : "Single Day"}
+                </button>
+              ))}
+            </div>
+          </div>
         </CardHeader>
         <CardContent className="space-y-5">
 
-          {/* Row 1: Generation Mode + date */}
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label className="text-sm font-medium">Generation Mode</Label>
-              <div className="flex flex-col gap-1.5">
-                {(["week", "single"] as GenerationMode[]).map((mode) => (
-                  <button
-                    key={mode}
-                    type="button"
-                    onClick={() => {
-                      patchParams({ mode, startDate: mode === "week" ? toIso(getMondayOf(new Date())) : new Date().toISOString().split("T")[0] });
-                    }}
-                    className={cn(
-                      "flex items-center gap-2.5 rounded-md border px-3 py-2 text-sm text-left transition-colors",
-                      params.mode === mode
-                        ? "border-blue-500 bg-blue-50 text-blue-900"
-                        : "border-border bg-background text-foreground hover:bg-muted/50"
-                    )}
-                  >
-                    <span className={cn("h-3 w-3 rounded-full border-2 shrink-0", params.mode === mode ? "border-blue-500 bg-blue-500" : "border-muted-foreground")} />
-                    {mode === "week" ? "Training Week (Mon–Sat)" : "Single Day"}
-                    {mode === "week" && <Badge variant="secondary" className="ml-auto text-xs">Default</Badge>}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <Label className="text-sm font-medium">
-                {isWeekMode ? "Week starting (Monday)" : "Workout Date"}
+          {/* Row 1: Date + Focus side by side */}
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                {isWeekMode ? "Week Starting (Monday)" : "Workout Date"}
               </Label>
               <Input
                 type="date"
                 value={params.startDate}
                 onChange={(e) => patchParams({ startDate: e.target.value })}
-                className="w-full"
               />
               {isWeekMode && params.startDate && (
                 <p className="text-xs text-muted-foreground">
-                  Mon–Sat: {params.startDate} through{" "}
-                  {toIso(new Date(new Date(params.startDate + "T12:00:00").setDate(new Date(params.startDate + "T12:00:00").getDate() + 5)))}
+                  {params.startDate} — {toIso(new Date(new Date(params.startDate + "T12:00:00").setDate(new Date(params.startDate + "T12:00:00").getDate() + 5)))}
                 </p>
               )}
             </div>
-          </div>
-
-          {/* Row 2: Workout Focus + Difficulty */}
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label className="text-sm font-medium">Workout Focus</Label>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Workout Focus</Label>
               <Select value={params.focus} onValueChange={(v) => patchParams({ focus: v as WorkoutFocus })}>
                 <SelectTrigger>
                   <SelectValue />
@@ -590,52 +577,35 @@ export function WorkoutBuilder() {
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-2">
-              <Label className="text-sm font-medium">Difficulty</Label>
-              <Select value={params.difficulty} onValueChange={(v) => patchParams({ difficulty: v as DifficultyLevel })}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {DIFFICULTY_LEVELS.map((d) => (
-                    <SelectItem key={d} value={d}>{d}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
           </div>
 
-          {/* Row 3: HIIT vs Strength Slider */}
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <Label className="text-sm font-medium flex items-center gap-1.5">
-                <Dumbbell className="h-4 w-4 text-muted-foreground" />
-                Strength vs HIIT
-              </Label>
-              <span className="text-xs text-muted-foreground">
-                {100 - params.hiitStrengthRatio}% Strength · {params.hiitStrengthRatio}% HIIT
-              </span>
-            </div>
-            <div className="flex items-center gap-3">
-              <span className="text-xs text-muted-foreground w-14 text-right">Strength</span>
+          {/* Row 2: Sliders stacked cleanly */}
+          <div className="space-y-4 rounded-lg bg-muted/40 px-4 py-3">
+            {/* Strength vs HIIT */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-medium flex items-center gap-1.5">
+                  <Dumbbell className="h-3.5 w-3.5 text-muted-foreground" />
+                  Strength vs HIIT
+                </span>
+                <span className="text-xs tabular-nums text-muted-foreground">
+                  {100 - params.hiitStrengthRatio}% Strength · {params.hiitStrengthRatio}% HIIT
+                </span>
+              </div>
               <Slider
                 value={[params.hiitStrengthRatio]}
                 min={0} max={100} step={5}
                 onValueChange={([v]) => patchParams({ hiitStrengthRatio: v })}
-                className="flex-1"
               />
-              <span className="text-xs text-muted-foreground w-8">HIIT</span>
             </div>
-          </div>
 
-          {/* Row 4: Boxing Volume + Functional Training sliders */}
-          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+            {/* Boxing Volume */}
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <Label className="text-sm font-medium flex items-center gap-1.5">
-                  <Zap className="h-4 w-4 text-muted-foreground" />
+                <span className="text-xs font-medium flex items-center gap-1.5">
+                  <Zap className="h-3.5 w-3.5 text-muted-foreground" />
                   Boxing Volume
-                </Label>
+                </span>
                 <span className="text-xs text-muted-foreground">
                   {params.boxingVolume < 34 ? "Low" : params.boxingVolume < 67 ? "Medium" : "High"}
                 </span>
@@ -645,17 +615,15 @@ export function WorkoutBuilder() {
                 min={0} max={100} step={10}
                 onValueChange={([v]) => patchParams({ boxingVolume: v })}
               />
-              <div className="flex justify-between text-xs text-muted-foreground">
-                <span>Low</span><span>High</span>
-              </div>
             </div>
 
+            {/* Functional Training */}
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <Label className="text-sm font-medium flex items-center gap-1.5">
-                  <BarChart3 className="h-4 w-4 text-muted-foreground" />
+                <span className="text-xs font-medium flex items-center gap-1.5">
+                  <BarChart3 className="h-3.5 w-3.5 text-muted-foreground" />
                   Functional Training
-                </Label>
+                </span>
                 <span className="text-xs text-muted-foreground">
                   {params.functionalTraining < 34 ? "Low" : params.functionalTraining < 67 ? "Medium" : "High"}
                 </span>
@@ -665,37 +633,30 @@ export function WorkoutBuilder() {
                 min={0} max={100} step={10}
                 onValueChange={([v]) => patchParams({ functionalTraining: v })}
               />
-              <div className="flex justify-between text-xs text-muted-foreground">
-                <span>Low</span><span>High</span>
-              </div>
             </div>
           </div>
 
-          {/* Row 5: Target Score + Weekly Challenge */}
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div className="space-y-2">
+          {/* Row 3: Target Score + Weekly Challenge inline */}
+          <div className="flex items-center gap-6">
+            <div className="flex-1 space-y-2">
               <div className="flex items-center justify-between">
-                <Label className="text-sm font-medium">Target Score (minimum)</Label>
-                <span className="text-sm font-semibold">{params.minScore}</span>
+                <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Min Score</span>
+                <span className="text-sm font-bold">{params.minScore}</span>
               </div>
               <Slider
                 value={[params.minScore]}
                 min={60} max={100} step={5}
                 onValueChange={([v]) => patchParams({ minScore: v })}
               />
-              <div className="flex justify-between text-xs text-muted-foreground">
-                <span>60</span><span>100</span>
-              </div>
             </div>
-
-            <div className="flex items-center gap-3 pt-2">
+            <div className="flex items-center gap-2 shrink-0">
               <Switch
                 id="weekly-challenge"
                 checked={params.includeWeeklyChallenge}
                 onCheckedChange={(v) => patchParams({ includeWeeklyChallenge: v })}
               />
-              <Label htmlFor="weekly-challenge" className="text-sm font-medium cursor-pointer">
-                Include Weekly Challenge
+              <Label htmlFor="weekly-challenge" className="text-xs font-medium cursor-pointer whitespace-nowrap">
+                Weekly Challenge
               </Label>
             </div>
           </div>
@@ -1113,9 +1074,16 @@ function DayWorkout({
                           <Badge variant="outline" className="text-xs text-green-700">glove-friendly</Badge>
                         )}
                       </div>
-                      <p className="mt-0.5 text-xs text-muted-foreground">
-                        {ex.video.bodyPart} &middot; {ex.video.equipment}
-                      </p>
+                      <div className="mt-0.5 flex items-center gap-2 flex-wrap">
+                        <span className="text-xs text-muted-foreground">
+                          {ex.video.bodyPart} &middot; {ex.video.equipment}
+                        </span>
+                        {ex.reps && (
+                          <Badge variant="outline" className="h-4 px-1.5 text-xs font-semibold">
+                            {ex.reps}
+                          </Badge>
+                        )}
+                      </div>
                     </div>
                     <div className="flex shrink-0 items-center gap-1">
                       <Button

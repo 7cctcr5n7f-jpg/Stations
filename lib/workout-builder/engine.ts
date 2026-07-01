@@ -184,9 +184,7 @@ function resolveModifiers(params: BuilderParams | undefined): EngineModifiers {
     boxingFocused: params.focus === "Boxing Focused",
     strengthFocused: params.focus === "Strength Focused",
     functionalFocused: params.focus === "Functional Fitness",
-    intensityOverride:
-      params.difficulty === "Advanced" ? "red" :
-      params.difficulty === "Beginner" ? "green" : null,
+    intensityOverride: null,
     boxingVolumeFraction: params.boxingVolume / 100,
   }
 }
@@ -345,6 +343,35 @@ function scoreCandidate(
   return { video, score, reasons }
 }
 
+/** Derive sensible default reps for an exercise based on its category and methods. */
+function defaultReps(video: Video): string {
+  const methods = (video.workoutMethods ?? []).map((m) => m.toLowerCase())
+  if (methods.includes("amrap")) return "AMRAP"
+  if (methods.includes("dropset")) return "Dropset"
+
+  const cat = norm(video.category ?? "")
+  const type = norm(video.exerciseType ?? "")
+  const isBoxing = isBoxingExercise(video)
+  const isSuperSet = methods.includes("superset")
+
+  // Boxing: rounds / combos rather than a rep count
+  if (isBoxing) return "3 rounds"
+
+  // Conditioning / HIIT — usually time or AMRAP
+  if (cat === "hiit" || type === "hiit" || type === "conditioning") return "AMRAP"
+
+  // Core / Abs — higher rep range
+  if (cat === "core" || cat === "abs") return "20"
+
+  // Strength / hypertrophy categories — standard rep range
+  if (["chest", "back", "shoulders", "arms", "biceps", "triceps", "legs"].includes(cat)) {
+    return isSuperSet ? "10-12" : "12"
+  }
+
+  // Default fallback
+  return "10"
+}
+
 // Build a RoundExercise from a scored candidate.
 function makeExercise(sc: ScoredCandidate, cfg: RoundConfig): RoundExercise {
   const hr =
@@ -358,7 +385,7 @@ function makeExercise(sc: ScoredCandidate, cfg: RoundConfig): RoundExercise {
     videoId: sc.video.id,
     video: sc.video,
     heartRate: hr,
-    reps: null,
+    reps: defaultReps(sc.video),
     score: sc.score,
     reasons: [...sc.reasons],
     warnings: [],
