@@ -1,11 +1,14 @@
 "use client";
 
 import { useState } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -16,6 +19,14 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import ImageThumbnail from "@/components/image-thumbnail";
 import { ExercisePicker } from "./exercise-picker";
 import {
@@ -33,6 +44,7 @@ import {
   Trash2,
   Layers,
   Hand,
+  ThumbsDown,
 } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -89,8 +101,19 @@ function scoreColor(score: number): string {
   return "text-red-600";
 }
 
+// Target round for the rejection dialog
+interface RejectTarget {
+  roomId: number;
+  roomNumber: number;
+  roomName: string;
+  equipmentList: string[]; // unique equipment tokens from this round's exercises
+  videoIds: number[];
+  videoTitles: string[];
+}
+
 export function WorkoutBuilder() {
   const { toast } = useToast();
+  const queryClient = useQueryClient();
 
   const [date, setDate] = useState<string>(() => new Date().toISOString().split("T")[0]);
   const [draft, setDraft] = useState<WorkoutDraft | null>(null);
@@ -99,6 +122,8 @@ export function WorkoutBuilder() {
   const [pickerTarget, setPickerTarget] = useState<{ roomId: number; index: number } | null>(null);
   const [confirmPublish, setConfirmPublish] = useState(false);
   const [polishing, setPolishing] = useState(false);
+  // Rejection feedback
+  const [rejectTarget, setRejectTarget] = useState<RejectTarget | null>(null);
 
   // ---- mutations ----
 
@@ -244,6 +269,24 @@ export function WorkoutBuilder() {
     toast({
       title: "Saved current workout for comparison",
       description: "Generate or edit another, then compare.",
+    });
+  }
+
+  function openReject(round: GeneratedRound) {
+    // Collect unique equipment tokens from all exercises in this round
+    const equipSet = new Set<string>();
+    for (const ex of round.exercises) {
+      if (ex.video.equipment) {
+        ex.video.equipment.split(",").map((e) => e.trim()).filter(Boolean).forEach((e) => equipSet.add(e));
+      }
+    }
+    setRejectTarget({
+      roomId: round.roomId,
+      roomNumber: round.roomNumber,
+      roomName: round.roomName,
+      equipmentList: Array.from(equipSet),
+      videoIds: round.exercises.map((e) => e.videoId),
+      videoTitles: round.exercises.map((e) => e.video.title),
     });
   }
 
@@ -417,6 +460,15 @@ export function WorkoutBuilder() {
                     <span className={`text-sm font-semibold ${scoreColor(r.score)}`}>
                       {r.score}
                     </span>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      title="Reject this round — report why it won't work"
+                      onClick={() => openReject(r)}
+                      className="text-red-400 hover:text-red-600 hover:bg-red-50"
+                    >
+                      <ThumbsDown className="h-4 w-4" />
+                    </Button>
                     <Button
                       variant="ghost"
                       size="icon"
@@ -622,6 +674,176 @@ export function WorkoutBuilder() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Rejection feedback dialog */}
+      {rejectTarget && (
+        <RejectionDialog
+          target={rejectTarget}
+          onClose={() => setRejectTarget(null)}
+          onSubmit={async (payload) => {
+            await apiRequest("POST", "/api/workout-builder/reject", payload);
+            // Invalidate the feedback list shown in Builder Config
+            queryClient.invalidateQueries({ queryKey: ["/api/workout-builder/reject"] });
+            toast({
+              title: "Feedback saved",
+              description: payload.applyToConfig
+                ? `Equipment added to avoid list for Round ${rejectTarget.roomNumber}.`
+                : "Logged for training — not applied to config.",
+            });
+            setRejectTarget(null);
+          }}
+        />
+      )}
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// RejectionDialog — collects the reason an AI-generated round won't work
+// ---------------------------------------------------------------------------
+
+interface RejectionDialogProps {
+  target: RejectTarget;
+  onClose: () => void;
+  onSubmit: (payload: {
+    roomId: number;
+    roomNumber: number;
+    roomName: string;
+    reason: string;
+    equipment: string[];
+    videoIds: number[];
+    videoTitles: string[];
+    applyToConfig: boolean;
+  }) => Promise<void>;
+}
+
+function RejectionDialog({ target, onClose, onSubmit }: RejectionDialogProps) {
+  const [reason, setReason] = useState("");
+  const [selectedEquipment, setSelectedEquipment] = useState<string[]>([]);
+  const [applyToConfig, setApplyToConfig] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+
+  function toggleEquipment(e: string) {
+    setSelectedEquipment((prev) =>
+      prev.includes(e) ? prev.filter((x) => x !== e) : [...prev, e]
+    );
+  }
+
+  async function handleSubmit() {
+    if (!reason.trim()) return;
+    setSubmitting(true);
+    try {
+      await onSubmit({
+        roomId: target.roomId,
+        roomNumber: target.roomNumber,
+        roomName: target.roomName,
+        reason: reason.trim(),
+        equipment: selectedEquipment,
+        videoIds: target.videoIds,
+        videoTitles: target.videoTitles,
+        applyToConfig,
+      });
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <ThumbsDown className="h-4 w-4 text-red-500" />
+            Reject Round {target.roomNumber} — {target.roomName}
+          </DialogTitle>
+          <DialogDescription>
+            Tell the builder why this round won&apos;t work. Your feedback is stored
+            and can train the AI to avoid this in future workouts.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4 py-2">
+          {/* Exercises in this round — for context */}
+          <div className="rounded-md bg-gray-50 px-3 py-2 text-sm text-gray-600">
+            <p className="font-medium text-gray-700 mb-1">Exercises in this round:</p>
+            {target.videoTitles.map((t, i) => (
+              <p key={i} className="text-xs">{i + 1}. {t}</p>
+            ))}
+          </div>
+
+          {/* Equipment chips — tap to flag which equipment is the problem */}
+          {target.equipmentList.length > 0 && (
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">Which equipment is the problem?</Label>
+              <div className="flex flex-wrap gap-2">
+                {target.equipmentList.map((e) => (
+                  <button
+                    key={e}
+                    type="button"
+                    onClick={() => toggleEquipment(e)}
+                    className={`rounded-full px-3 py-1 text-xs font-medium border transition-colors ${
+                      selectedEquipment.includes(e)
+                        ? "bg-red-600 text-white border-red-600"
+                        : "bg-white text-gray-700 border-gray-300 hover:border-red-400"
+                    }`}
+                  >
+                    {e}
+                  </button>
+                ))}
+              </div>
+              <p className="text-xs text-gray-400">Tap any equipment that is unavailable or unsuitable.</p>
+            </div>
+          )}
+
+          {/* Free-text reason */}
+          <div className="space-y-2">
+            <Label htmlFor="reject-reason" className="text-sm font-medium">
+              Reason <span className="text-red-500">*</span>
+            </Label>
+            <Textarea
+              id="reject-reason"
+              placeholder="e.g. No tubes at this station. Avoid R.TUBE for Round 2."
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              rows={3}
+              className="resize-none"
+            />
+          </div>
+
+          {/* Apply to config toggle */}
+          <div className="flex items-start gap-3 rounded-md border border-orange-200 bg-orange-50 p-3">
+            <Switch
+              id="apply-config"
+              checked={applyToConfig}
+              onCheckedChange={setApplyToConfig}
+              className="mt-0.5"
+            />
+            <div>
+              <Label htmlFor="apply-config" className="text-sm font-medium cursor-pointer">
+                Add to avoid list for Round {target.roomNumber}
+              </Label>
+              <p className="text-xs text-gray-500 mt-0.5">
+                The selected equipment will be added to the &quot;Avoid equipment&quot; list in the
+                Builder Config for this round, so it&apos;s excluded from future auto-generated workouts.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <DialogFooter className="gap-2">
+          <Button variant="outline" onClick={onClose} disabled={submitting}>
+            Cancel
+          </Button>
+          <Button
+            onClick={handleSubmit}
+            disabled={!reason.trim() || submitting}
+            className="bg-red-600 hover:bg-red-700 text-white"
+          >
+            {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            Submit Feedback
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
