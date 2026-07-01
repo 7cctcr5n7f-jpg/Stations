@@ -157,36 +157,49 @@ function daysSince(iso: string | null | undefined, now: Date): number | null {
 interface EngineModifiers {
   /** Fraction 0–1 representing HIIT weight (1 = full HIIT bias). */
   hiitBias: number
-  /** Whether this is a boxing-focused run. */
+  /** Boxing Focused: ALL boxing rounds use only boxing exercises (no second exercise from other cats). */
   boxingFocused: boolean
-  /** Whether this is a strength-focused run. */
-  strengthFocused: boolean
-  /** Whether this is a functional-fitness run. */
+  /** HIIT Focused: cardio/body exercises scored higher; boxing rounds kept but other rounds are HIIT. */
+  hiitFocused: boolean
+  /** Functional Fitness: rounds 2, 3, 6, 9 (by room number) stay weight/functional training. */
   functionalFocused: boolean
-  /** Intensity override: High for Advanced, Low for Beginner, null for Intermediate. */
+  /** Balanced: mix of HIIT, boxing and functional. No overrides. */
+  balanced: boolean
+  /** Intensity override. */
   intensityOverride: HeartRate | null
-  /** Boxing volume fraction 0–1 for second-exercise selection on boxing rounds. */
+  /** Boxing volume fraction 0–1. */
   boxingVolumeFraction: number
+  /**
+   * Functional Fitness mode: set of room numbers that must be weight/functional.
+   * Empty when not in Functional Fitness focus.
+   */
+  functionalRoomNumbers: Set<number>
 }
 
 function resolveModifiers(params: BuilderParams | undefined): EngineModifiers {
-  if (!params) {
-    return {
-      hiitBias: 0.6,
-      boxingFocused: false,
-      strengthFocused: false,
-      functionalFocused: false,
-      intensityOverride: null,
-      boxingVolumeFraction: 0.5,
-    }
+  const base: EngineModifiers = {
+    hiitBias: 0.6,
+    boxingFocused: false,
+    hiitFocused: false,
+    functionalFocused: false,
+    balanced: true,
+    intensityOverride: null,
+    boxingVolumeFraction: 0.5,
+    functionalRoomNumbers: new Set(),
   }
+  if (!params) return base
+
+  const focus = params.focus
   return {
     hiitBias: params.hiitStrengthRatio / 100,
-    boxingFocused: params.focus === "Boxing Focused",
-    strengthFocused: params.focus === "Strength Focused",
-    functionalFocused: params.focus === "Functional Fitness",
+    boxingFocused: focus === "Boxing Focused",
+    hiitFocused: focus === "HIIT Focused",
+    functionalFocused: focus === "Functional Fitness",
+    balanced: focus === "Balanced",
     intensityOverride: null,
     boxingVolumeFraction: params.boxingVolume / 100,
+    // Rooms 2, 3, 6, 9 are reserved for weight/functional training in Functional Fitness mode
+    functionalRoomNumbers: focus === "Functional Fitness" ? new Set([2, 3, 6, 9]) : new Set(),
   }
 }
 
@@ -312,31 +325,32 @@ function scoreCandidate(
   }
 
   // 7) Builder params bonus/penalty — layered on top of the base score
-  // HIIT bias: favour HIIT exercises proportionally; penalise strength when HIIT heavy
-  if (isHiit && mods.hiitBias > 0.5) {
-    score += Math.round((mods.hiitBias - 0.5) * 20) // up to +10
-    if (mods.hiitBias > 0.7) reasons.push("Fits HIIT-focused programme")
-  } else if (isStrength && mods.hiitBias < 0.5) {
-    score += Math.round((0.5 - mods.hiitBias) * 20) // up to +10
-    if (mods.hiitBias < 0.3) reasons.push("Fits strength-focused programme")
+
+  // HIIT Focused: boost cardio/body exercises; penalise pure strength on non-boxing rounds
+  if (mods.hiitFocused) {
+    if (isHiit) {
+      score += 10
+      reasons.push("Fits HIIT-focused programme")
+    } else if (isStrength && !isBoxingEx) {
+      score -= 5
+    }
   }
 
-  // Boxing focus bonus
+  // Boxing Focused: strong bonus for boxing exercises on any round
   if (mods.boxingFocused && isBoxingEx) {
-    score += 8
+    score += 10
     reasons.push("Boxing-focused programme")
   }
 
-  // Functional bonus
+  // Functional Fitness: boost functional/weight exercises on functional rooms
   if (mods.functionalFocused && isFunctional) {
-    score += 6
+    score += 8
     reasons.push("Functional Fitness programme")
   }
 
-  // Strength-focused: extra credit for strength/hypertrophy exercises
-  if (mods.strengthFocused && isStrength) {
-    score += 6
-    reasons.push("Strength-focused programme")
+  // Balanced: gentle HIIT bias
+  if (mods.balanced && isHiit && mods.hiitBias > 0.5) {
+    score += Math.round((mods.hiitBias - 0.5) * 12)
   }
 
   // Clamp 0-100
@@ -498,6 +512,9 @@ export function generateWorkout(input: EngineInput): WorkoutDraft {
     const boxingRound = isBoxingRound(cfg)
     const roundWarnings: string[] = []
 
+    // Determine whether this room number is a "functional/weight" slot in Functional Fitness mode
+    const isFunctionalSlot = mods.functionalFocused && mods.functionalRoomNumbers.has(cfg.roomNumber ?? 0)
+
     const scoreAll = (pool: Video[]) =>
       pool
         .map((v) =>
@@ -507,6 +524,32 @@ export function generateWorkout(input: EngineInput): WorkoutDraft {
 
     // ---- pick exercise 1 (with relaxation ladder) ----
     let pool1 = videos.filter((v) => !usedVideoIds.has(v.id) && passesHardRules(v, cfg, limits, usedEquipmentCounts))
+
+    // Boxing Focused: all boxing rounds use only boxing exercises
+    if (mods.boxingFocused && boxingRound) {
+      const boxingOnly = pool1.filter((v) => isBoxingExercise(v) || hasBoxingEquipment(v))
+      if (boxingOnly.length) pool1 = boxingOnly
+    }
+
+    // Functional Fitness: rooms 2, 3, 6, 9 must use weight/functional exercises
+    if (isFunctionalSlot) {
+      const functionalOnly = pool1.filter((v) => {
+        const t = norm(v.exerciseType ?? "")
+        const mp = norm(v.movementPattern ?? "")
+        return (
+          t.includes("strength") || t.includes("hypertrophy") || t.includes("functional") ||
+          mp.includes("functional") || mp.includes("push") || mp.includes("pull") ||
+          mp.includes("hinge") || mp.includes("squat") || mp.includes("press") ||
+          norm(v.category ?? "").includes("chest") || norm(v.category ?? "").includes("back") ||
+          norm(v.category ?? "").includes("legs") || norm(v.category ?? "").includes("shoulder") ||
+          norm(v.category ?? "").includes("arms") || norm(v.category ?? "").includes("bicep") ||
+          norm(v.category ?? "").includes("tricep")
+        )
+      })
+      if (functionalOnly.length) pool1 = functionalOnly
+      else roundWarnings.push("Functional slot — no weight/functional exercise available, used best available")
+    }
+
     if (pool1.length === 0) {
       pool1 = videos.filter((v) => !usedVideoIds.has(v.id) && (!cfg.coreOnly || isCore(v)))
       if (pool1.length) roundWarnings.push("Relaxed equipment limits to fill this round")
@@ -560,6 +603,27 @@ export function generateWorkout(input: EngineInput): WorkoutDraft {
     } else {
       // Pick a complementary second exercise. Default is two per station.
       let pool2 = videos.filter((v) => !usedVideoIds.has(v.id) && passesHardRules(v, cfg, limits, usedEquipmentCounts))
+
+      // Boxing Focused: on boxing rounds the second exercise must also be boxing
+      if (mods.boxingFocused && boxingRound) {
+        const boxingPool2 = pool2.filter((v) => isBoxingExercise(v) || hasBoxingEquipment(v))
+        if (boxingPool2.length) pool2 = boxingPool2
+      }
+
+      // Functional Fitness: functional slots enforce weight/functional for ex2 as well
+      if (isFunctionalSlot) {
+        const functionalOnly2 = pool2.filter((v) => {
+          const t = norm(v.exerciseType ?? "")
+          const mp = norm(v.movementPattern ?? "")
+          return (
+            t.includes("strength") || t.includes("hypertrophy") || t.includes("functional") ||
+            mp.includes("functional") || mp.includes("push") || mp.includes("pull") ||
+            mp.includes("hinge") || mp.includes("squat") || mp.includes("press")
+          )
+        })
+        if (functionalOnly2.length) pool2 = functionalOnly2
+      }
+
       // Gloves on => the second exercise must be performable with gloves.
       if (glovesOn) pool2 = pool2.filter((v) => gloveCompatible(v))
       else if (pool2.length === 0) {

@@ -1380,7 +1380,8 @@ function TrainerDashboardInner() {
                             />
                           </div>
                         </th>
-                        <th className="text-left p-2 font-medium text-gray-500 uppercase tracking-wide text-[10px] w-24">Last Used</th>
+                        <th className="text-left p-2 font-medium text-gray-500 uppercase tracking-wide text-[10px] w-20">Last Used</th>
+                        <th className="text-center p-2 font-medium text-gray-500 uppercase tracking-wide text-[10px] w-14">Times</th>
                         <th className="text-left p-2 font-medium text-gray-500 uppercase tracking-wide text-[10px] w-28">Scheduled</th>
                         <th className="text-center p-2 font-medium text-gray-500 uppercase tracking-wide text-[10px] w-10">Int.</th>
                         <th className="text-left p-2 font-medium text-gray-500 uppercase tracking-wide text-[10px] w-28">Movement</th>
@@ -1490,27 +1491,37 @@ function TrainerDashboardInner() {
                                       + set
                                     </button>
                                   )}
-                                  {/* Muscle group pills */}
-                                  {Array.isArray(video.muscleGroups) && video.muscleGroups.length > 0 ? (
-                                    video.muscleGroups.slice(0, 3).map((m: string, i: number) => (
+                                  {/* Muscle group pills — deduplicated vs the Cat. column */}
+                                  {(() => {
+                                    const catChips = deriveCategories(video.bodyPart, video.equipment).map((c: string) => c.toLowerCase())
+                                    const catLower = (video.category ?? "").toLowerCase()
+                                    const uniqueMuscles = Array.isArray(video.muscleGroups)
+                                      ? video.muscleGroups.filter((m: string) => {
+                                          const ml = m.trim().toLowerCase()
+                                          return ml && !catChips.includes(ml) && ml !== catLower
+                                        })
+                                      : []
+                                    return uniqueMuscles.length > 0 ? (
+                                      uniqueMuscles.slice(0, 3).map((m: string, i: number) => (
+                                        <button
+                                          key={i}
+                                          className="rounded px-1.5 py-0.5 text-[10px] font-medium bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors"
+                                          onClick={() => setInlineEditingField({ videoId: video.id, field: "muscleGroups" })}
+                                          title="Edit muscle groups"
+                                        >
+                                          {m.trim()}
+                                        </button>
+                                      ))
+                                    ) : (
                                       <button
-                                        key={i}
-                                        className="rounded px-1.5 py-0.5 text-[10px] font-medium bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors"
+                                        className="rounded px-1 py-0.5 text-[10px] text-gray-300 hover:text-gray-500 hover:bg-gray-100 transition-colors"
                                         onClick={() => setInlineEditingField({ videoId: video.id, field: "muscleGroups" })}
-                                        title="Edit muscle groups"
+                                        title="Add muscle groups"
                                       >
-                                        {m.trim()}
+                                        +
                                       </button>
-                                    ))
-                                  ) : (
-                                    <button
-                                      className="rounded px-1 py-0.5 text-[10px] text-gray-300 hover:text-gray-500 hover:bg-gray-100 transition-colors"
-                                      onClick={() => setInlineEditingField({ videoId: video.id, field: "muscleGroups" })}
-                                      title="Add muscle groups"
-                                    >
-                                      +
-                                    </button>
-                                  )}
+                                    )
+                                  })()}
                                 </div>
                               )}
                             </td>
@@ -1548,20 +1559,23 @@ function TrainerDashboardInner() {
                               )}
                             </td>
 
-                            {/* Last Used — single line: clock · 35d · ×7 */}
+                            {/* Last Used */}
                             <td className="p-2 whitespace-nowrap">
                               <div className="flex items-center gap-1 text-[10px] text-gray-500">
                                 <Clock className="h-3 w-3 shrink-0 text-gray-400" />
-                                <span className="tabular-nums">{formatTimeAgoShort(video.lastUsed)}</span>
-                                {(video.timesUsed ?? 0) > 0 && (
-                                  <>
-                                    <span className="text-gray-300">·</span>
-                                    <span className="tabular-nums rounded-full bg-gray-100 px-1.5 py-px text-gray-500 font-medium text-[9px]">
-                                      ×{video.timesUsed}
-                                    </span>
-                                  </>
-                                )}
+                                <span className="tabular-nums">{formatTimeAgoShort(video.lastUsed ?? null)}</span>
                               </div>
+                            </td>
+
+                            {/* Times Used */}
+                            <td className="p-2 text-center whitespace-nowrap">
+                              {(video.timesUsed ?? 0) > 0 ? (
+                                <span className="tabular-nums rounded-full bg-gray-100 px-1.5 py-0.5 text-gray-600 font-semibold text-[10px]">
+                                  {video.timesUsed}
+                                </span>
+                              ) : (
+                                <span className="text-[10px] text-gray-300">—</span>
+                              )}
                             </td>
 
                             {/* Scheduled */}
