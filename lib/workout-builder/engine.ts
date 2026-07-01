@@ -37,20 +37,37 @@ function equipmentTokens(v: Video): string[] {
 }
 
 // All muscle-ish text for a video, lowercased, for matching against templates.
+// Uses the new muscleGroups array first; falls back to legacy bodyPart/secondaryMuscle
+// for any un-migrated rows.
 function muscleTokens(v: Video): string[] {
   const out: string[] = []
-  if (v.bodyPart) out.push(norm(v.bodyPart))
-  if (v.secondaryMuscle) {
-    for (const m of v.secondaryMuscle.split(/[,/]/)) {
+  // Prefer the new canonical array of muscle groups
+  if (Array.isArray(v.muscleGroups) && v.muscleGroups.length > 0) {
+    for (const m of v.muscleGroups) {
       const t = norm(m)
       if (t) out.push(t)
+    }
+  } else {
+    // Legacy fallback
+    if (v.bodyPart) out.push(norm(v.bodyPart))
+    if (v.secondaryMuscle) {
+      for (const m of v.secondaryMuscle.split(/[,/]/)) {
+        const t = norm(m)
+        if (t) out.push(t)
+      }
     }
   }
   return out
 }
 
+// The category field is the single workout bucket for filtering.
+// Falls back to bodyPart for legacy rows.
+function exerciseCategory(v: Video): string {
+  return norm(v.category) || norm(v.bodyPart)
+}
+
 function isCore(v: Video): boolean {
-  const tokens = [norm(v.bodyPart), norm(v.exerciseType), ...muscleTokens(v)]
+  const tokens = [exerciseCategory(v), norm(v.exerciseType), ...muscleTokens(v)]
   return tokens.some((t) => t.includes("core") || t.includes("abs") || t.includes("oblique"))
 }
 
@@ -76,7 +93,7 @@ function hasBoxingEquipment(v: Video): boolean {
 function isBoxingExercise(v: Video): boolean {
   if (hasBoxingEquipment(v)) return true
   if (v.boxingType && norm(v.boxingType)) return true
-  const text = [norm(v.exerciseType), norm(v.movementPattern), norm(v.bodyPart), norm(v.equipment)].join(" ")
+  const text = [norm(v.exerciseType), norm(v.movementPattern), exerciseCategory(v), norm(v.equipment)].join(" ")
   return /box|punch|jab|cross|hook|uppercut|strik|bag|pad|spar/.test(text)
 }
 
@@ -122,7 +139,7 @@ function isDropsetCandidate(v: Video, cfg: RoundConfig, isBoxing: boolean): bool
   if (v.intensity === "High") return false
   const et = norm(v.exerciseType)
   if (et && !et.includes("strength") && !et.includes("hypertrophy")) return false
-  const muscles = [norm(v.bodyPart), ...muscleTokens(v)]
+  const muscles = [exerciseCategory(v), ...muscleTokens(v)]
   return muscles.some((m) => ISOLATION_MUSCLES.some((iso) => m.includes(iso)))
 }
 
@@ -170,7 +187,7 @@ function scoreCandidate(
     const secondaryHit = template.secondaryMuscles.some((m) => mt.some((t) => t.includes(norm(m)) || norm(m).includes(t)))
     if (primaryHit) {
       score += W.templateMuscle
-      reasons.push(`Targets today's primary muscle group (${video.bodyPart})`)
+      reasons.push(`Targets today's primary muscle group (${video.category || video.bodyPart})`)
     } else if (secondaryHit) {
       score += W.templateMuscle * 0.5
       reasons.push(`Hits a secondary muscle group for today`)

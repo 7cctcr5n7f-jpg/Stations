@@ -16,6 +16,10 @@ const FIELD_TO_COLUMN: Record<string, string> = {
   weightRequired: "weight_required",
   spaceRequirement: "space_requirement",
   boxingType: "boxing_type",
+  category: "category",
+  muscleGroups: "muscle_groups",
+  workoutMethods: "workout_methods",
+  // Legacy aliases (kept for backward compat)
   primaryMuscles: "body_part",
   secondaryMuscles: "secondary_muscle",
 }
@@ -127,37 +131,25 @@ export async function POST(req: NextRequest) {
         const resolvedIntensity =
           isBoxingExercise(row, meta.boxingType) ? "High" : meta.intensity
 
-        // Apply HIIT type + Cardio primary rule AFTER generation.
-        // Boxing and cardio-dominant exercises are HIIT; their primary muscle
-        // is always "Cardio" with actual muscles pushed to secondary.
+        // Apply HIIT type + category rule AFTER generation.
         const isHiit =
           meta.exerciseType === "HIIT" ||
-          meta.exerciseType === "Cardio" || // guard against model using old enum value
+          meta.category === "HIIT" ||
           isBoxingExercise(row, meta.boxingType)
 
         const resolvedExerciseType = isHiit ? "HIIT" : meta.exerciseType
+        const resolvedCategory = isHiit ? "HIIT" : (meta.category ?? meta.exerciseType)
 
-        // For HIIT exercises, primaryMuscles = ["Cardio"], real muscles go to secondary.
-        // Merge AI primary muscles into secondary when they're not already there.
-        let resolvedPrimary = meta.primaryMuscles
-        let resolvedSecondary = meta.secondaryMuscles
+        // muscleGroups — always use what the AI returned; ensure at least one entry.
+        const resolvedMuscleGroups: string[] =
+          Array.isArray(meta.muscleGroups) && meta.muscleGroups.length > 0
+            ? meta.muscleGroups
+            : []
 
-        if (isHiit) {
-          // Move any non-"Cardio" primary muscles into secondary (deduped)
-          const extraMuscles = meta.primaryMuscles.filter(
-            (m) => m.toLowerCase() !== "cardio",
-          )
-          resolvedPrimary = ["Cardio"]
-          resolvedSecondary = [
-            ...new Set([...extraMuscles, ...meta.secondaryMuscles]),
-          ].filter((m) => m.toLowerCase() !== "cardio")
-        }
-
-        // Normalise muscle arrays to comma-separated strings (matching existing column format)
-        const primaryMusclesStr =
-          resolvedPrimary.length > 0 ? resolvedPrimary.join(", ") : null
-        const secondaryMusclesStr =
-          resolvedSecondary.length > 0 ? resolvedSecondary.join(", ") : null
+        // workoutMethods — ensure 'Standard' is always present.
+        const resolvedWorkoutMethods: string[] = Array.isArray(meta.workoutMethods)
+          ? (meta.workoutMethods.includes("Standard") ? meta.workoutMethods : ["Standard", ...meta.workoutMethods])
+          : ["Standard"]
 
         const aiValues: Record<string, any> = {
           movementPattern: meta.movementPattern,
@@ -167,34 +159,31 @@ export async function POST(req: NextRequest) {
           weightRequired: meta.weightRequired,
           spaceRequirement: meta.spaceRequirement,
           boxingType: meta.boxingType,
-          // Only write muscles if the trainer hasn't manually set them
-          primaryMuscles: primaryMusclesStr,
-          secondaryMuscles: secondaryMusclesStr,
+          category: resolvedCategory,
+          muscleGroups: resolvedMuscleGroups,
+          workoutMethods: resolvedWorkoutMethods,
         }
 
         const v = (key: string) =>
           manualFields.includes(key) ? row[FIELD_TO_COLUMN[key]] : aiValues[key]
 
-        // Determine if body_part/secondary_muscle should be updated.
-        // For HIIT exercises we always write "Cardio" as primary (unless the
-        // trainer manually set it) — it's a deliberate structural rule, not just
-        // a fill-in-the-blanks operation.
-        const shouldUpdateBodyPart =
-          !manualFields.includes("primaryMuscles") &&
-          primaryMusclesStr !== null &&
-          (isHiit || !row.body_part || row.body_part === "General" || row.body_part === "")
+        // Determine whether to update category and muscle_groups.
+        // Always update category for HIIT (structural rule). Otherwise only update
+        // when the existing value is missing/placeholder.
+        const shouldUpdateCategory =
+          !manualFields.includes("category") &&
+          resolvedCategory != null &&
+          (isHiit || !row.category || row.category === "General" || row.category === "")
 
-        // For HIIT exercises also always refresh secondary so the actual muscles
-        // are populated correctly. Otherwise only update when it's a placeholder.
-        const secondaryIsPlaceholder =
-          !row.secondary_muscle ||
-          row.secondary_muscle.trim() === "" ||
-          row.secondary_muscle.trim().toLowerCase() === (row.body_part ?? "").trim().toLowerCase()
+        const shouldUpdateMuscleGroups =
+          !manualFields.includes("muscleGroups") &&
+          resolvedMuscleGroups.length > 0 &&
+          (isHiit || !row.muscle_groups || row.muscle_groups.length === 0)
 
-        const shouldUpdateSecondary =
-          !manualFields.includes("secondaryMuscles") &&
-          secondaryMusclesStr !== null &&
-          (isHiit || secondaryIsPlaceholder)
+        const shouldUpdateWorkoutMethods =
+          !manualFields.includes("workoutMethods") &&
+          resolvedWorkoutMethods.length > 0 &&
+          (!row.workout_methods || row.workout_methods.length === 0)
 
         const updated = await sql`
           UPDATE videos SET
@@ -205,8 +194,10 @@ export async function POST(req: NextRequest) {
             weight_required = ${v("weightRequired")},
             space_requirement = ${v("spaceRequirement")},
             boxing_type = ${v("boxingType")},
-            body_part = CASE WHEN ${shouldUpdateBodyPart} THEN ${primaryMusclesStr} ELSE body_part END,
-            secondary_muscle = CASE WHEN ${shouldUpdateSecondary} THEN ${secondaryMusclesStr} ELSE secondary_muscle END,
+            category = CASE WHEN ${shouldUpdateCategory} THEN ${resolvedCategory} ELSE category END,
+            body_part = CASE WHEN ${shouldUpdateCategory} THEN ${resolvedCategory} ELSE body_part END,
+            muscle_groups = CASE WHEN ${shouldUpdateMuscleGroups} THEN ${resolvedMuscleGroups}::text[] ELSE muscle_groups END,
+            workout_methods = CASE WHEN ${shouldUpdateWorkoutMethods} THEN ${resolvedWorkoutMethods}::text[] ELSE workout_methods END,
             ai_confidence = ${Math.round(meta.confidence)},
             ai_generated_at = NOW()
           WHERE id = ${row.id}

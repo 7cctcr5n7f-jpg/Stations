@@ -39,20 +39,38 @@ export const exerciseMetadataSchema = z.object({
     .describe(
       "If this is a boxing/striking drill, the type (e.g. Combination, Defense, Footwork, Pad Work, Bag Work). Otherwise null.",
     ),
-  primaryMuscles: z
-    .array(z.string())
+  category: z
+    .enum(["HIIT", "Chest", "Back", "Shoulders", "Biceps", "Triceps", "Legs", "Core", "Abs"])
     .describe(
-      "Primary muscles. IMPORTANT: For any HIIT-category exercise (cardio machines, battle ropes, burpees, " +
-      "jump rope, sprints, step, circuits, plyometrics) AND for ALL boxing/striking exercises, " +
-      "primaryMuscles MUST be exactly ['Cardio']. The actual anatomical muscles belong in secondaryMuscles. " +
-      "For Strength/Mobility/Skill exercises use standard anatomical names, e.g. ['Glutes', 'Quadriceps'].",
+      "The single primary workout Category for this exercise. " +
+      "HIIT: any cardio, conditioning, battle ropes, boxing, striking, burpees, jump rope, sprints, circuits, plyometrics. " +
+      "Chest: chest press, fly, push-up variants. Back: rows, pull-ups, lat pulldown. " +
+      "Shoulders: overhead press, raises, shoulder-dominant lifts. Biceps: curl variants. " +
+      "Triceps: extension, dip, close-grip variants. Legs: squat, lunge, hinge, calf-dominant. " +
+      "Core: plank, carry, rotation, anti-rotation. Abs: crunch, sit-up, direct ab work. " +
+      "Only ONE category per exercise. HIIT MUST NOT also be assigned Chest/Back/Shoulders/Legs etc.",
     ),
-  secondaryMuscles: z
+  muscleGroups: z
     .array(z.string())
     .describe(
-      "Secondary/stabiliser muscles. For HIIT and boxing exercises this should contain the actual " +
-      "anatomical muscles worked (e.g. ['Shoulders', 'Core', 'Glutes', 'Calves']). " +
-      "For Strength exercises list stabilisers, e.g. ['Hamstrings', 'Calves']. Can be empty if none are notable.",
+      "Every muscle group activated during the exercise. Use standard anatomical names. " +
+      "Examples: Chest, Triceps, Front Delts, Lats, Rhomboids, Rear Delts, Biceps, " +
+      "Quadriceps, Hamstrings, Glutes, Core, Calves, Shoulders, Traps, Lower Back. " +
+      "For HIIT/boxing exercises include ALL muscles worked (e.g. ['Shoulders', 'Core', 'Chest', 'Triceps']). " +
+      "Never leave this empty — always list at least the primary muscles.",
+    ),
+  workoutMethods: z
+    .array(z.enum(["Standard", "Exercise Combination", "Boxing Combination", "Dropset", "Superset", "AMRAP"]))
+    .describe(
+      "All Workout Methods that are suitable for this exercise. Always include 'Standard'. " +
+      "Add 'Boxing Combination' for any boxing/striking drill. " +
+      "Add 'Exercise Combination' if the exercise pairs well with another (e.g. functional, cardio, TRX). " +
+      "Add 'Dropset' for exercises easily performed as a drop set (e.g. Bicep Curl, Chest Press, Shoulder Press). " +
+      "Add 'Superset' for exercises easily superseted (e.g. chest+back antagonist pairs, biceps, triceps). " +
+      "Add 'AMRAP' for bodyweight or conditioning exercises suited to max reps (e.g. Battle Rope, Burpees, Push-ups). " +
+      "Examples: Heavy Bag → ['Standard', 'Boxing Combination']. " +
+      "Bicep Curl → ['Standard', 'Dropset', 'Superset']. " +
+      "Battle Rope → ['Standard', 'Exercise Combination', 'AMRAP'].",
     ),
   confidence: z
     .number()
@@ -168,12 +186,12 @@ export async function generateExerciseMetadata(
       "  High: conditioning/HIIT/boxing (battle ropes, burpees, sprints, circuits, any striking drill) — significant heart rate spike.\n" +
       "- Any boxing or striking exercise MUST have intensity = 'High'.\n" +
       "- Any cardio or conditioning exercise (step, treadmill, bike, rowing machine, sprints, battle ropes, " +
-      "jump rope, burpees, box jumps, sled, circuits, plyometrics) MUST have exerciseType = 'HIIT'.\n" +
-      "- Any boxing or striking exercise MUST have exerciseType = 'HIIT'.\n" +
-      "- For ALL exercises with exerciseType = 'HIIT', primaryMuscles MUST be exactly ['Cardio']. " +
-      "The real anatomical muscles go into secondaryMuscles.\n" +
-      "- For non-HIIT exercises, always populate primaryMuscles and secondaryMuscles with realistic anatomical muscles — never return empty arrays. " +
-      "For a chest fly, secondaryMuscles should include ['Anterior Deltoid', 'Biceps'] even if minor." +
+      "jump rope, burpees, box jumps, sled, circuits, plyometrics) MUST have exerciseType = 'HIIT' AND category = 'HIIT'.\n" +
+      "- Any boxing or striking exercise MUST have exerciseType = 'HIIT' AND category = 'HIIT'.\n" +
+      "- category and exerciseType are separate fields: category is the SINGLE workout bucket; exerciseType is the training modality.\n" +
+      "- muscleGroups MUST always be populated with at least 2 muscles — never return an empty array.\n" +
+      "- workoutMethods MUST always include 'Standard' as the first entry.\n" +
+      "- HIIT exercises must still list ALL anatomical muscles in muscleGroups (e.g. Battle Rope: Shoulders, Biceps, Core, Lats)." +
       glossaryBlock,
     prompt:
       `Classify this exercise.\n\nName: "${video.title}"` +
