@@ -1895,50 +1895,52 @@ function TrainerDashboardInner() {
                   <div className="w-full space-y-4">
                     {/* Stacked bar chart */}
                     {donutData.length > 0 && (
-                      <div className="bg-white border border-gray-100 rounded-xl p-4 shadow-sm">
-                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
+                      <div className="bg-white border border-gray-100 rounded-xl p-3 shadow-sm">
+                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
                           {new Date(currentDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} — Category Breakdown
                         </p>
-                        <div className="space-y-3">
-                          {/* Stacked horizontal bar */}
-                          <div className="flex items-center h-8 rounded-md overflow-hidden bg-gray-100 border border-gray-200">
-                            {donutData.map((d) => (
-                              <div
-                                key={d.name}
-                                className="h-full hover:opacity-80 transition-opacity cursor-default"
-                                style={{ width: `${d.pct}%`, backgroundColor: d.color }}
-                                title={`${d.name}: ${d.pct}%`}
-                              />
-                            ))}
-                          </div>
-                          {/* Legend with counts */}
-                          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
-                            {donutData.map((d) => (
-                              <div key={d.name} className="flex items-center gap-1.5">
-                                <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: d.color }} />
-                                <span className="text-[10px] text-gray-600 truncate">{d.name}</span>
-                                <span className="text-[10px] font-semibold text-gray-900 ml-auto">{d.value}</span>
-                              </div>
-                            ))}
-                          </div>
+                        {/* Stacked horizontal bar with inline percentages */}
+                        <div className="flex items-center h-7 rounded-md overflow-hidden bg-gray-100 border border-gray-200 mb-2">
+                          {donutData.map((d) => (
+                            <div
+                              key={d.name}
+                              className="h-full hover:opacity-80 transition-opacity cursor-default flex items-center justify-center relative group"
+                              style={{ width: `${d.pct}%`, backgroundColor: d.color, minWidth: d.pct > 8 ? 'auto' : '0px' }}
+                              title={`${d.name}: ${d.pct}% (${d.value} videos)`}
+                            >
+                              {d.pct > 10 && (
+                                <span className="text-[9px] font-bold text-white drop-shadow-md">{d.pct}%</span>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                        {/* Legend with name, percentage, and count */}
+                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-1.5 text-[10px]">
+                          {donutData.map((d) => (
+                            <div key={d.name} className="flex items-center gap-1 p-1 rounded bg-gray-50 border border-gray-150">
+                              <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: d.color }} />
+                              <span className="text-gray-700 font-medium truncate flex-1">{d.name}</span>
+                              <span className="text-gray-600 font-semibold shrink-0">{d.pct}%</span>
+                            </div>
+                          ))}
                         </div>
                       </div>
                     )}
 
-                    {/* ── Round cards list (vertical, compact) ──────────────────────────────────── */}
-                    <div className="space-y-1.5">
+                    {/* ── Round cards list (vertical, ultra-compact) ──────────────────────────────────── */}
+                    <div className="space-y-1">
                       {roomsWithAssignments.map((room) => {
                         const isEmpty = room.assignments.length === 0;
                         const isFull = room.assignments.length >= 2;
                         return (
                           <div
                             key={room.id}
-                            className={`rounded-lg border bg-white overflow-hidden transition-shadow hover:shadow-sm ${
+                            className={`rounded border bg-white overflow-hidden transition-shadow hover:shadow-sm ${
                               isEmpty ? 'border-red-200 bg-red-50/20' : isFull ? 'border-green-200 bg-green-50/20' : 'border-amber-200 bg-amber-50/20'
                             }`}
                           >
                             {/* Header: round number + status + add button */}
-                            <div className={`flex items-center justify-between px-3 py-1.5 border-b text-xs ${
+                            <div className={`flex items-center justify-between px-2 py-1 border-b text-xs gap-2 ${
                               isEmpty ? 'border-red-200 bg-red-50/40' : isFull ? 'border-green-200 bg-green-50/40' : 'border-amber-200 bg-amber-50/40'
                             }`}>
                               <div className="flex items-center gap-2 min-w-0">
@@ -1974,7 +1976,7 @@ function TrainerDashboardInner() {
                                 + assign video
                               </button>
                             ) : (
-                              <div className="divide-y divide-gray-100 text-xs">
+                              <div className="divide-y divide-gray-200 text-[11px]">
                                 {room.assignments.map((assignment, idx) => {
                                   const videoEquipmentOptions = assignment.video.equipment.split(',').map((e: string) => e.trim()).filter((e: string) => e);
                                   const allEquipmentOptions = videoOptions?.equipment || [];
@@ -1984,14 +1986,14 @@ function TrainerDashboardInner() {
                                   return (
                                     <div
                                       key={assignment.id}
-                                      className={`flex items-center gap-2 px-3 py-2 group ${draggedSchedule?.id === assignment.id ? 'opacity-40' : ''}`}
+                                      className={`flex items-center gap-1.5 px-2 py-1 group ${draggedSchedule?.id === assignment.id ? 'opacity-40' : ''}`}
                                       draggable
                                       onDragStart={(e) => { setDraggedSchedule(assignment); e.dataTransfer.effectAllowed = 'move'; }}
                                       onDragEnd={() => setDraggedSchedule(null)}
                                     >
-                                      <GripVertical className="h-3 w-3 text-gray-300 cursor-grab shrink-0" />
+                                      <GripVertical className="h-2.5 w-2.5 text-gray-300 cursor-grab shrink-0" />
                                       {/* Thumbnail */}
-                                      <div className="relative shrink-0 w-10 h-10 rounded-lg overflow-hidden bg-gray-100 border border-gray-200">
+                                      <div className="relative shrink-0 w-7 h-7 rounded overflow-hidden bg-gray-100 border border-gray-200">
                                         {assignment.video.thumbnailUrl ? (
                                           <img
                                             src={assignment.video.thumbnailUrl}
@@ -2005,7 +2007,7 @@ function TrainerDashboardInner() {
                                         )}
                                         {/* Intensity dot badge */}
                                         <span
-                                          className={`absolute bottom-0.5 right-0.5 w-2 h-2 rounded-full border border-white ${getIntensityStyle(assignment.video.intensity).dot}`}
+                                          className={`absolute bottom-0 right-0 w-1.5 h-1.5 rounded-full border border-white ${getIntensityStyle(assignment.video.intensity).dot}`}
                                           title={getIntensityStyle(assignment.video.intensity).label}
                                         />
                                       </div>
@@ -2013,7 +2015,7 @@ function TrainerDashboardInner() {
                                       <span className="text-xs font-medium text-gray-800 truncate flex-1 min-w-0" title={assignment.video.title}>
                                         {assignment.video.title}
                                       </span>
-                                      {/* Reps inline input */}
+                                      {/* Reps inline input - compact */}
                                       <Input
                                         type="text"
                                         value={repsVal}
@@ -2047,7 +2049,7 @@ function TrainerDashboardInner() {
                                             setScheduleChanges(prev => { const n = { ...prev }; delete n[assignment.id]; return n; });
                                           }
                                         }}
-                                        className="w-16 h-6 text-[11px] px-1.5 text-center shrink-0 border-gray-200"
+                                        className="w-12 h-5 text-[10px] px-1 text-center shrink-0 border-gray-200"
                                       />
                                       {/* Last used */}
                                       {assignment.video.lastUsed && (
