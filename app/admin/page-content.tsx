@@ -1500,10 +1500,22 @@ function TrainerDashboardInner() {
                               {inlineEditingField?.videoId === video.id && inlineEditingField?.field === "category" ? (
                                 <SearchableSelect
                                   options={dynamicCategories}
-                                  value={video.bodyPart || ""}
+                                  value={deriveCategories(video.bodyPart, video.equipment)[0] || ""}
                                   placeholder="Select category..."
-                                  onValueChange={(value) => {
-                                    updateVideoInlineMutation.mutate({ videoId: video.id, field: "bodyPart", value });
+                                  onValueChange={(categoryValue) => {
+                                    // Map category label back to bodyPart value
+                                    const categoryMap: Record<string, string> = {
+                                      'Legs': 'Legs',
+                                      'Chest': 'Chest',
+                                      'Back': 'Back',
+                                      'Triceps': 'Triceps',
+                                      'Biceps': 'Biceps',
+                                      'Shoulders': 'Shoulders',
+                                      'Core': 'Core',
+                                      'HIIT': 'Cardio'
+                                    };
+                                    const bodyPartValue = categoryMap[categoryValue] || categoryValue;
+                                    updateVideoInlineMutation.mutate({ videoId: video.id, field: "bodyPart", value: bodyPartValue });
                                     setInlineEditingField(null);
                                   }}
                                   className="h-7 text-[10px] w-full"
