@@ -526,6 +526,37 @@ export function WorkoutBuilder() {
     }));
   }
 
+  function moveExercise(sourceRoomId: number, targetRoomId: number, exerciseIndex: number) {
+    if (sourceRoomId === targetRoomId || !activeDraft) return;
+    
+    updateActiveDraft((d) => {
+      let movedExercise: RoundExercise | null = null;
+      
+      // Remove from source round
+      const updatedRounds = d.rounds.map((r) => {
+        if (r.roomId !== sourceRoomId) return r;
+        const exercises = r.exercises.filter((_, i) => i !== exerciseIndex);
+        movedExercise = r.exercises[exerciseIndex];
+        if (exercises.length === 0) return r; // Keep at least empty
+        return { ...r, exercises, score: Math.round(exercises.reduce((s, e) => s + e.score, 0) / exercises.length) };
+      });
+      
+      // Add to target round if exercise was found
+      if (movedExercise) {
+        return {
+          ...d,
+          rounds: updatedRounds.map((r) => {
+            if (r.roomId !== targetRoomId) return r;
+            if (r.exercises.length >= 2) return r; // Target is full
+            const exercises = [...r.exercises, movedExercise];
+            return { ...r, exercises, score: Math.round(exercises.reduce((s, e) => s + e.score, 0) / exercises.length) };
+          }),
+        };
+      }
+      return d;
+    });
+  }
+
   function moveToCompare() {
     setComparison(activeDraft);
     toast({ title: "Saved current workout for comparison", description: "Generate or edit another, then compare." });
@@ -806,6 +837,7 @@ export function WorkoutBuilder() {
                     onRemove={removeExercise}
                     onAddSecond={(roomId, idx) => setPickerTarget({ roomId, index: idx })}
                     onRejectExercise={openRejectExercise}
+                    onMoveExercise={moveExercise}
                     comparison={comparison}
                   />
                 </TabsContent>
@@ -823,6 +855,7 @@ export function WorkoutBuilder() {
                 onRemove={removeExercise}
                 onAddSecond={(roomId, idx) => setPickerTarget({ roomId, index: idx })}
                 onRejectExercise={openRejectExercise}
+                onMoveExercise={moveExercise}
                 comparison={comparison}
               />
             )
@@ -964,6 +997,7 @@ interface DayWorkoutProps {
   onRemove: (roomId: number, index: number) => void;
   onAddSecond: (roomId: number, index: number) => void;
   onRejectExercise: (round: GeneratedRound, ex: RoundExercise) => void;
+  onMoveExercise?: (sourceRoomId: number, targetRoomId: number, index: number) => void;
   comparison: WorkoutDraft | null;
 }
 
@@ -976,6 +1010,7 @@ function DayWorkout({
   onRemove,
   onAddSecond,
   onRejectExercise,
+  onMoveExercise,
   comparison,
 }: DayWorkoutProps) {
   const belowMin = draft.score < minScore;
@@ -1140,12 +1175,30 @@ function DayWorkout({
                 </Button>
               </div>
 
-              {/* Exercise rows */}
-              <div className="mt-3 space-y-2 pl-12">
+              {/* Exercise rows - draggable between rounds */}
+              <div 
+                className="mt-3 space-y-2 pl-12"
+                onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  const sourceData = e.dataTransfer.getData('exerciseMove');
+                  if (sourceData) {
+                    const { sourceRoomId, exerciseIndex } = JSON.parse(sourceData);
+                    if (sourceRoomId !== r.roomId) {
+                      onMoveExercise?.(sourceRoomId, r.roomId, exerciseIndex);
+                    }
+                  }
+                }}
+              >
                 {r.exercises.map((ex, idx) => (
                   <div
                     key={`${ex.videoId}-${idx}`}
-                    className="flex items-start gap-3 rounded-lg border bg-muted/30 p-2"
+                    className="flex items-start gap-3 rounded-lg border bg-muted/30 p-2 cursor-grab active:cursor-grabbing"
+                    draggable
+                    onDragStart={(e) => {
+                      e.dataTransfer.effectAllowed = 'move';
+                      e.dataTransfer.setData('exerciseMove', JSON.stringify({ sourceRoomId: r.roomId, exerciseIndex: idx }));
+                    }}
                   >
                     <span className="mt-1 text-xs font-medium text-muted-foreground">{idx + 1}</span>
                     <ImageThumbnail video={ex.video} size="small" showPlayButton={false} />

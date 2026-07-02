@@ -1944,7 +1944,7 @@ function TrainerDashboardInner() {
                       </div>
                     )}
 
-                    {/* ── Round cards list (vertical, ultra-compact) ──────────────────────────────────── */}
+                    {/* ── Round cards list (vertical, ultra-compact) ─────────────��────────────────────── */}
                     <div className="space-y-1">
                       {roomsWithAssignments.map((room) => {
                         const isEmpty = room.assignments.length === 0;
@@ -1984,16 +1984,50 @@ function TrainerDashboardInner() {
                               </div>
                             </div>
 
-                            {/* Videos inline or empty state */}
+                            {/* Videos inline or empty state - droppable zone */}
                             {isEmpty ? (
                               <button
+                                onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add('bg-blue-50'); }}
+                                onDragLeave={(e) => { e.currentTarget.classList.remove('bg-blue-50'); }}
+                                onDrop={async (e) => {
+                                  e.preventDefault();
+                                  e.currentTarget.classList.remove('bg-blue-50');
+                                  const sourceRoomId = e.dataTransfer.getData('sourceRoomId');
+                                  const scheduleId = e.dataTransfer.getData('scheduleId');
+                                  if (scheduleId && sourceRoomId !== room.id) {
+                                    try {
+                                      await apiRequest('PATCH', `/api/schedules/${scheduleId}`, { room_id: room.id });
+                                      queryClient.setQueryData(["/api/schedules", "date", currentDate], (oldData: any) => {
+                                        if (!oldData) return oldData;
+                                        return oldData.map((s: any) => s.id === scheduleId ? { ...s, room_id: room.id } : s);
+                                      });
+                                    } catch (err) { console.error('[v0] Drop failed:', err); }
+                                  }
+                                }}
                                 onClick={() => handleAssignVideo(null, room.id)}
                                 className="w-full py-2 text-xs text-gray-400 hover:text-gray-600 hover:bg-gray-50/50 transition-colors"
                               >
-                                + assign video
+                                + assign video or drop here
                               </button>
                             ) : (
-                              <div className="divide-y divide-gray-200 text-[11px]">
+                              <div 
+                                className="divide-y divide-gray-200 text-[11px]"
+                                onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; }}
+                                onDrop={async (e) => {
+                                  e.preventDefault();
+                                  const sourceRoomId = e.dataTransfer.getData('sourceRoomId');
+                                  const scheduleId = e.dataTransfer.getData('scheduleId');
+                                  if (scheduleId && sourceRoomId !== room.id) {
+                                    try {
+                                      await apiRequest('PATCH', `/api/schedules/${scheduleId}`, { room_id: room.id });
+                                      queryClient.setQueryData(["/api/schedules", "date", currentDate], (oldData: any) => {
+                                        if (!oldData) return oldData;
+                                        return oldData.map((s: any) => s.id === scheduleId ? { ...s, room_id: room.id } : s);
+                                      });
+                                    } catch (err) { console.error('[v0] Drop failed:', err); }
+                                  }
+                                }}
+                              >
                                 {room.assignments.map((assignment, idx) => {
                                   const videoEquipmentOptions = assignment.video.equipment.split(',').map((e: string) => e.trim()).filter((e: string) => e);
                                   const allEquipmentOptions = videoOptions?.equipment || [];
@@ -2005,7 +2039,12 @@ function TrainerDashboardInner() {
                                       key={assignment.id}
                                       className={`flex items-center gap-1.5 px-2 py-1 group ${draggedSchedule?.id === assignment.id ? 'opacity-40' : ''}`}
                                       draggable
-                                      onDragStart={(e) => { setDraggedSchedule(assignment); e.dataTransfer.effectAllowed = 'move'; }}
+                                      onDragStart={(e) => { 
+                                        setDraggedSchedule(assignment); 
+                                        e.dataTransfer.effectAllowed = 'move';
+                                        e.dataTransfer.setData('scheduleId', assignment.id);
+                                        e.dataTransfer.setData('sourceRoomId', room.id);
+                                      }}
                                       onDragEnd={() => setDraggedSchedule(null)}
                                     >
                                       <GripVertical className="h-2.5 w-2.5 text-gray-300 cursor-grab shrink-0" />
