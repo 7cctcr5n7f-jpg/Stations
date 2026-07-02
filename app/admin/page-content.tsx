@@ -1891,53 +1891,33 @@ function TrainerDashboardInner() {
                     })}
                   </div>
 
-                  {/* Category donut + round grid */}
-                  <div className="flex gap-4 items-start">
-                    {/* Donut chart */}
+                  {/* Category breakdown stacked bar + rounds list */}
+                  <div className="w-full space-y-4">
+                    {/* Stacked bar chart */}
                     {donutData.length > 0 && (
-                      <div className="shrink-0 bg-white border border-gray-100 rounded-2xl p-4 shadow-sm w-[220px]">
+                      <div className="bg-white border border-gray-100 rounded-xl p-4 shadow-sm">
                         <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
-                          {new Date(currentDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} — Focus
+                          {new Date(currentDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} — Category Breakdown
                         </p>
-                        <div className="flex items-center gap-3">
-                          {/* SVG donut */}
-                          <svg width="72" height="72" viewBox="0 0 72 72" className="shrink-0">
-                            {(() => {
-                              const r = 28; const cx = 36; const cy = 36;
-                              const circumference = 2 * Math.PI * r;
-                              let offset = 0;
-                              return donutData.map((d, i) => {
-                                const dash = (d.pct / 100) * circumference;
-                                const gap = circumference - dash;
-                                const el = (
-                                  <circle
-                                    key={d.name}
-                                    cx={cx} cy={cy} r={r}
-                                    fill="none"
-                                    stroke={d.color}
-                                    strokeWidth="12"
-                                    strokeDasharray={`${dash} ${gap}`}
-                                    strokeDashoffset={-offset}
-                                    transform="rotate(-90 36 36)"
-                                    className="transition-all duration-500"
-                                  />
-                                );
-                                offset += dash;
-                                return el;
-                              });
-                            })()}
-                            <circle cx="36" cy="36" r="22" fill="white" />
-                            <text x="36" y="40" textAnchor="middle" className="text-xs font-bold" style={{ fontSize: '11px', fontWeight: 700, fill: '#111' }}>
-                              {donutData[0]?.pct}%
-                            </text>
-                          </svg>
-                          {/* Legend */}
-                          <div className="flex flex-col gap-1 min-w-0">
+                        <div className="space-y-3">
+                          {/* Stacked horizontal bar */}
+                          <div className="flex items-center h-8 rounded-md overflow-hidden bg-gray-100 border border-gray-200">
                             {donutData.map((d) => (
-                              <div key={d.name} className="flex items-center gap-1.5 min-w-0">
-                                <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: d.color }} />
+                              <div
+                                key={d.name}
+                                className="h-full hover:opacity-80 transition-opacity cursor-default"
+                                style={{ width: `${d.pct}%`, backgroundColor: d.color }}
+                                title={`${d.name}: ${d.pct}%`}
+                              />
+                            ))}
+                          </div>
+                          {/* Legend with counts */}
+                          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+                            {donutData.map((d) => (
+                              <div key={d.name} className="flex items-center gap-1.5">
+                                <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: d.color }} />
                                 <span className="text-[10px] text-gray-600 truncate">{d.name}</span>
-                                <span className="text-[10px] font-semibold text-gray-900 ml-auto pl-1">{d.pct}%</span>
+                                <span className="text-[10px] font-semibold text-gray-900 ml-auto">{d.value}</span>
                               </div>
                             ))}
                           </div>
@@ -1945,29 +1925,29 @@ function TrainerDashboardInner() {
                       </div>
                     )}
 
-                    {/* ── Round cards grid ──────────────────────────────────── */}
-                    <div className="flex-1 grid grid-cols-2 gap-2">
+                    {/* ── Round cards list (vertical, compact) ──────────────────────────────────── */}
+                    <div className="space-y-1.5">
                       {roomsWithAssignments.map((room) => {
                         const isEmpty = room.assignments.length === 0;
                         const isFull = room.assignments.length >= 2;
                         return (
                           <div
                             key={room.id}
-                            className={`rounded-xl border bg-white overflow-hidden transition-shadow hover:shadow-md ${
-                              isEmpty ? 'border-red-100 bg-red-50/30' : isFull ? 'border-green-100' : 'border-amber-100'
+                            className={`rounded-lg border bg-white overflow-hidden transition-shadow hover:shadow-sm ${
+                              isEmpty ? 'border-red-200 bg-red-50/20' : isFull ? 'border-green-200 bg-green-50/20' : 'border-amber-200 bg-amber-50/20'
                             }`}
                           >
-                            {/* Card header */}
-                            <div className={`flex items-center justify-between px-3 py-2 border-b ${
-                              isEmpty ? 'border-red-100 bg-red-50/40' : isFull ? 'border-green-100 bg-green-50/40' : 'border-amber-100 bg-amber-50/40'
+                            {/* Header: round number + status + add button */}
+                            <div className={`flex items-center justify-between px-3 py-1.5 border-b text-xs ${
+                              isEmpty ? 'border-red-200 bg-red-50/40' : isFull ? 'border-green-200 bg-green-50/40' : 'border-amber-200 bg-amber-50/40'
                             }`}>
-                              <div className="flex items-center gap-2">
-                                <span className={`flex items-center justify-center w-5 h-5 rounded-full text-[10px] font-bold ${
+                              <div className="flex items-center gap-2 min-w-0">
+                                <span className={`flex items-center justify-center w-5 h-5 rounded-full text-[10px] font-bold shrink-0 ${
                                   isEmpty ? 'bg-gray-300 text-gray-600' : isFull ? 'bg-green-600 text-white' : 'bg-amber-500 text-white'
                                 }`}>{room.number}</span>
-                                <span className="text-xs font-semibold text-gray-700">Round {room.number}</span>
+                                <span className="font-semibold text-gray-700 truncate">Round {room.number}</span>
                               </div>
-                              <div className="flex items-center gap-1">
+                              <div className="flex items-center gap-1.5 shrink-0">
                                 <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${
                                   isEmpty ? 'bg-red-100 text-red-600' : isFull ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'
                                 }`}>
@@ -1976,7 +1956,7 @@ function TrainerDashboardInner() {
                                 {!isFull && (
                                   <button
                                     onClick={() => handleAssignVideo(null, room.id)}
-                                    className="w-5 h-5 rounded-full flex items-center justify-center text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
+                                    className="w-4 h-4 rounded flex items-center justify-center text-gray-400 hover:text-gray-600 hover:bg-gray-200 transition-colors"
                                     title="Add video"
                                   >
                                     <Plus className="h-3 w-3" />
@@ -1985,16 +1965,16 @@ function TrainerDashboardInner() {
                               </div>
                             </div>
 
-                            {/* Video rows */}
+                            {/* Videos inline or empty state */}
                             {isEmpty ? (
                               <button
                                 onClick={() => handleAssignVideo(null, room.id)}
-                                className="w-full py-3 text-xs text-gray-400 hover:text-gray-600 hover:bg-gray-50/50 transition-colors text-center"
+                                className="w-full py-2 text-xs text-gray-400 hover:text-gray-600 hover:bg-gray-50/50 transition-colors"
                               >
                                 + assign video
                               </button>
                             ) : (
-                              <div className="divide-y divide-gray-100">
+                              <div className="divide-y divide-gray-100 text-xs">
                                 {room.assignments.map((assignment, idx) => {
                                   const videoEquipmentOptions = assignment.video.equipment.split(',').map((e: string) => e.trim()).filter((e: string) => e);
                                   const allEquipmentOptions = videoOptions?.equipment || [];
@@ -2069,6 +2049,17 @@ function TrainerDashboardInner() {
                                         }}
                                         className="w-16 h-6 text-[11px] px-1.5 text-center shrink-0 border-gray-200"
                                       />
+                                      {/* Last used */}
+                                      {assignment.video.lastUsed && (
+                                        <span className="text-[10px] text-gray-500 shrink-0 whitespace-nowrap">
+                                          Last: {(() => {
+                                            const diffMs = Date.now() - new Date(assignment.video.lastUsed).getTime();
+                                            const diffDays = Math.floor(diffMs / (24 * 60 * 60 * 1000));
+                                            const diffWeeks = Math.floor(diffDays / 7);
+                                            return diffWeeks > 0 ? `${diffWeeks}w` : diffDays > 0 ? `${diffDays}d` : 'today';
+                                          })()}
+                                        </span>
+                                      )}
                                       {/* Equipment select */}
                                       <SearchableSelect
                                         options={allEquipmentOptions}
