@@ -2014,7 +2014,7 @@ function TrainerDashboardInner() {
                                   if (scheduleId && sourceRoomId !== room.id) {
                                     console.log('[v0] Dropping exercise to empty round...');
                                     try {
-                                      await apiRequest('PATCH', `/api/schedules/${scheduleId}`, { room_id: room.id });
+                                      await apiRequest('PATCH', `/api/schedules/${scheduleId}`, { roomId: room.id });
                                       console.log('[v0] Drop API call succeeded');
                                       queryClient.setQueryData(["/api/schedules", "date", currentDate], (oldData: any) => {
                                         if (!oldData) return oldData;
@@ -2046,7 +2046,7 @@ function TrainerDashboardInner() {
                                   if (scheduleId && sourceRoomId !== room.id) {
                                     console.log('[v0] Dropping exercise to new round...');
                                     try {
-                                      await apiRequest('PATCH', `/api/schedules/${scheduleId}`, { room_id: room.id });
+                                      await apiRequest('PATCH', `/api/schedules/${scheduleId}`, { roomId: room.id });
                                       console.log('[v0] Drop API call succeeded');
                                       queryClient.setQueryData(["/api/schedules", "date", currentDate], (oldData: any) => {
                                         if (!oldData) return oldData;
