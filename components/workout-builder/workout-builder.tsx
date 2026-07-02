@@ -277,18 +277,43 @@ function ProgrammeDashboard({ days }: { days: WorkoutDraft[] }) {
             </div>
           </div>
 
-          {/* Category distribution */}
+          {/* Category distribution as stacked horizontal bar */}
           {topCats.length > 0 && (
-            <div>
-              <p className="mb-2 text-xs font-medium text-muted-foreground uppercase tracking-wide">Categories</p>
-              <div className="space-y-1">
-                {topCats.map(([cat, count]) => (
-                  <div key={cat} className="flex items-center justify-between text-xs">
-                    <span className="truncate text-foreground/80">{cat}</span>
-                    <Badge variant="secondary" className="ml-1 shrink-0 text-xs h-4 px-1.5">{count}</Badge>
+            <div className="sm:col-span-2">
+              <p className="mb-3 text-xs font-medium text-muted-foreground uppercase tracking-wide">Category Breakdown</p>
+              {(() => {
+                const total = topCats.reduce((sum, [, count]) => sum + count, 0);
+                const colors = ["bg-red-500", "bg-orange-500", "bg-yellow-500", "bg-green-500", "bg-blue-500", "bg-purple-500"];
+                
+                return (
+                  <div className="space-y-2">
+                    {/* Stacked bar */}
+                    <div className="flex items-center h-8 rounded-sm overflow-hidden bg-muted border border-border">
+                      {topCats.map(([cat, count], idx) => {
+                        const pct = (count / total) * 100;
+                        return (
+                          <div
+                            key={cat}
+                            className={`h-full ${colors[idx % colors.length]} hover:opacity-80 transition-opacity cursor-default`}
+                            style={{ width: `${pct}%` }}
+                            title={`${cat}: ${count}`}
+                          />
+                        );
+                      })}
+                    </div>
+                    {/* Legend with rounds */}
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      {topCats.map(([cat, count], idx) => (
+                        <div key={cat} className="flex items-center gap-1.5">
+                          <span className={`h-2 w-2 rounded-full shrink-0 ${colors[idx % colors.length]}`} />
+                          <span className="truncate text-foreground/70">{cat}</span>
+                          <span className="font-semibold text-foreground ml-auto">{count}</span>
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                ))}
-              </div>
+                );
+              })()}
             </div>
           )}
 
@@ -1137,14 +1162,24 @@ function DayWorkout({
                           <Badge variant="outline" className="text-xs text-green-700">glove-friendly</Badge>
                         )}
                       </div>
-                      <div className="mt-0.5 flex items-center gap-2 flex-wrap">
-                        <span className="text-xs text-muted-foreground">
+                      <div className="mt-0.5 flex items-center gap-2 flex-wrap text-xs text-muted-foreground">
+                        <span>
                           {ex.video.bodyPart} &middot; {ex.video.equipment}
                         </span>
                         {ex.reps && (
                           <Badge variant="outline" className="h-4 px-1.5 text-xs font-semibold">
                             {ex.reps}
                           </Badge>
+                        )}
+                        {ex.video.lastUsed && (
+                          <span className="text-muted-foreground">
+                            Last: {(() => {
+                              const diffMs = Date.now() - new Date(ex.video.lastUsed).getTime();
+                              const diffDays = Math.floor(diffMs / (24 * 60 * 60 * 1000));
+                              const diffWeeks = Math.floor(diffDays / 7);
+                              return diffWeeks > 0 ? `${diffWeeks}w ago` : diffDays > 0 ? `${diffDays}d ago` : "today";
+                            })()}
+                          </span>
                         )}
                       </div>
                     </div>
