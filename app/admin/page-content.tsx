@@ -1495,24 +1495,41 @@ function TrainerDashboardInner() {
                               </div>
                             </td>
 
-                            {/* Category chips */}
-                            <td className="p-2">
-                              <div className="flex flex-wrap gap-0.5">
-                                {deriveCategories(video.bodyPart, video.equipment).map((cat, i) => (
-                                  <span
-                                    key={i}
-                                    className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
-                                      cat === "HIIT"
-                                        ? "bg-red-50 text-red-700"
-                                        : cat === "Missing"
-                                        ? "bg-gray-100 text-gray-500"
-                                        : "bg-blue-50 text-blue-700"
-                                    }`}
-                                  >
-                                    {cat}
-                                  </span>
-                                ))}
-                              </div>
+                            {/* Category chips — inline editable */}
+                            <td className="p-2 w-24">
+                              {inlineEditingField?.videoId === video.id && inlineEditingField?.field === "category" ? (
+                                <SearchableSelect
+                                  options={dynamicCategories}
+                                  value={video.bodyPart || ""}
+                                  placeholder="Select category..."
+                                  onValueChange={(value) => {
+                                    updateVideoInlineMutation.mutate({ videoId: video.id, field: "bodyPart", value });
+                                    setInlineEditingField(null);
+                                  }}
+                                  className="h-7 text-[10px] w-full"
+                                />
+                              ) : (
+                                <button
+                                  onClick={() => setInlineEditingField({ videoId: video.id, field: "category" })}
+                                  className="flex flex-wrap gap-0.5 hover:opacity-80 transition-opacity w-full"
+                                  title="Click to edit"
+                                >
+                                  {deriveCategories(video.bodyPart, video.equipment).map((cat, i) => (
+                                    <span
+                                      key={i}
+                                      className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
+                                        cat === "HIIT"
+                                          ? "bg-red-50 text-red-700"
+                                          : cat === "Missing"
+                                          ? "bg-gray-100 text-gray-500"
+                                          : "bg-blue-50 text-blue-700"
+                                      }`}
+                                    >
+                                      {cat}
+                                    </span>
+                                  ))}
+                                </button>
+                              )}
                             </td>
 
                             {/* Category + Muscle Groups */}
