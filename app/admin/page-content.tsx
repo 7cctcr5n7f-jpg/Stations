@@ -1956,7 +1956,7 @@ function TrainerDashboardInner() {
                       </div>
                     )}
 
-                    {/* ── Round cards list (vertical, ultra-compact) ─────────────��────────────────────── */}
+                    {/* ── Round cards list (vertical, ultra-compact) ─────────────����────────────────────── */}
                     <div className="space-y-1">
                       {roomsWithAssignments.map((room) => {
                         const isEmpty = room.assignments.length === 0;
@@ -2004,7 +2004,7 @@ function TrainerDashboardInner() {
                                 onDrop={async (e) => {
                                   e.preventDefault();
                                   e.currentTarget.classList.remove('bg-blue-50');
-                                  const sourceRoomId = e.dataTransfer.getData('sourceRoomId');
+                                  const sourceRoomId = parseInt(e.dataTransfer.getData('sourceRoomId'), 10);
                                   const scheduleId = e.dataTransfer.getData('scheduleId');
                                   if (scheduleId && sourceRoomId !== room.id) {
                                     try {
@@ -2027,7 +2027,7 @@ function TrainerDashboardInner() {
                                 onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; }}
                                 onDrop={async (e) => {
                                   e.preventDefault();
-                                  const sourceRoomId = e.dataTransfer.getData('sourceRoomId');
+                                  const sourceRoomId = parseInt(e.dataTransfer.getData('sourceRoomId'), 10);
                                   const scheduleId = e.dataTransfer.getData('scheduleId');
                                   if (scheduleId && sourceRoomId !== room.id) {
                                     try {
@@ -2054,8 +2054,8 @@ function TrainerDashboardInner() {
                                       onDragStart={(e) => { 
                                         setDraggedSchedule(assignment); 
                                         e.dataTransfer.effectAllowed = 'move';
-                                        e.dataTransfer.setData('scheduleId', assignment.id);
-                                        e.dataTransfer.setData('sourceRoomId', room.id);
+                                        e.dataTransfer.setData('scheduleId', String(assignment.id));
+                                        e.dataTransfer.setData('sourceRoomId', String(room.id));
                                       }}
                                       onDragEnd={() => setDraggedSchedule(null)}
                                     >
