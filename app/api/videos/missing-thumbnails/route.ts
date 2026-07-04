@@ -12,21 +12,28 @@ export const dynamic = "force-dynamic"
  */
 export async function GET() {
   try {
-    // First, clear all invalid thumbnail URLs (old /uploads/ paths and non-http URLs)
-    // This ensures they'll be regenerated properly
-    const clearResult = await sql`
-      UPDATE videos
-      SET thumbnail_url = NULL
-      WHERE thumbnail_url IS NOT NULL 
-        AND thumbnail_url != ''
-        AND (
-          thumbnail_url LIKE '/uploads/%'
-          OR NOT (thumbnail_url LIKE 'http://%' OR thumbnail_url LIKE 'https://%')
-        )
+    // Step 1: Get all videos with any kind of thumbnail_url set
+    const allWithThumbs = await sql`
+      SELECT id, thumbnail_url FROM videos
+      WHERE thumbnail_url IS NOT NULL AND thumbnail_url != ''
     `
-    console.log(`[missing-thumbnails] Cleared ${clearResult.rowCount || 0} invalid thumbnail URLs`);
+    
+    // Step 2: Filter to find which ones are invalid (don't start with http)
+    const invalidIds = allWithThumbs
+      .filter((v: any) => !v.thumbnail_url.startsWith('http://') && !v.thumbnail_url.startsWith('https://'))
+      .map((v: any) => v.id);
+    
+    // Step 3: Clear invalid thumbnail URLs
+    if (invalidIds.length > 0) {
+      await sql`
+        UPDATE videos
+        SET thumbnail_url = NULL
+        WHERE id = ANY(${invalidIds})
+      `
+      console.log(`[missing-thumbnails] Cleared ${invalidIds.length} invalid thumbnail URLs`);
+    }
 
-    // Now get all videos that need thumbnails (NULL or empty)
+    // Step 4: Get all videos that need thumbnails (NULL or empty)
     const rows = await sql`
       SELECT id FROM videos
       WHERE thumbnail_url IS NULL OR thumbnail_url = ''
