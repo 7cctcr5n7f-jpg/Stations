@@ -14,10 +14,13 @@ export async function GET() {
   try {
     const rows = await sql`
       SELECT id FROM videos
-      WHERE thumbnail_url IS NULL OR thumbnail_url = ''
+      WHERE thumbnail_url IS NULL 
+         OR thumbnail_url = '' 
+         OR thumbnail_url LIKE '/uploads/%'
+         OR thumbnail_url NOT LIKE 'http%'
       ORDER BY id ASC
     `
-    console.log(`[missing-thumbnails] Found ${rows.length} videos without thumbnails`);
+    console.log(`[missing-thumbnails] Found ${rows.length} videos without valid thumbnails`);
     return NextResponse.json({ ids: rows.map((r: any) => r.id), count: rows.length })
   } catch (error) {
     console.error("[missing-thumbnails] error:", error)

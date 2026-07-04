@@ -49,6 +49,12 @@ export async function POST(
       return NextResponse.json({ error: "Video has no URL" }, { status: 400 })
     }
 
+    // Skip if URL is invalid (e.g. old /uploads/ paths that no longer exist)
+    if (!videoUrl.startsWith('http://') && !videoUrl.startsWith('https://')) {
+      console.warn(`[thumbnail/generate] Skipping invalid URL for video ${videoId}: ${videoUrl}`)
+      return NextResponse.json({ error: "Video URL is invalid (not a valid http URL)" }, { status: 400 })
+    }
+
     // Pass the remote URL directly to ffmpeg with -ss before -i so it seeks
     // via HTTP range requests rather than downloading the whole file first.
     // -vframes 1 grabs exactly one frame and exits immediately.

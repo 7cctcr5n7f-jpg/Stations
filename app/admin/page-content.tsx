@@ -798,16 +798,12 @@ function TrainerDashboardInner() {
       if (countRes.ok) {
         const json = await countRes.json();
         missingIds = json.ids ?? [];
-        console.log("[v0] Received", missingIds.length, "videos from API");
       }
-    } catch (err) {
-      console.error("[v0] Error fetching missing thumbnails:", err);
-    }
+    } catch {}
 
     // Fallback: derive from the in-memory SWR cache
     if (missingIds.length === 0) {
       missingIds = (videos ?? []).filter((v) => !v.thumbnailUrl).map((v) => v.id);
-      console.log("[v0] Using fallback: found", missingIds.length, "from cache");
     }
 
     if (missingIds.length === 0) {
@@ -816,7 +812,6 @@ function TrainerDashboardInner() {
     }
 
     const total = missingIds.length;
-    console.log("[v0] Starting thumbnail generation for", total, "videos");
     setThumbProgress({ running: true, processed: 0, total });
     toast({ title: "Generating thumbnails", description: `Processing ${total} videos...` });
 
@@ -825,7 +820,6 @@ function TrainerDashboardInner() {
     const CONCURRENCY = 3;
     for (let i = 0; i < missingIds.length; i += CONCURRENCY) {
       const chunk = missingIds.slice(i, i + CONCURRENCY);
-      console.log("[v0] Processing chunk:", i, "to", i + CONCURRENCY, "chunk size:", chunk.length);
       await Promise.all(
         chunk.map(async (videoId) => {
           try {
@@ -846,7 +840,6 @@ function TrainerDashboardInner() {
       queryClient.invalidateQueries({ queryKey: ["/api/videos"] });
     }
 
-    console.log("[v0] Thumbnail generation complete. Processed:", processed, "Total:", total);
     queryClient.invalidateQueries({ queryKey: ["/api/videos"] });
     setThumbProgress({ running: false, processed: total, total });
     toast({ title: "Thumbnails complete", description: `Generated ${processed} thumbnails.` });
