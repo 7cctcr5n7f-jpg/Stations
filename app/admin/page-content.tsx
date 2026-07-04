@@ -2002,7 +2002,6 @@ function TrainerDashboardInner() {
                                 onDragOver={(e) => { 
                                   e.preventDefault(); 
                                   e.currentTarget.classList.add('bg-blue-50');
-                                  console.log('[v0] Dragover on empty round');
                                 }}
                                 onDragLeave={(e) => { e.currentTarget.classList.remove('bg-blue-50'); }}
                                 onDrop={async (e) => {
@@ -2010,19 +2009,14 @@ function TrainerDashboardInner() {
                                   e.currentTarget.classList.remove('bg-blue-50');
                                   const sourceRoomId = parseInt(e.dataTransfer.getData('sourceRoomId'), 10);
                                   const scheduleId = e.dataTransfer.getData('scheduleId');
-                                  console.log('[v0] Drop on empty round:', { scheduleId, sourceRoomId, targetRoomId: room.id, isSameRoom: sourceRoomId === room.id });
                                   if (scheduleId && sourceRoomId !== room.id) {
-                                    console.log('[v0] Dropping exercise to empty round...');
                                     try {
                                       await apiRequest('PATCH', `/api/schedules/${scheduleId}`, { roomId: room.id });
-                                      console.log('[v0] Drop API call succeeded');
                                       queryClient.setQueryData(["/api/schedules", "date", currentDate], (oldData: any) => {
                                         if (!oldData) return oldData;
                                         return oldData.map((s: any) => s.id === scheduleId ? { ...s, room_id: room.id } : s);
                                       });
                                     } catch (err) { console.error('[v0] Drop failed:', err); }
-                                  } else {
-                                    console.log('[v0] Drop rejected - same room or missing data');
                                   }
                                 }}
                                 onClick={() => handleAssignVideo(null, room.id)}
@@ -2036,25 +2030,19 @@ function TrainerDashboardInner() {
                                 onDragOver={(e) => { 
                                   e.preventDefault(); 
                                   e.dataTransfer.dropEffect = 'move';
-                                  console.log('[v0] Dragover on non-empty round');
                                 }}
                                 onDrop={async (e) => {
                                   e.preventDefault();
                                   const sourceRoomId = parseInt(e.dataTransfer.getData('sourceRoomId'), 10);
                                   const scheduleId = e.dataTransfer.getData('scheduleId');
-                                  console.log('[v0] Drop on non-empty round:', { scheduleId, sourceRoomId, targetRoomId: room.id, isSameRoom: sourceRoomId === room.id });
                                   if (scheduleId && sourceRoomId !== room.id) {
-                                    console.log('[v0] Dropping exercise to new round...');
                                     try {
                                       await apiRequest('PATCH', `/api/schedules/${scheduleId}`, { roomId: room.id });
-                                      console.log('[v0] Drop API call succeeded');
                                       queryClient.setQueryData(["/api/schedules", "date", currentDate], (oldData: any) => {
                                         if (!oldData) return oldData;
                                         return oldData.map((s: any) => s.id === scheduleId ? { ...s, room_id: room.id } : s);
                                       });
                                     } catch (err) { console.error('[v0] Drop failed:', err); }
-                                  } else {
-                                    console.log('[v0] Drop rejected - same room or missing data');
                                   }
                                 }}
                               >
@@ -2070,7 +2058,6 @@ function TrainerDashboardInner() {
                                       className={`flex items-center gap-1.5 px-2 py-1 group ${draggedSchedule?.id === assignment.id ? 'opacity-40' : ''}`}
                                       draggable
                                       onDragStart={(e) => { 
-                                        console.log('[v0] Drag start:', { scheduleId: assignment.id, sourceRoomId: room.id, roomNumber: room.number });
                                         setDraggedSchedule(assignment); 
                                         e.dataTransfer.effectAllowed = 'move';
                                         e.dataTransfer.setData('scheduleId', String(assignment.id));
