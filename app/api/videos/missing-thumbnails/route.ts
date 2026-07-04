@@ -12,15 +12,26 @@ export const dynamic = "force-dynamic"
  */
 export async function GET() {
   try {
+    // First, clear all invalid thumbnail URLs (old /uploads/ paths and non-http URLs)
+    // This ensures they'll be regenerated properly
+    await sql`
+      UPDATE videos
+      SET thumbnail_url = NULL
+      WHERE thumbnail_url IS NOT NULL 
+        AND thumbnail_url != ''
+        AND (
+          thumbnail_url LIKE '/uploads/%'
+          OR thumbnail_url NOT LIKE 'http%'
+        )
+    `
+
+    // Now get all videos that need thumbnails (NULL or empty)
     const rows = await sql`
       SELECT id FROM videos
-      WHERE thumbnail_url IS NULL 
-         OR thumbnail_url = '' 
-         OR thumbnail_url LIKE '/uploads/%'
-         OR thumbnail_url NOT LIKE 'http%'
+      WHERE thumbnail_url IS NULL OR thumbnail_url = ''
       ORDER BY id ASC
     `
-    console.log(`[missing-thumbnails] Found ${rows.length} videos without valid thumbnails`);
+    console.log(`[missing-thumbnails] Found ${rows.length} videos without thumbnails (cleared invalid URLs)`);
     return NextResponse.json({ ids: rows.map((r: any) => r.id), count: rows.length })
   } catch (error) {
     console.error("[missing-thumbnails] error:", error)
