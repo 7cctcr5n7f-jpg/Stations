@@ -17,6 +17,7 @@ export async function GET() {
       WHERE thumbnail_url IS NULL OR thumbnail_url = ''
       ORDER BY id ASC
     `
+    console.log(`[missing-thumbnails] Found ${rows.length} videos without thumbnails`);
     return NextResponse.json({ ids: rows.map((r: any) => r.id), count: rows.length })
   } catch (error) {
     console.error("[missing-thumbnails] error:", error)
