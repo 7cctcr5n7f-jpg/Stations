@@ -2008,23 +2008,15 @@ function TrainerDashboardInner() {
                                   e.preventDefault();
                                   e.currentTarget.classList.remove('bg-blue-50');
                                   const sourceRoomId = parseInt(e.dataTransfer.getData('sourceRoomId'), 10);
-                                  const scheduleId = e.dataTransfer.getData('scheduleId');
-                                  console.log('[v0] DROP on empty - scheduleId:', scheduleId, 'sourceRoomId:', sourceRoomId, 'targetRoomId:', room.id, 'currentDate:', currentDate);
+                                  const scheduleId = parseInt(e.dataTransfer.getData('scheduleId'), 10);
                                   if (scheduleId && sourceRoomId !== room.id) {
                                     try {
-                                      console.log('[v0] Calling PATCH with roomId:', room.id);
-                                      const result = await apiRequest('PATCH', `/api/schedules/${scheduleId}`, { roomId: room.id });
-                                      console.log('[v0] PATCH response:', result);
+                                      await apiRequest('PATCH', `/api/schedules/${scheduleId}`, { roomId: room.id });
                                       queryClient.setQueryData(["/api/schedules", "date", currentDate], (oldData: any) => {
-                                        console.log('[v0] Old data before update:', oldData);
                                         if (!oldData) return oldData;
-                                        const newData = oldData.map((s: any) => s.id === scheduleId ? { ...s, room_id: room.id } : s);
-                                        console.log('[v0] New data after update:', newData);
-                                        return newData;
+                                        return oldData.map((s: any) => Number(s.id) === scheduleId ? { ...s, roomId: room.id, room_id: room.id } : s);
                                       });
                                     } catch (err) { console.error('[v0] Drop failed:', err); }
-                                  } else {
-                                    console.log('[v0] Drop rejected - same room or missing data');
                                   }
                                 }}
                                 onClick={() => handleAssignVideo(null, room.id)}
@@ -2042,23 +2034,15 @@ function TrainerDashboardInner() {
                                 onDrop={async (e) => {
                                   e.preventDefault();
                                   const sourceRoomId = parseInt(e.dataTransfer.getData('sourceRoomId'), 10);
-                                  const scheduleId = e.dataTransfer.getData('scheduleId');
-                                  console.log('[v0] DROP on non-empty - scheduleId:', scheduleId, 'sourceRoomId:', sourceRoomId, 'targetRoomId:', room.id, 'currentDate:', currentDate);
+                                  const scheduleId = parseInt(e.dataTransfer.getData('scheduleId'), 10);
                                   if (scheduleId && sourceRoomId !== room.id) {
                                     try {
-                                      console.log('[v0] Calling PATCH with roomId:', room.id);
-                                      const result = await apiRequest('PATCH', `/api/schedules/${scheduleId}`, { roomId: room.id });
-                                      console.log('[v0] PATCH response:', result);
+                                      await apiRequest('PATCH', `/api/schedules/${scheduleId}`, { roomId: room.id });
                                       queryClient.setQueryData(["/api/schedules", "date", currentDate], (oldData: any) => {
-                                        console.log('[v0] Old data before update:', oldData);
                                         if (!oldData) return oldData;
-                                        const newData = oldData.map((s: any) => s.id === scheduleId ? { ...s, room_id: room.id } : s);
-                                        console.log('[v0] New data after update:', newData);
-                                        return newData;
+                                        return oldData.map((s: any) => Number(s.id) === scheduleId ? { ...s, roomId: room.id, room_id: room.id } : s);
                                       });
                                     } catch (err) { console.error('[v0] Drop failed:', err); }
-                                  } else {
-                                    console.log('[v0] Drop rejected - same room or missing data');
                                   }
                                 }}
                               >
@@ -2074,7 +2058,6 @@ function TrainerDashboardInner() {
                                       className={`flex items-center gap-1.5 px-2 py-1 group ${draggedSchedule?.id === assignment.id ? 'opacity-40' : ''}`}
                                       draggable
                                       onDragStart={(e) => { 
-                                        console.log('[v0] DRAG START - assignment.id:', assignment.id, 'room.id:', room.id, 'video:', assignment.video.title);
                                         setDraggedSchedule(assignment); 
                                         e.dataTransfer.effectAllowed = 'move';
                                         e.dataTransfer.setData('scheduleId', String(assignment.id));
