@@ -14,16 +14,17 @@ export async function GET() {
   try {
     // First, clear all invalid thumbnail URLs (old /uploads/ paths and non-http URLs)
     // This ensures they'll be regenerated properly
-    await sql`
+    const clearResult = await sql`
       UPDATE videos
       SET thumbnail_url = NULL
       WHERE thumbnail_url IS NOT NULL 
         AND thumbnail_url != ''
         AND (
           thumbnail_url LIKE '/uploads/%'
-          OR thumbnail_url NOT LIKE 'http%'
+          OR NOT (thumbnail_url LIKE 'http://%' OR thumbnail_url LIKE 'https://%')
         )
     `
+    console.log(`[missing-thumbnails] Cleared ${clearResult.rowCount || 0} invalid thumbnail URLs`);
 
     // Now get all videos that need thumbnails (NULL or empty)
     const rows = await sql`
@@ -31,7 +32,7 @@ export async function GET() {
       WHERE thumbnail_url IS NULL OR thumbnail_url = ''
       ORDER BY id ASC
     `
-    console.log(`[missing-thumbnails] Found ${rows.length} videos without thumbnails (cleared invalid URLs)`);
+    console.log(`[missing-thumbnails] Found ${rows.length} videos needing thumbnails`);
     return NextResponse.json({ ids: rows.map((r: any) => r.id), count: rows.length })
   } catch (error) {
     console.error("[missing-thumbnails] error:", error)
