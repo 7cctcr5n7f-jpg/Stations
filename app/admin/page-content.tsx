@@ -1193,6 +1193,23 @@ function TrainerDashboardInner() {
                         : "Generate Thumbnails"}
                     </Button>
 
+                    <Button
+                      onClick={async () => {
+                        try {
+                          const res = await fetch('/api/videos/reset-thumbnails', { method: 'POST' });
+                          const data = await res.json();
+                          toast({ title: "Thumbnails Reset", description: data.message });
+                          queryClient.invalidateQueries({ queryKey: ["/api/videos"] });
+                        } catch (err) {
+                          toast({ title: "Error", description: "Failed to reset thumbnails" });
+                        }
+                      }}
+                      variant="outline"
+                      className="text-amber-600 hover:text-amber-700"
+                    >
+                      Reset Thumbnails
+                    </Button>
+
                     <Button 
                       onClick={() => setIsSimpleBulkUploadModalOpen(true)}
                       className="bg-green-600 hover:bg-green-700"
@@ -1495,24 +1512,53 @@ function TrainerDashboardInner() {
                               </div>
                             </td>
 
-                            {/* Category chips */}
-                            <td className="p-2">
-                              <div className="flex flex-wrap gap-0.5">
-                                {deriveCategories(video.bodyPart, video.equipment).map((cat, i) => (
-                                  <span
-                                    key={i}
-                                    className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
-                                      cat === "HIIT"
-                                        ? "bg-red-50 text-red-700"
-                                        : cat === "Missing"
-                                        ? "bg-gray-100 text-gray-500"
-                                        : "bg-blue-50 text-blue-700"
-                                    }`}
-                                  >
-                                    {cat}
-                                  </span>
-                                ))}
-                              </div>
+                            {/* Category chips — inline editable */}
+                            <td className="p-2 w-24">
+                              {inlineEditingField?.videoId === video.id && inlineEditingField?.field === "category" ? (
+                                <SearchableSelect
+                                  options={dynamicCategories}
+                                  value={deriveCategories(video.bodyPart, video.equipment)[0] || ""}
+                                  placeholder="Select category..."
+                                  onValueChange={(categoryValue) => {
+                                    // Map category label back to bodyPart value
+                                    const categoryMap: Record<string, string> = {
+                                      'Legs': 'Legs',
+                                      'Chest': 'Chest',
+                                      'Back': 'Back',
+                                      'Triceps': 'Triceps',
+                                      'Biceps': 'Biceps',
+                                      'Shoulders': 'Shoulders',
+                                      'Core': 'Core',
+                                      'HIIT': 'Cardio'
+                                    };
+                                    const bodyPartValue = categoryMap[categoryValue] || categoryValue;
+                                    updateVideoInlineMutation.mutate({ videoId: video.id, field: "bodyPart", value: bodyPartValue });
+                                    setInlineEditingField(null);
+                                  }}
+                                  className="h-7 text-[10px] w-full"
+                                />
+                              ) : (
+                                <button
+                                  onClick={() => setInlineEditingField({ videoId: video.id, field: "category" })}
+                                  className="flex flex-wrap gap-0.5 hover:opacity-80 transition-opacity w-full"
+                                  title="Click to edit"
+                                >
+                                  {deriveCategories(video.bodyPart, video.equipment).map((cat, i) => (
+                                    <span
+                                      key={i}
+                                      className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
+                                        cat === "HIIT"
+                                          ? "bg-red-50 text-red-700"
+                                          : cat === "Missing"
+                                          ? "bg-gray-100 text-gray-500"
+                                          : "bg-blue-50 text-blue-700"
+                                      }`}
+                                    >
+                                      {cat}
+                                    </span>
+                                  ))}
+                                </button>
+                              )}
                             </td>
 
                             {/* Category + Muscle Groups */}
@@ -1891,83 +1937,65 @@ function TrainerDashboardInner() {
                     })}
                   </div>
 
-                  {/* Category donut + round grid */}
-                  <div className="flex gap-4 items-start">
-                    {/* Donut chart */}
+                  {/* Category breakdown stacked bar + rounds list */}
+                  <div className="w-full space-y-4">
+                    {/* Stacked bar chart */}
                     {donutData.length > 0 && (
-                      <div className="shrink-0 bg-white border border-gray-100 rounded-2xl p-4 shadow-sm w-[220px]">
-                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
-                          {new Date(currentDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} — Focus
+                      <div className="bg-white border border-gray-100 rounded-xl p-3 shadow-sm">
+                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
+                          {new Date(currentDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} — Category Breakdown
                         </p>
-                        <div className="flex items-center gap-3">
-                          {/* SVG donut */}
-                          <svg width="72" height="72" viewBox="0 0 72 72" className="shrink-0">
-                            {(() => {
-                              const r = 28; const cx = 36; const cy = 36;
-                              const circumference = 2 * Math.PI * r;
-                              let offset = 0;
-                              return donutData.map((d, i) => {
-                                const dash = (d.pct / 100) * circumference;
-                                const gap = circumference - dash;
-                                const el = (
-                                  <circle
-                                    key={d.name}
-                                    cx={cx} cy={cy} r={r}
-                                    fill="none"
-                                    stroke={d.color}
-                                    strokeWidth="12"
-                                    strokeDasharray={`${dash} ${gap}`}
-                                    strokeDashoffset={-offset}
-                                    transform="rotate(-90 36 36)"
-                                    className="transition-all duration-500"
-                                  />
-                                );
-                                offset += dash;
-                                return el;
-                              });
-                            })()}
-                            <circle cx="36" cy="36" r="22" fill="white" />
-                            <text x="36" y="40" textAnchor="middle" className="text-xs font-bold" style={{ fontSize: '11px', fontWeight: 700, fill: '#111' }}>
-                              {donutData[0]?.pct}%
-                            </text>
-                          </svg>
-                          {/* Legend */}
-                          <div className="flex flex-col gap-1 min-w-0">
-                            {donutData.map((d) => (
-                              <div key={d.name} className="flex items-center gap-1.5 min-w-0">
-                                <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: d.color }} />
-                                <span className="text-[10px] text-gray-600 truncate">{d.name}</span>
-                                <span className="text-[10px] font-semibold text-gray-900 ml-auto pl-1">{d.pct}%</span>
-                              </div>
-                            ))}
-                          </div>
+                        {/* Stacked horizontal bar with inline percentages */}
+                        <div className="flex items-center h-7 rounded-md overflow-hidden bg-gray-100 border border-gray-200 mb-2">
+                          {donutData.map((d) => (
+                            <div
+                              key={d.name}
+                              className="h-full hover:opacity-80 transition-opacity cursor-default flex items-center justify-center relative group"
+                              style={{ width: `${d.pct}%`, backgroundColor: d.color, minWidth: d.pct > 8 ? 'auto' : '0px' }}
+                              title={`${d.name}: ${d.pct}% (${d.value} videos)`}
+                            >
+                              {d.pct > 10 && (
+                                <span className="text-[9px] font-bold text-white drop-shadow-md">{d.pct}%</span>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                        {/* Legend with name, percentage, and count */}
+                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-1.5 text-[10px]">
+                          {donutData.map((d) => (
+                            <div key={d.name} className="flex items-center gap-1 p-1 rounded bg-gray-50 border border-gray-150">
+                              <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: d.color }} />
+                              <span className="text-gray-700 font-medium truncate flex-1">{d.name}</span>
+                              <span className="text-gray-600 font-semibold shrink-0">{d.pct}%</span>
+                            </div>
+                          ))}
                         </div>
                       </div>
                     )}
 
-                    {/* ── Round cards grid ──────────────────────────────────── */}
-                    <div className="flex-1 grid grid-cols-2 gap-2">
+                    {/* ── Round cards list (vertical, ultra-compact) ─────────────����────────────────────── */}
+                    <div className="space-y-1">
                       {roomsWithAssignments.map((room) => {
                         const isEmpty = room.assignments.length === 0;
                         const isFull = room.assignments.length >= 2;
                         return (
                           <div
                             key={room.id}
-                            className={`rounded-xl border bg-white overflow-hidden transition-shadow hover:shadow-md ${
-                              isEmpty ? 'border-red-100 bg-red-50/30' : isFull ? 'border-green-100' : 'border-amber-100'
+                            className={`rounded border bg-white overflow-hidden transition-shadow hover:shadow-sm ${
+                              isEmpty ? 'border-red-200 bg-red-50/20' : isFull ? 'border-green-200 bg-green-50/20' : 'border-amber-200 bg-amber-50/20'
                             }`}
                           >
-                            {/* Card header */}
-                            <div className={`flex items-center justify-between px-3 py-2 border-b ${
-                              isEmpty ? 'border-red-100 bg-red-50/40' : isFull ? 'border-green-100 bg-green-50/40' : 'border-amber-100 bg-amber-50/40'
+                            {/* Header: round number + status + add button */}
+                            <div className={`flex items-center justify-between px-2 py-1 border-b text-xs gap-2 ${
+                              isEmpty ? 'border-red-200 bg-red-50/40' : isFull ? 'border-green-200 bg-green-50/40' : 'border-amber-200 bg-amber-50/40'
                             }`}>
-                              <div className="flex items-center gap-2">
-                                <span className={`flex items-center justify-center w-5 h-5 rounded-full text-[10px] font-bold ${
+                              <div className="flex items-center gap-2 min-w-0">
+                                <span className={`flex items-center justify-center w-5 h-5 rounded-full text-[10px] font-bold shrink-0 ${
                                   isEmpty ? 'bg-gray-300 text-gray-600' : isFull ? 'bg-green-600 text-white' : 'bg-amber-500 text-white'
                                 }`}>{room.number}</span>
-                                <span className="text-xs font-semibold text-gray-700">Round {room.number}</span>
+                                <span className="font-semibold text-gray-700 truncate">Round {room.number}</span>
                               </div>
-                              <div className="flex items-center gap-1">
+                              <div className="flex items-center gap-1.5 shrink-0">
                                 <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${
                                   isEmpty ? 'bg-red-100 text-red-600' : isFull ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'
                                 }`}>
@@ -1976,7 +2004,7 @@ function TrainerDashboardInner() {
                                 {!isFull && (
                                   <button
                                     onClick={() => handleAssignVideo(null, room.id)}
-                                    className="w-5 h-5 rounded-full flex items-center justify-center text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
+                                    className="w-4 h-4 rounded flex items-center justify-center text-gray-400 hover:text-gray-600 hover:bg-gray-200 transition-colors"
                                     title="Add video"
                                   >
                                     <Plus className="h-3 w-3" />
@@ -1985,16 +2013,56 @@ function TrainerDashboardInner() {
                               </div>
                             </div>
 
-                            {/* Video rows */}
+                            {/* Videos inline or empty state - droppable zone */}
                             {isEmpty ? (
                               <button
+                                onDragOver={(e) => { 
+                                  e.preventDefault(); 
+                                  e.currentTarget.classList.add('bg-blue-50');
+                                }}
+                                onDragLeave={(e) => { e.currentTarget.classList.remove('bg-blue-50'); }}
+                                onDrop={async (e) => {
+                                  e.preventDefault();
+                                  e.currentTarget.classList.remove('bg-blue-50');
+                                  const sourceRoomId = parseInt(e.dataTransfer.getData('sourceRoomId'), 10);
+                                  const scheduleId = parseInt(e.dataTransfer.getData('scheduleId'), 10);
+                                  if (scheduleId && sourceRoomId !== room.id) {
+                                    try {
+                                      await apiRequest('PATCH', `/api/schedules/${scheduleId}`, { roomId: room.id });
+                                      queryClient.setQueryData(["/api/schedules", "date", currentDate], (oldData: any) => {
+                                        if (!oldData) return oldData;
+                                        return oldData.map((s: any) => Number(s.id) === scheduleId ? { ...s, roomId: room.id, room_id: room.id } : s);
+                                      });
+                                    } catch (err) { console.error('[v0] Drop failed:', err); }
+                                  }
+                                }}
                                 onClick={() => handleAssignVideo(null, room.id)}
-                                className="w-full py-3 text-xs text-gray-400 hover:text-gray-600 hover:bg-gray-50/50 transition-colors text-center"
+                                className="w-full py-2 text-xs text-gray-400 hover:text-gray-600 hover:bg-gray-50/50 transition-colors"
                               >
-                                + assign video
+                                + assign video or drop here
                               </button>
                             ) : (
-                              <div className="divide-y divide-gray-100">
+                              <div 
+                                className="divide-y divide-gray-200 text-[11px]"
+                                onDragOver={(e) => { 
+                                  e.preventDefault(); 
+                                  e.dataTransfer.dropEffect = 'move';
+                                }}
+                                onDrop={async (e) => {
+                                  e.preventDefault();
+                                  const sourceRoomId = parseInt(e.dataTransfer.getData('sourceRoomId'), 10);
+                                  const scheduleId = parseInt(e.dataTransfer.getData('scheduleId'), 10);
+                                  if (scheduleId && sourceRoomId !== room.id) {
+                                    try {
+                                      await apiRequest('PATCH', `/api/schedules/${scheduleId}`, { roomId: room.id });
+                                      queryClient.setQueryData(["/api/schedules", "date", currentDate], (oldData: any) => {
+                                        if (!oldData) return oldData;
+                                        return oldData.map((s: any) => Number(s.id) === scheduleId ? { ...s, roomId: room.id, room_id: room.id } : s);
+                                      });
+                                    } catch (err) { console.error('[v0] Drop failed:', err); }
+                                  }
+                                }}
+                              >
                                 {room.assignments.map((assignment, idx) => {
                                   const videoEquipmentOptions = assignment.video.equipment.split(',').map((e: string) => e.trim()).filter((e: string) => e);
                                   const allEquipmentOptions = videoOptions?.equipment || [];
@@ -2004,14 +2072,19 @@ function TrainerDashboardInner() {
                                   return (
                                     <div
                                       key={assignment.id}
-                                      className={`flex items-center gap-2 px-3 py-2 group ${draggedSchedule?.id === assignment.id ? 'opacity-40' : ''}`}
+                                      className={`flex items-center gap-1.5 px-2 py-1 group ${draggedSchedule?.id === assignment.id ? 'opacity-40' : ''}`}
                                       draggable
-                                      onDragStart={(e) => { setDraggedSchedule(assignment); e.dataTransfer.effectAllowed = 'move'; }}
+                                      onDragStart={(e) => { 
+                                        setDraggedSchedule(assignment); 
+                                        e.dataTransfer.effectAllowed = 'move';
+                                        e.dataTransfer.setData('scheduleId', String(assignment.id));
+                                        e.dataTransfer.setData('sourceRoomId', String(room.id));
+                                      }}
                                       onDragEnd={() => setDraggedSchedule(null)}
                                     >
-                                      <GripVertical className="h-3 w-3 text-gray-300 cursor-grab shrink-0" />
+                                      <GripVertical className="h-2.5 w-2.5 text-gray-300 cursor-grab shrink-0" />
                                       {/* Thumbnail */}
-                                      <div className="relative shrink-0 w-10 h-10 rounded-lg overflow-hidden bg-gray-100 border border-gray-200">
+                                      <div className="relative shrink-0 w-7 h-7 rounded overflow-hidden bg-gray-100 border border-gray-200">
                                         {assignment.video.thumbnailUrl ? (
                                           <img
                                             src={assignment.video.thumbnailUrl}
@@ -2025,7 +2098,7 @@ function TrainerDashboardInner() {
                                         )}
                                         {/* Intensity dot badge */}
                                         <span
-                                          className={`absolute bottom-0.5 right-0.5 w-2 h-2 rounded-full border border-white ${getIntensityStyle(assignment.video.intensity).dot}`}
+                                          className={`absolute bottom-0 right-0 w-1.5 h-1.5 rounded-full border border-white ${getIntensityStyle(assignment.video.intensity).dot}`}
                                           title={getIntensityStyle(assignment.video.intensity).label}
                                         />
                                       </div>
@@ -2033,7 +2106,7 @@ function TrainerDashboardInner() {
                                       <span className="text-xs font-medium text-gray-800 truncate flex-1 min-w-0" title={assignment.video.title}>
                                         {assignment.video.title}
                                       </span>
-                                      {/* Reps inline input */}
+                                      {/* Reps inline input - compact */}
                                       <Input
                                         type="text"
                                         value={repsVal}
@@ -2067,8 +2140,19 @@ function TrainerDashboardInner() {
                                             setScheduleChanges(prev => { const n = { ...prev }; delete n[assignment.id]; return n; });
                                           }
                                         }}
-                                        className="w-16 h-6 text-[11px] px-1.5 text-center shrink-0 border-gray-200"
+                                        className="w-12 h-5 text-[10px] px-1 text-center shrink-0 border-gray-200"
                                       />
+                                      {/* Last used */}
+                                      {assignment.video.lastUsed && (
+                                        <span className="text-[10px] text-gray-500 shrink-0 whitespace-nowrap">
+                                          Last: {(() => {
+                                            const diffMs = Date.now() - new Date(assignment.video.lastUsed).getTime();
+                                            const diffDays = Math.floor(diffMs / (24 * 60 * 60 * 1000));
+                                            const diffWeeks = Math.floor(diffDays / 7);
+                                            return diffWeeks > 0 ? `${diffWeeks}w` : diffDays > 0 ? `${diffDays}d` : 'today';
+                                          })()}
+                                        </span>
+                                      )}
                                       {/* Equipment select */}
                                       <SearchableSelect
                                         options={allEquipmentOptions}
