@@ -2236,14 +2236,14 @@ function TrainerDashboardInner() {
           <TabsContent value="liveview" className="space-y-6">
             <Card>
               <CardHeader>
-                <CardTitle className="flex items-center justify-between">
-                  <div className="flex items-center space-x-2">
-                    <Monitor className="h-5 w-5" />
-                    <span>Live Room Monitor</span>
+                <CardTitle className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <Monitor className="h-5 w-5 flex-shrink-0" />
+                    <span className="text-lg sm:text-xl">Live Room Monitor</span>
                   </div>
                   
-                  {/* Date Navigation */}
-                  <div className="flex items-center space-x-4">
+                  {/* Date Navigation - responsive layout */}
+                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
                     <Button
                       onClick={() => {
                         const currentDateObj = new Date(currentDate);
@@ -2252,11 +2252,13 @@ function TrainerDashboardInner() {
                       }}
                       variant="outline"
                       size="sm"
+                      className="text-xs sm:text-sm py-2"
                     >
-                      Previous Week
+                      <span className="hidden sm:inline">Previous Week</span>
+                      <span className="sm:hidden">Prev</span>
                     </Button>
                     
-                    <div className="flex space-x-2 overflow-x-auto">
+                    <div className="flex gap-1 sm:gap-2 overflow-x-auto flex-1">
                       {(() => {
                         const dates = [];
                         const startDate = new Date(currentDate);
@@ -2291,7 +2293,7 @@ function TrainerDashboardInner() {
                               onClick={() => setCurrentDate(dateString)}
                               variant={currentDate === dateString ? "default" : "outline"}
                               size="sm"
-                              className={`whitespace-nowrap min-w-[60px] ${
+                              className={`whitespace-nowrap min-w-[50px] sm:min-w-[60px] text-xs py-2 ${
                                 currentDate === dateString 
                                   ? isCompleteSchedule 
                                     ? "bg-green-600 hover:bg-green-700 text-white" 
@@ -2319,8 +2321,10 @@ function TrainerDashboardInner() {
                       }}
                       variant="outline"
                       size="sm"
+                      className="text-xs sm:text-sm py-2"
                     >
-                      Next Week
+                      <span className="hidden sm:inline">Next Week</span>
+                      <span className="sm:hidden">Next</span>
                     </Button>
                   </div>
                 </CardTitle>
@@ -2329,8 +2333,8 @@ function TrainerDashboardInner() {
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                {/* Live View Grid - 4x smaller than actual room displays (480x270 each) */}
-                <div className="flex flex-wrap gap-3 justify-start">
+                {/* Live View Grid - responsive card layout */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
                   {rooms?.slice(0, 10).map((room: Room) => {
                     const { colorClass } = getRoomColorClasses(room.number);
                     const roomSchedules = schedules
@@ -2339,22 +2343,19 @@ function TrainerDashboardInner() {
                     const roomZoom = liveViewZoom[room.id] || 1;
                     
                     return (
-                      <Card key={room.id} className="border-2" style={{ width: 'fit-content' }}>
-                        <CardHeader className="p-2">
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center space-x-2">
-                              <div className={`w-5 h-5 ${colorClass} rounded-full flex items-center justify-center`}>
-                                <span className="text-white text-xs font-bold">{room.number}</span>
-                              </div>
-                              <span className="text-xs font-medium">{room.name.split('(')[0].trim()}</span>
+                      <Card key={room.id} className="border-2 flex flex-col">
+                        <CardHeader className="p-2 flex-shrink-0">
+                          <div className="flex items-center gap-2">
+                            <div className={`w-5 h-5 ${colorClass} rounded-full flex items-center justify-center flex-shrink-0`}>
+                              <span className="text-white text-xs font-bold">{room.number}</span>
                             </div>
-
+                            <span className="text-xs font-medium truncate">{room.name.split('(')[0].trim()}</span>
                           </div>
                         </CardHeader>
-                        <CardContent className="p-1">
+                        <CardContent className="p-1 flex-1 flex flex-col">
                           {/* ── Live preview: exact 1/4-scale replica of the real room screen ── */}
-                          {/* Outer clip box: 480×270 = 1920×1080 ÷ 4                            */}
-                          <div className="relative overflow-hidden rounded border border-gray-200 mb-1" style={{ width: 480, height: 270 }}>
+                          {/* Responsive size: mobile 240x135, tablet/desktop 480x270          */}
+                          <div className="relative overflow-hidden rounded border border-gray-200 mb-1 flex-1" style={{ aspectRatio: '16/9', width: '100%', minHeight: '135px' }}>
                             {roomSchedules.length > 0 ? (() => {
                               const videoCount = Math.min(roomSchedules.length, 4);
 
@@ -2391,12 +2392,13 @@ function TrainerDashboardInner() {
                               };
 
                               return (
-                                // Inner full-resolution room canvas scaled down 4×
+                                // Inner full-resolution room canvas scaled responsively
                                 <div
                                   style={{
                                     width: 1920,
                                     height: 1080,
-                                    transform: 'scale(0.25)',
+                                    // Calculate scale to fit: mobile ~240px, tablet/desktop ~480px
+                                    transform: `scale(${window.innerWidth < 640 ? 0.125 : 0.25})`,
                                     transformOrigin: 'top left',
                                     pointerEvents: 'none', // controls are outside this box
                                   }}
@@ -2443,36 +2445,36 @@ function TrainerDashboardInner() {
 
                             {/* Zoom / position controls — overlaid on the clipped preview */}
                             {roomSchedules.length > 0 && (
-                              <div className="absolute bottom-2 right-2 flex flex-col gap-1 z-20">
+                              <div className="absolute bottom-1 right-1 sm:bottom-2 sm:right-2 flex flex-col gap-0.5 sm:gap-1 z-20">
                                 {roomSchedules.slice(0, 4).map((schedule: any) => {
                                   const videoZoom = liveViewVideoZoom[schedule.id] || parseFloat(schedule.zoomLevel || '1');
                                   const verticalPos = liveViewVerticalPosition[schedule.id] || parseFloat(schedule.verticalPosition || '0');
                                   return (
-                                    <div key={schedule.id} className="flex gap-1">
-                                      <Button size="sm" variant="outline" className="h-5 w-5 p-0 bg-white/90 text-[10px]"
+                                    <div key={schedule.id} className="flex gap-0.5 sm:gap-1">
+                                      <Button size="sm" variant="outline" className="h-6 w-6 sm:h-5 sm:w-5 p-0 bg-white/90 text-[10px]"
                                         onClick={async () => {
                                           const v = verticalPos - 10;
                                           setLiveViewVerticalPosition(p => ({ ...p, [schedule.id]: v }));
                                           try { await apiRequest('PATCH', `/api/schedules/${schedule.id}`, { verticalPosition: v.toString() }); } catch {}
-                                        }}><ChevronUp className="h-2.5 w-2.5" /></Button>
-                                      <Button size="sm" variant="outline" className="h-5 w-5 p-0 bg-white/90"
+                                        }}><ChevronUp className="h-3 w-3 sm:h-2.5 sm:w-2.5" /></Button>
+                                      <Button size="sm" variant="outline" className="h-6 w-6 sm:h-5 sm:w-5 p-0 bg-white/90"
                                         onClick={async () => {
                                           const v = verticalPos + 10;
                                           setLiveViewVerticalPosition(p => ({ ...p, [schedule.id]: v }));
                                           try { await apiRequest('PATCH', `/api/schedules/${schedule.id}`, { verticalPosition: v.toString() }); } catch {}
-                                        }}><ChevronDown className="h-2.5 w-2.5" /></Button>
-                                      <Button size="sm" variant="outline" className="h-5 w-5 p-0 bg-white/90"
+                                        }}><ChevronDown className="h-3 w-3 sm:h-2.5 sm:w-2.5" /></Button>
+                                      <Button size="sm" variant="outline" className="h-6 w-6 sm:h-5 sm:w-5 p-0 bg-white/90"
                                         onClick={async () => {
                                           const z = Math.max(videoZoom - 0.1, 0.5);
                                           setLiveViewVideoZoom(p => ({ ...p, [schedule.id]: z }));
                                           try { await apiRequest('PATCH', `/api/schedules/${schedule.id}`, { zoomLevel: z.toString() }); } catch {}
-                                        }}><ZoomOut className="h-2.5 w-2.5" /></Button>
-                                      <Button size="sm" variant="outline" className="h-5 w-5 p-0 bg-white/90"
+                                        }}><ZoomOut className="h-3 w-3 sm:h-2.5 sm:w-2.5" /></Button>
+                                      <Button size="sm" variant="outline" className="h-6 w-6 sm:h-5 sm:w-5 p-0 bg-white/90"
                                         onClick={async () => {
                                           const z = Math.min(videoZoom + 0.1, 2);
                                           setLiveViewVideoZoom(p => ({ ...p, [schedule.id]: z }));
                                           try { await apiRequest('PATCH', `/api/schedules/${schedule.id}`, { zoomLevel: z.toString() }); } catch {}
-                                        }}><ZoomIn className="h-2.5 w-2.5" /></Button>
+                                        }}><ZoomIn className="h-3 w-3 sm:h-2.5 sm:w-2.5" /></Button>
                                     </div>
                                   );
                                 })}
