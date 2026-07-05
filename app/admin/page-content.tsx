@@ -2352,10 +2352,10 @@ function TrainerDashboardInner() {
                             <span className="text-xs font-medium truncate">{room.name.split('(')[0].trim()}</span>
                           </div>
                         </CardHeader>
-                        <CardContent className="p-0 flex-1 flex flex-col min-h-[240px] sm:min-h-[300px]">
+                        <CardContent className="p-2 flex-1 flex flex-col">
                           {/* ── Live preview: responsive scale of the real room screen ── */}
                           {/* Mobile: larger scale (0.25 = 480x270), Desktop: can be 0.25 or larger */}
-                          <div className="relative overflow-hidden rounded-b border-b border-l border-r border-gray-200 flex-1 flex items-center justify-center" style={{ width: '100%', background: '#f5f5f5' }}>
+                          <div className="relative overflow-hidden rounded border border-gray-200 mb-2 flex-1 flex items-center justify-center" style={{ width: '100%', background: '#f5f5f5', minHeight: '160px' }}>
                             {roomSchedules.length > 0 ? (() => {
                               const videoCount = Math.min(roomSchedules.length, 4);
 
