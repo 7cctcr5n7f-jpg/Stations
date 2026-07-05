@@ -1193,6 +1193,23 @@ function TrainerDashboardInner() {
                         : "Generate Thumbnails"}
                     </Button>
 
+                    <Button
+                      onClick={async () => {
+                        try {
+                          const res = await fetch('/api/videos/reset-thumbnails', { method: 'POST' });
+                          const data = await res.json();
+                          toast({ title: "Thumbnails Reset", description: data.message });
+                          queryClient.invalidateQueries({ queryKey: ["/api/videos"] });
+                        } catch (err) {
+                          toast({ title: "Error", description: "Failed to reset thumbnails" });
+                        }
+                      }}
+                      variant="outline"
+                      className="text-amber-600 hover:text-amber-700"
+                    >
+                      Reset Thumbnails
+                    </Button>
+
                     <Button 
                       onClick={() => setIsSimpleBulkUploadModalOpen(true)}
                       className="bg-green-600 hover:bg-green-700"
