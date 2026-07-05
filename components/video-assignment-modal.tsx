@@ -290,15 +290,15 @@ export default function VideoAssignmentModal({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-7xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="w-full sm:max-w-4xl lg:max-w-7xl max-h-[90vh] overflow-y-auto p-4 sm:p-6">
         <DialogHeader>
-          <DialogTitle className="flex items-center space-x-2">
-            <Filter className="h-5 w-5" />
+          <DialogTitle className="flex items-center gap-2 text-lg sm:text-xl">
+            <Filter className="h-5 w-5 flex-shrink-0" />
             <span>Select Video for Room</span>
           </DialogTitle>
         </DialogHeader>
         
-        <div className="space-y-6">
+        <div className="space-y-4 sm:space-y-6">
           {/* Room Selection */}
           <div>
             <Label htmlFor="room-select" className="text-sm font-medium mb-2 block">
@@ -324,30 +324,33 @@ export default function VideoAssignmentModal({
             )}
           </div>
 
-          {/* Search Filter and Action Buttons */}
-          <div className="mb-4 flex items-center justify-between gap-4">
+          {/* Search Filter and Action Buttons - responsive layout */}
+          <div className="mb-4 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
             <Input
               type="text"
               placeholder="Search videos..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="max-w-md"
+              className="w-full sm:max-w-md h-9 sm:h-auto"
             />
-            <div className="flex space-x-2">
+            <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
               <Button
                 onClick={handleAssign}
                 disabled={selectedVideoIds.length === 0 || !roomId || assignVideosMutation.isPending || maxSelectableVideos === 0}
-                className="bg-[hsl(207,90%,54%)] hover:bg-blue-700 disabled:opacity-50"
+                className="bg-[hsl(207,90%,54%)] hover:bg-blue-700 disabled:opacity-50 flex-1 sm:flex-initial text-sm sm:text-base py-2 sm:py-2"
+                size="sm"
               >
                 <Check className="mr-2 h-4 w-4" />
                 {assignVideosMutation.isPending ? "Scheduling..." : 
                  maxSelectableVideos === 0 ? "Room Full" : 
-                 `Schedule ${selectedVideoIds.length} Video${selectedVideoIds.length > 1 ? 's' : ''}`}
+                 <span className="hidden sm:inline">{`Schedule ${selectedVideoIds.length} Video${selectedVideoIds.length > 1 ? 's' : ''}`}</span>}
+                {!assignVideosMutation.isPending && maxSelectableVideos > 0 && <span className="sm:hidden">Schedule</span>}
               </Button>
               <Button
                 onClick={onClose}
                 variant="outline"
-                className="bg-gray-500 hover:bg-gray-600 text-white border-gray-500 hover:border-gray-600"
+                size="sm"
+                className="bg-gray-500 hover:bg-gray-600 text-white border-gray-500 hover:border-gray-600 flex-1 sm:flex-initial text-sm sm:text-base py-2 sm:py-2"
               >
                 Cancel
               </Button>
@@ -379,8 +382,8 @@ export default function VideoAssignmentModal({
                 </div>
               )}
             </div>
-            <div className="border rounded-lg overflow-hidden max-h-96 overflow-y-auto">
-              <Table className="text-xs">
+            <div className="border rounded-lg overflow-hidden max-h-96 overflow-y-auto overflow-x-auto">
+              <Table className="text-xs whitespace-nowrap">
                 <TableHeader className="sticky top-0 bg-gray-50 z-10">
                   {/* Column Headers */}
                   <TableRow>

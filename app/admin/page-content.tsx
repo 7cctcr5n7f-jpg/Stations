@@ -1085,73 +1085,74 @@ function TrainerDashboardInner() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Navigation Header */}
+      {/* Navigation Header - responsive layout */}
       <header className="bg-white shadow-sm border-b">
-        <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-4">
-              <div className="w-10 h-10 rounded-lg flex items-center justify-center">
+        <div className="container mx-auto px-4 py-3 sm:py-4">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-3 flex-1 min-w-0">
+              <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-lg flex items-center justify-center flex-shrink-0">
                 <img 
                   src={tenRoundsLogo} 
                   alt="TENROUNDS Logo" 
-                  className="w-10 h-10 object-contain"
+                  className="w-9 h-9 sm:w-10 sm:h-10 object-contain"
                 />
               </div>
-              <div>
-                <h1 className="text-xl font-bold text-[hsl(198,18%,21%)]">TENROUNDS Workout Scheduler</h1>
-                <p className="text-sm text-gray-600">Workout Management System</p>
+              <div className="min-w-0">
+                <h1 className="text-lg sm:text-xl font-bold text-[hsl(198,18%,21%)] truncate">TENROUNDS Scheduler</h1>
+                <p className="text-xs sm:text-sm text-gray-600 truncate">Workout Management</p>
               </div>
             </div>
-            <div className="flex items-center space-x-4">
-              <div className="text-right">
+            <div className="flex items-center gap-3 w-full sm:w-auto flex-shrink-0">
+              <div className="text-right hidden sm:block">
                 <p className="text-sm font-medium text-[hsl(198,18%,21%)]">Personal Trainer</p>
                 <p className="text-xs text-gray-500">Dashboard Access</p>
               </div>
               <Button
                 onClick={() => setLocation("/")}
                 variant="outline"
-                className="bg-gray-500 hover:bg-gray-600 text-white border-gray-500 hover:border-gray-600"
+                size="sm"
+                className="bg-gray-500 hover:bg-gray-600 text-white border-gray-500 hover:border-gray-600 text-sm py-2 px-3"
               >
-                <LogOut className="mr-2 h-4 w-4" />
-                Logout
+                <LogOut className="h-4 w-4" />
+                <span className="hidden sm:inline ml-2">Logout</span>
               </Button>
             </div>
           </div>
         </div>
       </header>
 
-      {/* Main Content */}
-      <div className="container mx-auto px-4 py-6">
+      {/* Main Content - responsive padding */}
+      <div className="container mx-auto px-4 py-4 sm:py-6">
         <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-6">
-          <TabsList className="bg-white shadow-sm">
-            <TabsTrigger value="liveview" className="flex items-center">
-              <Monitor className="mr-2 h-4 w-4" />
-              Live View
+          <TabsList className="bg-white shadow-sm overflow-x-auto">
+            <TabsTrigger value="liveview" className="flex items-center gap-2 sm:gap-2" title="Live View">
+              <Monitor className="h-4 w-4 flex-shrink-0" />
+              <span className="hidden sm:inline">Live View</span>
             </TabsTrigger>
-            <TabsTrigger value="library" className="flex items-center">
-              <VideoIcon className="mr-2 h-4 w-4" />
-              Video Library
+            <TabsTrigger value="library" className="flex items-center gap-2 sm:gap-2" title="Video Library">
+              <VideoIcon className="h-4 w-4 flex-shrink-0" />
+              <span className="hidden sm:inline">Video Library</span>
             </TabsTrigger>
-            <TabsTrigger value="schedule" className="flex items-center">
-              <Calendar className="mr-2 h-4 w-4" />
-              Schedule
+            <TabsTrigger value="schedule" className="flex items-center gap-2 sm:gap-2" title="Schedule">
+              <Calendar className="h-4 w-4 flex-shrink-0" />
+              <span className="hidden sm:inline">Schedule</span>
             </TabsTrigger>
-            <TabsTrigger value="builder" className="flex items-center">
-              <Wand2 className="mr-2 h-4 w-4" />
-              Builder
+            <TabsTrigger value="builder" className="flex items-center gap-2 sm:gap-2" title="Builder">
+              <Wand2 className="h-4 w-4 flex-shrink-0" />
+              <span className="hidden sm:inline">Builder</span>
             </TabsTrigger>
-            <TabsTrigger value="builder-config" className="flex items-center">
-              <Settings2 className="mr-2 h-4 w-4" />
-              Builder Config
+            <TabsTrigger value="builder-config" className="flex items-center gap-2 sm:gap-2" title="Builder Config">
+              <Settings2 className="h-4 w-4 flex-shrink-0" />
+              <span className="hidden sm:inline">Builder Config</span>
             </TabsTrigger>
 
-            <TabsTrigger value="cache" className="flex items-center">
-              <VideoIcon className="mr-2 h-4 w-4" />
-              Cache
+            <TabsTrigger value="cache" className="flex items-center gap-2 sm:gap-2" title="Cache">
+              <VideoIcon className="h-4 w-4 flex-shrink-0" />
+              <span className="hidden sm:inline">Cache</span>
             </TabsTrigger>
-            <TabsTrigger value="dictionary" className="flex items-center">
-              <BookOpen className="mr-2 h-4 w-4" />
-              Dictionary
+            <TabsTrigger value="dictionary" className="flex items-center gap-2 sm:gap-2" title="Dictionary">
+              <BookOpen className="h-4 w-4 flex-shrink-0" />
+              <span className="hidden sm:inline">Dictionary</span>
             </TabsTrigger>
           </TabsList>
 
@@ -1161,27 +1162,31 @@ function TrainerDashboardInner() {
           <TabsContent value="library" className="space-y-6">
             <Card>
               <CardHeader className="pb-4">
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-xl font-semibold">Video Library</CardTitle>
-                  <div className="flex items-center space-x-2">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                  <CardTitle className="text-lg sm:text-xl font-semibold">Video Library</CardTitle>
+                  <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
 
                     <Button
                       onClick={runAiMetadata}
                       disabled={aiProgress?.running}
-                      className="bg-blue-600 hover:bg-blue-700"
+                      className="bg-blue-600 hover:bg-blue-700 text-sm sm:text-base py-2 sm:py-2 px-3 sm:px-4"
+                      size="sm"
                     >
                       {aiProgress?.running ? (
                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                       ) : (
                         <Sparkles className="mr-2 h-4 w-4" />
                       )}
-                      AI Complete Metadata
+                      <span className="hidden sm:inline">AI Complete Metadata</span>
+                      <span className="sm:hidden">AI Meta</span>
                     </Button>
 
                     <Button
                       onClick={runBulkThumbnails}
                       disabled={thumbProgress?.running}
                       variant="outline"
+                      size="sm"
+                      className="text-sm sm:text-base py-2 sm:py-2 px-3 sm:px-4"
                     >
                       {thumbProgress?.running ? (
                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -1189,8 +1194,9 @@ function TrainerDashboardInner() {
                         <Image className="mr-2 h-4 w-4" />
                       )}
                       {thumbProgress?.running
-                        ? `${thumbProgress.processed}/${thumbProgress.total} thumbnails`
-                        : "Generate Thumbnails"}
+                        ? `${thumbProgress.processed}/${thumbProgress.total}`
+                        : <span className="hidden sm:inline">Generate Thumbnails</span>}
+                      {!thumbProgress?.running && <span className="sm:hidden">Thumbs</span>}
                     </Button>
 
                     <Button
@@ -1205,17 +1211,21 @@ function TrainerDashboardInner() {
                         }
                       }}
                       variant="outline"
-                      className="text-amber-600 hover:text-amber-700"
+                      size="sm"
+                      className="text-amber-600 hover:text-amber-700 text-sm sm:text-base py-2 sm:py-2 px-3 sm:px-4"
                     >
-                      Reset Thumbnails
+                      <span className="hidden sm:inline">Reset Thumbnails</span>
+                      <span className="sm:hidden">Reset</span>
                     </Button>
 
                     <Button 
                       onClick={() => setIsSimpleBulkUploadModalOpen(true)}
-                      className="bg-green-600 hover:bg-green-700"
+                      className="bg-green-600 hover:bg-green-700 text-sm sm:text-base py-2 sm:py-2 px-3 sm:px-4"
+                      size="sm"
                     >
                       <VideoIcon className="mr-2 h-4 w-4" />
-                      Bulk Upload Videos
+                      <span className="hidden sm:inline">Bulk Upload</span>
+                      <span className="sm:hidden">Upload</span>
                     </Button>
 
                   </div>
@@ -1283,37 +1293,38 @@ function TrainerDashboardInner() {
                 />
               )}
               <CardContent className="space-y-6">
-                {/* Toolbar: search + filters */}
-                <div className="flex flex-wrap items-center gap-2">
-                  <div className="relative flex-1 min-w-48 max-w-sm">
+                {/* Toolbar: search + filters - responsive layout */}
+                <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center gap-2">
+                  <div className="relative flex-1 sm:flex-initial sm:min-w-48 sm:max-w-sm">
                     <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400 pointer-events-none" />
                     <Input
                       type="text"
                       placeholder="Search videos..."
                       value={videoFilters.search}
                       onChange={(e) => setVideoFilters(prev => ({ ...prev, search: e.target.value }))}
-                      className="h-8 pl-8 text-xs"
+                      className="h-9 sm:h-8 pl-8 text-xs"
                     />
                   </div>
                   <button
                     type="button"
                     onClick={() => setVideoFilters(prev => ({ ...prev, needsReview: !prev.needsReview }))}
-                    className={`inline-flex h-8 items-center gap-1.5 rounded-md border px-3 text-xs font-medium transition-colors ${
+                    className={`inline-flex h-9 sm:h-8 items-center gap-1.5 rounded-md border px-3 text-xs font-medium transition-colors flex-shrink-0 ${
                       videoFilters.needsReview
                         ? "border-amber-400 bg-amber-50 text-amber-700"
                         : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
                     }`}
                   >
                     <AlertCircle className="h-3.5 w-3.5" />
-                    Needs Review
+                    <span className="hidden sm:inline">Needs Review</span>
+                    <span className="sm:hidden">Review</span>
                   </button>
-                  <span className="ml-auto text-xs text-gray-400 tabular-nums">
+                  <span className="text-xs text-gray-400 tabular-nums sm:ml-auto">
                     {filteredVideos?.length ?? 0} videos
                   </span>
                 </div>
 
-                {/* Video Table */}
-                <div className="rounded-lg border border-gray-200 overflow-hidden">
+                {/* Video Table - responsive overflow */}
+                <div className="rounded-lg border border-gray-200 overflow-x-auto">
                   <table className="w-full text-xs">
                     <thead>
                       <tr className="border-b border-gray-200 bg-gray-50/80">
@@ -1840,53 +1851,53 @@ function TrainerDashboardInner() {
 
               return (
                 <>
-                  {/* Header row: week label + prev/next + actions */}
-                  <div className="flex items-center justify-between gap-4">
-                    <div className="flex items-center gap-2">
+                  {/* Header row: week label + prev/next + actions - responsive layout */}
+                  <div className="flex flex-col sm:flex-row items-center justify-between gap-3 sm:gap-4">
+                    <div className="flex items-center gap-2 w-full sm:w-auto">
                       <button
                         onClick={() => {
                           const d = new Date(currentDate);
                           d.setDate(d.getDate() - 7);
                           setCurrentDate(d.toISOString().split('T')[0]);
                         }}
-                        className="flex items-center justify-center w-8 h-8 rounded-full border border-gray-200 bg-white hover:bg-gray-50 transition-colors text-gray-600"
+                        className="flex items-center justify-center w-9 h-9 sm:w-8 sm:h-8 rounded-full border border-gray-200 bg-white hover:bg-gray-50 transition-colors text-gray-600 flex-shrink-0"
                         aria-label="Previous week"
                       >
                         <ChevronLeft className="h-4 w-4" />
                       </button>
-                      <span className="text-base font-semibold text-gray-900 min-w-[200px] text-center">{weekLabel}</span>
+                      <span className="text-sm sm:text-base font-semibold text-gray-900 flex-1 text-center">{weekLabel}</span>
                       <button
                         onClick={() => {
                           const d = new Date(currentDate);
                           d.setDate(d.getDate() + 7);
                           setCurrentDate(d.toISOString().split('T')[0]);
                         }}
-                        className="flex items-center justify-center w-8 h-8 rounded-full border border-gray-200 bg-white hover:bg-gray-50 transition-colors text-gray-600"
+                        className="flex items-center justify-center w-9 h-9 sm:w-8 sm:h-8 rounded-full border border-gray-200 bg-white hover:bg-gray-50 transition-colors text-gray-600 flex-shrink-0"
                         aria-label="Next week"
                       >
                         <ChevronRight className="h-4 w-4" />
                       </button>
                     </div>
 
-                    {/* Quick copy + Build button */}
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-gray-400 hidden sm:block">Copy:</span>
+                    {/* Quick copy + Build button - stacked on mobile, horizontal on desktop */}
+                    <div className="flex flex-wrap items-center justify-center sm:justify-end gap-2 w-full sm:w-auto">
+                      <span className="text-xs text-gray-400 hidden sm:inline">Copy:</span>
                       <button
                         onClick={() => copyScheduleMutation.mutate({ sourceDate: mondayStr, targetDate: thursdayStr })}
                         disabled={copyScheduleMutation.isPending}
-                        className="text-xs px-2.5 py-1.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 text-gray-600 transition-colors disabled:opacity-50"
+                        className="text-xs px-3 py-2 sm:px-2.5 sm:py-1.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 text-gray-600 transition-colors disabled:opacity-50 whitespace-nowrap"
                         title="Copy Monday → Thursday"
                       >Mon → Thu</button>
                       <button
                         onClick={() => copyScheduleMutation.mutate({ sourceDate: tuesdayStr, targetDate: fridayStr })}
                         disabled={copyScheduleMutation.isPending}
-                        className="text-xs px-2.5 py-1.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 text-gray-600 transition-colors disabled:opacity-50"
+                        className="text-xs px-3 py-2 sm:px-2.5 sm:py-1.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 text-gray-600 transition-colors disabled:opacity-50 whitespace-nowrap"
                         title="Copy Tuesday → Friday"
                       >Tue → Fri</button>
                       <button
                         onClick={() => copyScheduleMutation.mutate({ sourceDate: wednesdayStr, targetDate: saturdayStr })}
                         disabled={copyScheduleMutation.isPending}
-                        className="text-xs px-2.5 py-1.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 text-gray-600 transition-colors disabled:opacity-50"
+                        className="text-xs px-3 py-2 sm:px-2.5 sm:py-1.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 text-gray-600 transition-colors disabled:opacity-50 whitespace-nowrap"
                         title="Copy Wednesday → Saturday"
                       >Wed → Sat</button>
                       <Button
@@ -2225,14 +2236,14 @@ function TrainerDashboardInner() {
           <TabsContent value="liveview" className="space-y-6">
             <Card>
               <CardHeader>
-                <CardTitle className="flex items-center justify-between">
-                  <div className="flex items-center space-x-2">
-                    <Monitor className="h-5 w-5" />
-                    <span>Live Room Monitor</span>
+                <CardTitle className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <Monitor className="h-5 w-5 flex-shrink-0" />
+                    <span className="text-lg sm:text-xl">Live Room Monitor</span>
                   </div>
                   
-                  {/* Date Navigation */}
-                  <div className="flex items-center space-x-4">
+                  {/* Date Navigation - responsive layout */}
+                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
                     <Button
                       onClick={() => {
                         const currentDateObj = new Date(currentDate);
@@ -2241,11 +2252,13 @@ function TrainerDashboardInner() {
                       }}
                       variant="outline"
                       size="sm"
+                      className="text-xs sm:text-sm py-2"
                     >
-                      Previous Week
+                      <span className="hidden sm:inline">Previous Week</span>
+                      <span className="sm:hidden">Prev</span>
                     </Button>
                     
-                    <div className="flex space-x-2 overflow-x-auto">
+                    <div className="flex gap-1 sm:gap-2 overflow-x-auto flex-1">
                       {(() => {
                         const dates = [];
                         const startDate = new Date(currentDate);
@@ -2280,7 +2293,7 @@ function TrainerDashboardInner() {
                               onClick={() => setCurrentDate(dateString)}
                               variant={currentDate === dateString ? "default" : "outline"}
                               size="sm"
-                              className={`whitespace-nowrap min-w-[60px] ${
+                              className={`whitespace-nowrap min-w-[50px] sm:min-w-[60px] text-xs py-2 ${
                                 currentDate === dateString 
                                   ? isCompleteSchedule 
                                     ? "bg-green-600 hover:bg-green-700 text-white" 
@@ -2308,8 +2321,10 @@ function TrainerDashboardInner() {
                       }}
                       variant="outline"
                       size="sm"
+                      className="text-xs sm:text-sm py-2"
                     >
-                      Next Week
+                      <span className="hidden sm:inline">Next Week</span>
+                      <span className="sm:hidden">Next</span>
                     </Button>
                   </div>
                 </CardTitle>
@@ -2318,8 +2333,8 @@ function TrainerDashboardInner() {
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                {/* Live View Grid - 4x smaller than actual room displays (480x270 each) */}
-                <div className="flex flex-wrap gap-3 justify-start">
+                {/* Live View Grid - responsive card layout */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
                   {rooms?.slice(0, 10).map((room: Room) => {
                     const { colorClass } = getRoomColorClasses(room.number);
                     const roomSchedules = schedules
@@ -2328,22 +2343,19 @@ function TrainerDashboardInner() {
                     const roomZoom = liveViewZoom[room.id] || 1;
                     
                     return (
-                      <Card key={room.id} className="border-2" style={{ width: 'fit-content' }}>
-                        <CardHeader className="p-2">
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center space-x-2">
-                              <div className={`w-5 h-5 ${colorClass} rounded-full flex items-center justify-center`}>
-                                <span className="text-white text-xs font-bold">{room.number}</span>
-                              </div>
-                              <span className="text-xs font-medium">{room.name.split('(')[0].trim()}</span>
+                      <Card key={room.id} className="border-2 flex flex-col h-full">
+                        <CardHeader className="p-2 flex-shrink-0">
+                          <div className="flex items-center gap-2">
+                            <div className={`w-5 h-5 ${colorClass} rounded-full flex items-center justify-center flex-shrink-0`}>
+                              <span className="text-white text-xs font-bold">{room.number}</span>
                             </div>
-
+                            <span className="text-xs font-medium truncate">{room.name.split('(')[0].trim()}</span>
                           </div>
                         </CardHeader>
-                        <CardContent className="p-1">
-                          {/* ── Live preview: exact 1/4-scale replica of the real room screen ── */}
-                          {/* Outer clip box: 480×270 = 1920×1080 ÷ 4                            */}
-                          <div className="relative overflow-hidden rounded border border-gray-200 mb-1" style={{ width: 480, height: 270 }}>
+                        <CardContent className="p-2 flex-1 flex flex-col">
+                          {/* ── Live preview: responsive scale of the real room screen ── */}
+                          {/* 16:9 aspect ratio with minimum height to ensure video is visible */}
+                          <div className="relative overflow-hidden rounded border border-gray-200 mb-2 flex-1 flex items-center justify-center" style={{ width: '100%', background: '#f5f5f5', aspectRatio: '16 / 9', minHeight: '220px' }}>
                             {roomSchedules.length > 0 ? (() => {
                               const videoCount = Math.min(roomSchedules.length, 4);
 
@@ -2380,13 +2392,15 @@ function TrainerDashboardInner() {
                               };
 
                               return (
-                                // Inner full-resolution room canvas scaled down 4×
+                                // Inner full-resolution room canvas scaled responsively
                                 <div
                                   style={{
                                     width: 1920,
                                     height: 1080,
-                                    transform: 'scale(0.25)',
-                                    transformOrigin: 'top left',
+                                    // Scale up to make video content larger and more visible
+                                    // 0.33 gives roughly 640x360px which fills the card nicely
+                                    transform: `scale(0.33)`,
+                                    transformOrigin: 'center',
                                     pointerEvents: 'none', // controls are outside this box
                                   }}
                                   className={`bg-white ${getGridClasses(videoCount)}`}
@@ -2419,6 +2433,44 @@ function TrainerDashboardInner() {
                                       <div className="absolute left-0 top-1/2 w-full h-0.5 bg-black -translate-y-px z-10" />
                                     </>
                                   )}
+
+                                  {/* Zoom / position controls — overlaid on desktop, below on mobile */}
+                                  {roomSchedules.length > 0 && (
+                                    <div className="hidden sm:absolute sm:bottom-2 sm:right-2 sm:flex sm:flex-col sm:gap-1 z-20">
+                                      {roomSchedules.slice(0, 4).map((schedule: any) => {
+                                        const videoZoom = liveViewVideoZoom[schedule.id] || parseFloat(schedule.zoomLevel || '1');
+                                        const verticalPos = liveViewVerticalPosition[schedule.id] || parseFloat(schedule.verticalPosition || '0');
+                                        return (
+                                          <div key={schedule.id} className="flex gap-1">
+                                            <Button size="sm" variant="outline" className="h-5 w-5 p-0 bg-white/90 text-[10px]"
+                                              onClick={async () => {
+                                                const v = verticalPos - 10;
+                                                setLiveViewVerticalPosition(p => ({ ...p, [schedule.id]: v }));
+                                                try { await apiRequest('PATCH', `/api/schedules/${schedule.id}`, { verticalPosition: v.toString() }); } catch {}
+                                              }}><ChevronUp className="h-2.5 w-2.5" /></Button>
+                                            <Button size="sm" variant="outline" className="h-5 w-5 p-0 bg-white/90"
+                                              onClick={async () => {
+                                                const v = verticalPos + 10;
+                                                setLiveViewVerticalPosition(p => ({ ...p, [schedule.id]: v }));
+                                                try { await apiRequest('PATCH', `/api/schedules/${schedule.id}`, { verticalPosition: v.toString() }); } catch {}
+                                              }}><ChevronDown className="h-2.5 w-2.5" /></Button>
+                                            <Button size="sm" variant="outline" className="h-5 w-5 p-0 bg-white/90"
+                                              onClick={async () => {
+                                                const z = Math.max(videoZoom - 0.1, 0.5);
+                                                setLiveViewVideoZoom(p => ({ ...p, [schedule.id]: z }));
+                                                try { await apiRequest('PATCH', `/api/schedules/${schedule.id}`, { zoomLevel: z.toString() }); } catch {}
+                                              }}><ZoomOut className="h-2.5 w-2.5" /></Button>
+                                            <Button size="sm" variant="outline" className="h-5 w-5 p-0 bg-white/90"
+                                              onClick={async () => {
+                                                const z = Math.min(videoZoom + 0.1, 2);
+                                                setLiveViewVideoZoom(p => ({ ...p, [schedule.id]: z }));
+                                                try { await apiRequest('PATCH', `/api/schedules/${schedule.id}`, { zoomLevel: z.toString() }); } catch {}
+                                              }}><ZoomIn className="h-2.5 w-2.5" /></Button>
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  )}
                                 </div>
                               );
                             })() : (
@@ -2429,45 +2481,49 @@ function TrainerDashboardInner() {
                                 </div>
                               </div>
                             )}
-
-                            {/* Zoom / position controls — overlaid on the clipped preview */}
-                            {roomSchedules.length > 0 && (
-                              <div className="absolute bottom-2 right-2 flex flex-col gap-1 z-20">
-                                {roomSchedules.slice(0, 4).map((schedule: any) => {
-                                  const videoZoom = liveViewVideoZoom[schedule.id] || parseFloat(schedule.zoomLevel || '1');
-                                  const verticalPos = liveViewVerticalPosition[schedule.id] || parseFloat(schedule.verticalPosition || '0');
-                                  return (
-                                    <div key={schedule.id} className="flex gap-1">
-                                      <Button size="sm" variant="outline" className="h-5 w-5 p-0 bg-white/90 text-[10px]"
-                                        onClick={async () => {
-                                          const v = verticalPos - 10;
-                                          setLiveViewVerticalPosition(p => ({ ...p, [schedule.id]: v }));
-                                          try { await apiRequest('PATCH', `/api/schedules/${schedule.id}`, { verticalPosition: v.toString() }); } catch {}
-                                        }}><ChevronUp className="h-2.5 w-2.5" /></Button>
-                                      <Button size="sm" variant="outline" className="h-5 w-5 p-0 bg-white/90"
-                                        onClick={async () => {
-                                          const v = verticalPos + 10;
-                                          setLiveViewVerticalPosition(p => ({ ...p, [schedule.id]: v }));
-                                          try { await apiRequest('PATCH', `/api/schedules/${schedule.id}`, { verticalPosition: v.toString() }); } catch {}
-                                        }}><ChevronDown className="h-2.5 w-2.5" /></Button>
-                                      <Button size="sm" variant="outline" className="h-5 w-5 p-0 bg-white/90"
-                                        onClick={async () => {
-                                          const z = Math.max(videoZoom - 0.1, 0.5);
-                                          setLiveViewVideoZoom(p => ({ ...p, [schedule.id]: z }));
-                                          try { await apiRequest('PATCH', `/api/schedules/${schedule.id}`, { zoomLevel: z.toString() }); } catch {}
-                                        }}><ZoomOut className="h-2.5 w-2.5" /></Button>
-                                      <Button size="sm" variant="outline" className="h-5 w-5 p-0 bg-white/90"
-                                        onClick={async () => {
-                                          const z = Math.min(videoZoom + 0.1, 2);
-                                          setLiveViewVideoZoom(p => ({ ...p, [schedule.id]: z }));
-                                          try { await apiRequest('PATCH', `/api/schedules/${schedule.id}`, { zoomLevel: z.toString() }); } catch {}
-                                        }}><ZoomIn className="h-2.5 w-2.5" /></Button>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            )}
                           </div>
+
+                          {/* Mobile controls — below video for full visibility */}
+                          {roomSchedules.length > 0 && (
+                            <div className="sm:hidden flex flex-wrap gap-2 p-2 justify-center bg-gray-50 border-t border-gray-200">
+                              {roomSchedules.slice(0, 4).map((schedule: any) => {
+                                const videoZoom = liveViewVideoZoom[schedule.id] || parseFloat(schedule.zoomLevel || '1');
+                                const verticalPos = liveViewVerticalPosition[schedule.id] || parseFloat(schedule.verticalPosition || '0');
+                                return (
+                                  <div key={schedule.id} className="flex gap-1">
+                                    <Button size="sm" variant="outline" className="h-8 w-8 p-0 text-xs"
+                                      title="Move up"
+                                      onClick={async () => {
+                                        const v = verticalPos - 10;
+                                        setLiveViewVerticalPosition(p => ({ ...p, [schedule.id]: v }));
+                                        try { await apiRequest('PATCH', `/api/schedules/${schedule.id}`, { verticalPosition: v.toString() }); } catch {}
+                                      }}><ChevronUp className="h-3 w-3" /></Button>
+                                    <Button size="sm" variant="outline" className="h-8 w-8 p-0 text-xs"
+                                      title="Move down"
+                                      onClick={async () => {
+                                        const v = verticalPos + 10;
+                                        setLiveViewVerticalPosition(p => ({ ...p, [schedule.id]: v }));
+                                        try { await apiRequest('PATCH', `/api/schedules/${schedule.id}`, { verticalPosition: v.toString() }); } catch {}
+                                      }}><ChevronDown className="h-3 w-3" /></Button>
+                                    <Button size="sm" variant="outline" className="h-8 w-8 p-0 text-xs"
+                                      title="Zoom out"
+                                      onClick={async () => {
+                                        const z = Math.max(videoZoom - 0.1, 0.5);
+                                        setLiveViewVideoZoom(p => ({ ...p, [schedule.id]: z }));
+                                        try { await apiRequest('PATCH', `/api/schedules/${schedule.id}`, { zoomLevel: z.toString() }); } catch {}
+                                      }}><ZoomOut className="h-3 w-3" /></Button>
+                                    <Button size="sm" variant="outline" className="h-8 w-8 p-0 text-xs"
+                                      title="Zoom in"
+                                      onClick={async () => {
+                                        const z = Math.min(videoZoom + 0.1, 2);
+                                        setLiveViewVideoZoom(p => ({ ...p, [schedule.id]: z }));
+                                        try { await apiRequest('PATCH', `/api/schedules/${schedule.id}`, { zoomLevel: z.toString() }); } catch {}
+                                      }}><ZoomIn className="h-3 w-3" /></Button>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
                         </CardContent>
                       </Card>
                     );
