@@ -2352,10 +2352,10 @@ function TrainerDashboardInner() {
                             <span className="text-xs font-medium truncate">{room.name.split('(')[0].trim()}</span>
                           </div>
                         </CardHeader>
-                        <CardContent className="p-1 flex-1 flex flex-col min-h-[200px] sm:min-h-[250px]">
+                        <CardContent className="p-0 flex-1 flex flex-col min-h-[240px] sm:min-h-[300px]">
                           {/* ── Live preview: responsive scale of the real room screen ── */}
                           {/* Mobile: larger scale (0.25 = 480x270), Desktop: can be 0.25 or larger */}
-                          <div className="relative overflow-hidden rounded border border-gray-200 mb-1 flex-1 flex items-center justify-center" style={{ aspectRatio: '16/9', width: '100%', minHeight: '120px', background: '#f5f5f5' }}>
+                          <div className="relative overflow-hidden rounded-b border-b border-l border-r border-gray-200 flex-1 flex items-center justify-center" style={{ width: '100%', background: '#f5f5f5' }}>
                             {roomSchedules.length > 0 ? (() => {
                               const videoCount = Math.min(roomSchedules.length, 4);
 
@@ -2485,7 +2485,7 @@ function TrainerDashboardInner() {
 
                           {/* Mobile controls — below video for full visibility */}
                           {roomSchedules.length > 0 && (
-                            <div className="sm:hidden flex flex-wrap gap-2 mt-2 justify-center">
+                            <div className="sm:hidden flex flex-wrap gap-2 p-2 justify-center bg-gray-50 border-t border-gray-200">
                               {roomSchedules.slice(0, 4).map((schedule: any) => {
                                 const videoZoom = liveViewVideoZoom[schedule.id] || parseFloat(schedule.zoomLevel || '1');
                                 const verticalPos = liveViewVerticalPosition[schedule.id] || parseFloat(schedule.verticalPosition || '0');
