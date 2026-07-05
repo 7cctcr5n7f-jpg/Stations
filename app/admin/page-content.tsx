@@ -2354,8 +2354,8 @@ function TrainerDashboardInner() {
                         </CardHeader>
                         <CardContent className="p-2 flex-1 flex flex-col">
                           {/* ── Live preview: responsive scale of the real room screen ── */}
-                          {/* Mobile: larger scale (0.25 = 480x270), Desktop: can be 0.25 or larger */}
-                          <div className="relative overflow-hidden rounded border border-gray-200 mb-2 flex-1 flex items-center justify-center" style={{ width: '100%', background: '#f5f5f5', minHeight: '160px' }}>
+                          {/* 16:9 aspect ratio with minimum height to ensure video is visible */}
+                          <div className="relative overflow-hidden rounded border border-gray-200 mb-2 flex-1 flex items-center justify-center" style={{ width: '100%', background: '#f5f5f5', aspectRatio: '16 / 9', minHeight: '220px' }}>
                             {roomSchedules.length > 0 ? (() => {
                               const videoCount = Math.min(roomSchedules.length, 4);
 
@@ -2397,9 +2397,9 @@ function TrainerDashboardInner() {
                                   style={{
                                     width: 1920,
                                     height: 1080,
-                                    // Use larger scale: 0.25 (480x270) for better mobile visibility
-                                    // Still scales down for very small screens but much more visible
-                                    transform: `scale(0.25)`,
+                                    // Scale up to make video content larger and more visible
+                                    // 0.33 gives roughly 640x360px which fills the card nicely
+                                    transform: `scale(0.33)`,
                                     transformOrigin: 'center',
                                     pointerEvents: 'none', // controls are outside this box
                                   }}
