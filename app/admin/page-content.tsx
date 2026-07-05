@@ -2433,6 +2433,44 @@ function TrainerDashboardInner() {
                                       <div className="absolute left-0 top-1/2 w-full h-0.5 bg-black -translate-y-px z-10" />
                                     </>
                                   )}
+
+                                  {/* Zoom / position controls — overlaid on desktop, below on mobile */}
+                                  {roomSchedules.length > 0 && (
+                                    <div className="hidden sm:absolute sm:bottom-2 sm:right-2 sm:flex sm:flex-col sm:gap-1 z-20">
+                                      {roomSchedules.slice(0, 4).map((schedule: any) => {
+                                        const videoZoom = liveViewVideoZoom[schedule.id] || parseFloat(schedule.zoomLevel || '1');
+                                        const verticalPos = liveViewVerticalPosition[schedule.id] || parseFloat(schedule.verticalPosition || '0');
+                                        return (
+                                          <div key={schedule.id} className="flex gap-1">
+                                            <Button size="sm" variant="outline" className="h-5 w-5 p-0 bg-white/90 text-[10px]"
+                                              onClick={async () => {
+                                                const v = verticalPos - 10;
+                                                setLiveViewVerticalPosition(p => ({ ...p, [schedule.id]: v }));
+                                                try { await apiRequest('PATCH', `/api/schedules/${schedule.id}`, { verticalPosition: v.toString() }); } catch {}
+                                              }}><ChevronUp className="h-2.5 w-2.5" /></Button>
+                                            <Button size="sm" variant="outline" className="h-5 w-5 p-0 bg-white/90"
+                                              onClick={async () => {
+                                                const v = verticalPos + 10;
+                                                setLiveViewVerticalPosition(p => ({ ...p, [schedule.id]: v }));
+                                                try { await apiRequest('PATCH', `/api/schedules/${schedule.id}`, { verticalPosition: v.toString() }); } catch {}
+                                              }}><ChevronDown className="h-2.5 w-2.5" /></Button>
+                                            <Button size="sm" variant="outline" className="h-5 w-5 p-0 bg-white/90"
+                                              onClick={async () => {
+                                                const z = Math.max(videoZoom - 0.1, 0.5);
+                                                setLiveViewVideoZoom(p => ({ ...p, [schedule.id]: z }));
+                                                try { await apiRequest('PATCH', `/api/schedules/${schedule.id}`, { zoomLevel: z.toString() }); } catch {}
+                                              }}><ZoomOut className="h-2.5 w-2.5" /></Button>
+                                            <Button size="sm" variant="outline" className="h-5 w-5 p-0 bg-white/90"
+                                              onClick={async () => {
+                                                const z = Math.min(videoZoom + 0.1, 2);
+                                                setLiveViewVideoZoom(p => ({ ...p, [schedule.id]: z }));
+                                                try { await apiRequest('PATCH', `/api/schedules/${schedule.id}`, { zoomLevel: z.toString() }); } catch {}
+                                              }}><ZoomIn className="h-2.5 w-2.5" /></Button>
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  )}
                                 </div>
                               );
                             })() : (
@@ -2443,45 +2481,49 @@ function TrainerDashboardInner() {
                                 </div>
                               </div>
                             )}
-
-                            {/* Zoom / position controls — overlaid on the clipped preview */}
-                            {roomSchedules.length > 0 && (
-                              <div className="absolute bottom-1 right-1 sm:bottom-2 sm:right-2 flex flex-col gap-0.5 sm:gap-1 z-20">
-                                {roomSchedules.slice(0, 4).map((schedule: any) => {
-                                  const videoZoom = liveViewVideoZoom[schedule.id] || parseFloat(schedule.zoomLevel || '1');
-                                  const verticalPos = liveViewVerticalPosition[schedule.id] || parseFloat(schedule.verticalPosition || '0');
-                                  return (
-                                    <div key={schedule.id} className="flex gap-0.5 sm:gap-1">
-                                      <Button size="sm" variant="outline" className="h-6 w-6 sm:h-5 sm:w-5 p-0 bg-white/90 text-[10px]"
-                                        onClick={async () => {
-                                          const v = verticalPos - 10;
-                                          setLiveViewVerticalPosition(p => ({ ...p, [schedule.id]: v }));
-                                          try { await apiRequest('PATCH', `/api/schedules/${schedule.id}`, { verticalPosition: v.toString() }); } catch {}
-                                        }}><ChevronUp className="h-3 w-3 sm:h-2.5 sm:w-2.5" /></Button>
-                                      <Button size="sm" variant="outline" className="h-6 w-6 sm:h-5 sm:w-5 p-0 bg-white/90"
-                                        onClick={async () => {
-                                          const v = verticalPos + 10;
-                                          setLiveViewVerticalPosition(p => ({ ...p, [schedule.id]: v }));
-                                          try { await apiRequest('PATCH', `/api/schedules/${schedule.id}`, { verticalPosition: v.toString() }); } catch {}
-                                        }}><ChevronDown className="h-3 w-3 sm:h-2.5 sm:w-2.5" /></Button>
-                                      <Button size="sm" variant="outline" className="h-6 w-6 sm:h-5 sm:w-5 p-0 bg-white/90"
-                                        onClick={async () => {
-                                          const z = Math.max(videoZoom - 0.1, 0.5);
-                                          setLiveViewVideoZoom(p => ({ ...p, [schedule.id]: z }));
-                                          try { await apiRequest('PATCH', `/api/schedules/${schedule.id}`, { zoomLevel: z.toString() }); } catch {}
-                                        }}><ZoomOut className="h-3 w-3 sm:h-2.5 sm:w-2.5" /></Button>
-                                      <Button size="sm" variant="outline" className="h-6 w-6 sm:h-5 sm:w-5 p-0 bg-white/90"
-                                        onClick={async () => {
-                                          const z = Math.min(videoZoom + 0.1, 2);
-                                          setLiveViewVideoZoom(p => ({ ...p, [schedule.id]: z }));
-                                          try { await apiRequest('PATCH', `/api/schedules/${schedule.id}`, { zoomLevel: z.toString() }); } catch {}
-                                        }}><ZoomIn className="h-3 w-3 sm:h-2.5 sm:w-2.5" /></Button>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            )}
                           </div>
+
+                          {/* Mobile controls — below video for full visibility */}
+                          {roomSchedules.length > 0 && (
+                            <div className="sm:hidden flex flex-wrap gap-2 mt-2 justify-center">
+                              {roomSchedules.slice(0, 4).map((schedule: any) => {
+                                const videoZoom = liveViewVideoZoom[schedule.id] || parseFloat(schedule.zoomLevel || '1');
+                                const verticalPos = liveViewVerticalPosition[schedule.id] || parseFloat(schedule.verticalPosition || '0');
+                                return (
+                                  <div key={schedule.id} className="flex gap-1">
+                                    <Button size="sm" variant="outline" className="h-8 w-8 p-0 text-xs"
+                                      title="Move up"
+                                      onClick={async () => {
+                                        const v = verticalPos - 10;
+                                        setLiveViewVerticalPosition(p => ({ ...p, [schedule.id]: v }));
+                                        try { await apiRequest('PATCH', `/api/schedules/${schedule.id}`, { verticalPosition: v.toString() }); } catch {}
+                                      }}><ChevronUp className="h-3 w-3" /></Button>
+                                    <Button size="sm" variant="outline" className="h-8 w-8 p-0 text-xs"
+                                      title="Move down"
+                                      onClick={async () => {
+                                        const v = verticalPos + 10;
+                                        setLiveViewVerticalPosition(p => ({ ...p, [schedule.id]: v }));
+                                        try { await apiRequest('PATCH', `/api/schedules/${schedule.id}`, { verticalPosition: v.toString() }); } catch {}
+                                      }}><ChevronDown className="h-3 w-3" /></Button>
+                                    <Button size="sm" variant="outline" className="h-8 w-8 p-0 text-xs"
+                                      title="Zoom out"
+                                      onClick={async () => {
+                                        const z = Math.max(videoZoom - 0.1, 0.5);
+                                        setLiveViewVideoZoom(p => ({ ...p, [schedule.id]: z }));
+                                        try { await apiRequest('PATCH', `/api/schedules/${schedule.id}`, { zoomLevel: z.toString() }); } catch {}
+                                      }}><ZoomOut className="h-3 w-3" /></Button>
+                                    <Button size="sm" variant="outline" className="h-8 w-8 p-0 text-xs"
+                                      title="Zoom in"
+                                      onClick={async () => {
+                                        const z = Math.min(videoZoom + 0.1, 2);
+                                        setLiveViewVideoZoom(p => ({ ...p, [schedule.id]: z }));
+                                        try { await apiRequest('PATCH', `/api/schedules/${schedule.id}`, { zoomLevel: z.toString() }); } catch {}
+                                      }}><ZoomIn className="h-3 w-3" /></Button>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
                         </CardContent>
                       </Card>
                     );
