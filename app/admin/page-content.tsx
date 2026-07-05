@@ -2343,7 +2343,7 @@ function TrainerDashboardInner() {
                     const roomZoom = liveViewZoom[room.id] || 1;
                     
                     return (
-                      <Card key={room.id} className="border-2 flex flex-col">
+                      <Card key={room.id} className="border-2 flex flex-col h-full">
                         <CardHeader className="p-2 flex-shrink-0">
                           <div className="flex items-center gap-2">
                             <div className={`w-5 h-5 ${colorClass} rounded-full flex items-center justify-center flex-shrink-0`}>
@@ -2352,10 +2352,10 @@ function TrainerDashboardInner() {
                             <span className="text-xs font-medium truncate">{room.name.split('(')[0].trim()}</span>
                           </div>
                         </CardHeader>
-                        <CardContent className="p-1 flex-1 flex flex-col">
-                          {/* ── Live preview: exact 1/4-scale replica of the real room screen ── */}
-                          {/* Responsive size: mobile 240x135, tablet/desktop 480x270          */}
-                          <div className="relative overflow-hidden rounded border border-gray-200 mb-1 flex-1" style={{ aspectRatio: '16/9', width: '100%', minHeight: '135px' }}>
+                        <CardContent className="p-1 flex-1 flex flex-col min-h-[200px] sm:min-h-[250px]">
+                          {/* ── Live preview: responsive scale of the real room screen ── */}
+                          {/* Mobile: larger scale (0.25 = 480x270), Desktop: can be 0.25 or larger */}
+                          <div className="relative overflow-hidden rounded border border-gray-200 mb-1 flex-1 flex items-center justify-center" style={{ aspectRatio: '16/9', width: '100%', minHeight: '120px', background: '#f5f5f5' }}>
                             {roomSchedules.length > 0 ? (() => {
                               const videoCount = Math.min(roomSchedules.length, 4);
 
@@ -2397,9 +2397,10 @@ function TrainerDashboardInner() {
                                   style={{
                                     width: 1920,
                                     height: 1080,
-                                    // Calculate scale to fit: mobile ~240px, tablet/desktop ~480px
-                                    transform: `scale(${window.innerWidth < 640 ? 0.125 : 0.25})`,
-                                    transformOrigin: 'top left',
+                                    // Use larger scale: 0.25 (480x270) for better mobile visibility
+                                    // Still scales down for very small screens but much more visible
+                                    transform: `scale(0.25)`,
+                                    transformOrigin: 'center',
                                     pointerEvents: 'none', // controls are outside this box
                                   }}
                                   className={`bg-white ${getGridClasses(videoCount)}`}
