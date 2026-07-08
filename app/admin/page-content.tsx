@@ -2437,7 +2437,7 @@ function TrainerDashboardInner() {
                           <div className="hidden sm:block relative overflow-hidden rounded border border-gray-200 mb-1" style={{ width: 480, height: 270 }}>
                             {roomSchedules.length > 0 ? (() => {
                               const videoCount = Math.min(roomSchedules.length, 4);
-                              const previewAssignments = useMemo(() => roomSchedules.slice(0, 4).map((schedule: any) => {
+                              const previewAssignments = roomSchedules.slice(0, 4).map((schedule: any) => {
                                 const video = videos?.find((v: any) => v.id === schedule.videoId);
                                 if (!video) {
                                   console.warn(`[v0] Desktop: Schedule ${schedule.id} references missing video ID ${schedule.videoId}`);
@@ -2465,7 +2465,7 @@ function TrainerDashboardInner() {
                                     equipment: schedule.displayEquipment || video.equipment,
                                   },
                                 };
-                              }).filter(Boolean), [roomSchedules, videos, liveViewVideoZoom, liveViewVerticalPosition, liveViewChanges]);
+                              }).filter(Boolean);
                               const getGridClasses = (count: number) => {
                                 switch (count) {
                                   case 1: return 'flex items-center justify-center';
@@ -2515,7 +2515,7 @@ function TrainerDashboardInner() {
                           <div className="sm:hidden relative overflow-hidden rounded border border-gray-200" style={{ width: '100%', aspectRatio: '16 / 9' }}>
                             {roomSchedules.length > 0 ? (() => {
                               const videoCount = Math.min(roomSchedules.length, 4);
-                              const previewAssignments = useMemo(() => roomSchedules.slice(0, 4).map((schedule: any) => {
+                              const previewAssignments = roomSchedules.slice(0, 4).map((schedule: any) => {
                                 const video = videos?.find((v: any) => v.id === schedule.videoId);
                                 if (!video) {
                                   console.warn(`[v0] Mobile: Schedule ${schedule.id} references missing video ID ${schedule.videoId}`);
@@ -2543,7 +2543,7 @@ function TrainerDashboardInner() {
                                     equipment: schedule.displayEquipment || video.equipment,
                                   },
                                 };
-                              }).filter(Boolean), [roomSchedules, videos, liveViewVideoZoom, liveViewVerticalPosition, liveViewChanges]);
+                              }).filter(Boolean);
                               const getGridClasses = (count: number) => {
                                 switch (count) {
                                   case 1: return 'flex items-center justify-center';
