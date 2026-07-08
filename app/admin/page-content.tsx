@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { QueryClientProvider, useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { queryClient as sharedQueryClient } from "@/lib/queryClient";
@@ -53,6 +53,44 @@ interface Stats {
 
 interface RoomWithAssignments extends Room {
   assignments: Array<Schedule & { video: Video }>;
+}
+
+// Mobile-only canvas: measures its own width and scales the 1920×1080 canvas to fit exactly.
+function MobileRoomCanvas({ videoCount, previewAssignments, getGridClasses, videos }: {
+  videoCount: number;
+  previewAssignments: any[];
+  getGridClasses: (n: number) => string;
+  videos: any;
+}) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [scale, setScale] = useState(0.2);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const update = () => setScale(el.offsetWidth / 1920);
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  return (
+    <div ref={containerRef} style={{ width: '100%', height: `${1080 * scale}px`, position: 'relative', overflow: 'hidden' }}>
+      <div
+        style={{ width: 1920, height: 1080, transform: `scale(${scale})`, transformOrigin: 'top left', pointerEvents: 'none' }}
+        className={`bg-white ${getGridClasses(videoCount)}`}
+      >
+        {previewAssignments.map((assignment: any) => (
+          <div key={assignment.id} className={`overflow-hidden ${videoCount === 1 ? 'max-w-[50%] h-full' : videoCount === 2 ? 'h-full w-full' : 'w-full'}`}>
+            <VideoPlayer assignment={assignment} displayMode={videoCount > 1 ? 'split' : 'single'} videoCount={videoCount} isFullscreen={false} />
+          </div>
+        ))}
+        {videoCount === 2 && <div className="absolute top-0 left-1/2 h-full w-0.5 bg-black -translate-x-px z-10" />}
+        {videoCount >= 3 && (<><div className="absolute top-0 left-1/2 h-full w-0.5 bg-black -translate-x-px z-10" /><div className="absolute left-0 top-1/2 w-full h-0.5 bg-black -translate-y-px z-10" /></>)}
+      </div>
+    </div>
+  );
 }
 
 const VALID_TABS = ["liveview", "library", "schedule", "cache", "dictionary"] as const;
@@ -2333,8 +2371,8 @@ function TrainerDashboardInner() {
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                {/* Live View Grid - responsive card layout */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+                {/* Live View Grid - desktop: flex-wrap natural width; mobile: single column */}
+                <div className="flex flex-col sm:flex-row sm:flex-wrap gap-3">
                   {rooms?.slice(0, 10).map((room: Room) => {
                     const { colorClass } = getRoomColorClasses(room.number);
                     const roomSchedules = schedules
@@ -2343,23 +2381,22 @@ function TrainerDashboardInner() {
                     const roomZoom = liveViewZoom[room.id] || 1;
                     
                     return (
-                      <Card key={room.id} className="border-2 flex flex-col h-full">
-                        <CardHeader className="p-2 flex-shrink-0">
-                          <div className="flex items-center gap-2">
-                            <div className={`w-5 h-5 ${colorClass} rounded-full flex items-center justify-center flex-shrink-0`}>
-                              <span className="text-white text-xs font-bold">{room.number}</span>
+                      <Card key={room.id} className="border-2" style={{ width: 'fit-content' }}>
+                        <CardHeader className="p-2">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center space-x-2">
+                              <div className={`w-5 h-5 ${colorClass} rounded-full flex items-center justify-center`}>
+                                <span className="text-white text-xs font-bold">{room.number}</span>
+                              </div>
+                              <span className="text-xs font-medium">{room.name.split('(')[0].trim()}</span>
                             </div>
-                            <span className="text-xs font-medium truncate">{room.name.split('(')[0].trim()}</span>
                           </div>
                         </CardHeader>
-                        <CardContent className="p-2 flex-1 flex flex-col">
-                          {/* ── Live preview: responsive scale of the real room screen ── */}
-                          {/* 16:9 aspect ratio with minimum height to ensure video is visible */}
-                          <div className="relative overflow-hidden rounded border border-gray-200 mb-2 flex-1 flex items-center justify-center" style={{ width: '100%', background: '#f5f5f5', aspectRatio: '16 / 9', minHeight: '220px' }}>
+                        <CardContent className="p-1">
+                          {/* ── Desktop: exact 480×270 clip box (1920×1080 ÷ 4) ── */}
+                          <div className="hidden sm:block relative overflow-hidden rounded border border-gray-200 mb-1" style={{ width: 480, height: 270 }}>
                             {roomSchedules.length > 0 ? (() => {
                               const videoCount = Math.min(roomSchedules.length, 4);
-
-                              // Build assignment objects exactly as room/[id]/page.tsx does
                               const previewAssignments = roomSchedules.slice(0, 4).map((schedule: any) => {
                                 const video = videos?.find((v: any) => v.id === schedule.videoId);
                                 if (!video) return null;
@@ -2382,7 +2419,6 @@ function TrainerDashboardInner() {
                                   },
                                 };
                               }).filter(Boolean);
-
                               const getGridClasses = (count: number) => {
                                 switch (count) {
                                   case 1: return 'flex items-center justify-center';
@@ -2390,135 +2426,104 @@ function TrainerDashboardInner() {
                                   default: return 'grid grid-cols-2 grid-rows-2 gap-0 h-full relative';
                                 }
                               };
-
                               return (
-                                // Inner full-resolution room canvas scaled responsively
                                 <div
-                                  style={{
-                                    width: 1920,
-                                    height: 1080,
-                                    // Scale up to make video content larger and more visible
-                                    // 0.33 gives roughly 640x360px which fills the card nicely
-                                    transform: `scale(0.33)`,
-                                    transformOrigin: 'center',
-                                    pointerEvents: 'none', // controls are outside this box
-                                  }}
+                                  style={{ width: 1920, height: 1080, transform: 'scale(0.25)', transformOrigin: 'top left', pointerEvents: 'none' }}
                                   className={`bg-white ${getGridClasses(videoCount)}`}
                                 >
                                   {previewAssignments.map((assignment: any) => (
-                                    <div
-                                      key={assignment.id}
-                                      className={`overflow-hidden ${
-                                        videoCount === 1 ? 'max-w-[50%] h-full' :
-                                        videoCount === 2 ? 'h-full w-full' :
-                                        'w-full'
-                                      }`}
-                                    >
-                                      <VideoPlayer
-                                        assignment={assignment}
-                                        displayMode={videoCount > 1 ? 'split' : 'single'}
-                                        videoCount={videoCount}
-                                        isFullscreen={false}
-                                      />
+                                    <div key={assignment.id} className={`overflow-hidden ${videoCount === 1 ? 'max-w-[50%] h-full' : videoCount === 2 ? 'h-full w-full' : 'w-full'}`}>
+                                      <VideoPlayer assignment={assignment} displayMode={videoCount > 1 ? 'split' : 'single'} videoCount={videoCount} isFullscreen={false} />
                                     </div>
                                   ))}
-
-                                  {/* Dividers — match real room */}
-                                  {videoCount === 2 && (
-                                    <div className="absolute top-0 left-1/2 h-full w-0.5 bg-black -translate-x-px z-10" />
-                                  )}
-                                  {videoCount >= 3 && (
-                                    <>
-                                      <div className="absolute top-0 left-1/2 h-full w-0.5 bg-black -translate-x-px z-10" />
-                                      <div className="absolute left-0 top-1/2 w-full h-0.5 bg-black -translate-y-px z-10" />
-                                    </>
-                                  )}
-
-                                  {/* Zoom / position controls — overlaid on desktop, below on mobile */}
-                                  {roomSchedules.length > 0 && (
-                                    <div className="hidden sm:absolute sm:bottom-2 sm:right-2 sm:flex sm:flex-col sm:gap-1 z-20">
-                                      {roomSchedules.slice(0, 4).map((schedule: any) => {
-                                        const videoZoom = liveViewVideoZoom[schedule.id] || parseFloat(schedule.zoomLevel || '1');
-                                        const verticalPos = liveViewVerticalPosition[schedule.id] || parseFloat(schedule.verticalPosition || '0');
-                                        return (
-                                          <div key={schedule.id} className="flex gap-1">
-                                            <Button size="sm" variant="outline" className="h-5 w-5 p-0 bg-white/90 text-[10px]"
-                                              onClick={async () => {
-                                                const v = verticalPos - 10;
-                                                setLiveViewVerticalPosition(p => ({ ...p, [schedule.id]: v }));
-                                                try { await apiRequest('PATCH', `/api/schedules/${schedule.id}`, { verticalPosition: v.toString() }); } catch {}
-                                              }}><ChevronUp className="h-2.5 w-2.5" /></Button>
-                                            <Button size="sm" variant="outline" className="h-5 w-5 p-0 bg-white/90"
-                                              onClick={async () => {
-                                                const v = verticalPos + 10;
-                                                setLiveViewVerticalPosition(p => ({ ...p, [schedule.id]: v }));
-                                                try { await apiRequest('PATCH', `/api/schedules/${schedule.id}`, { verticalPosition: v.toString() }); } catch {}
-                                              }}><ChevronDown className="h-2.5 w-2.5" /></Button>
-                                            <Button size="sm" variant="outline" className="h-5 w-5 p-0 bg-white/90"
-                                              onClick={async () => {
-                                                const z = Math.max(videoZoom - 0.1, 0.5);
-                                                setLiveViewVideoZoom(p => ({ ...p, [schedule.id]: z }));
-                                                try { await apiRequest('PATCH', `/api/schedules/${schedule.id}`, { zoomLevel: z.toString() }); } catch {}
-                                              }}><ZoomOut className="h-2.5 w-2.5" /></Button>
-                                            <Button size="sm" variant="outline" className="h-5 w-5 p-0 bg-white/90"
-                                              onClick={async () => {
-                                                const z = Math.min(videoZoom + 0.1, 2);
-                                                setLiveViewVideoZoom(p => ({ ...p, [schedule.id]: z }));
-                                                try { await apiRequest('PATCH', `/api/schedules/${schedule.id}`, { zoomLevel: z.toString() }); } catch {}
-                                              }}><ZoomIn className="h-2.5 w-2.5" /></Button>
-                                          </div>
-                                        );
-                                      })}
-                                    </div>
-                                  )}
+                                  {videoCount === 2 && <div className="absolute top-0 left-1/2 h-full w-0.5 bg-black -translate-x-px z-10" />}
+                                  {videoCount >= 3 && (<><div className="absolute top-0 left-1/2 h-full w-0.5 bg-black -translate-x-px z-10" /><div className="absolute left-0 top-1/2 w-full h-0.5 bg-black -translate-y-px z-10" /></>)}
                                 </div>
                               );
                             })() : (
                               <div className="h-full flex items-center justify-center text-gray-400">
-                                <div className="text-center">
-                                  <VideoIcon className="h-8 w-8 mx-auto mb-1" />
-                                  <p className="text-xs">No videos</p>
-                                </div>
+                                <div className="text-center"><VideoIcon className="h-8 w-8 mx-auto mb-1" /><p className="text-xs">No videos</p></div>
+                              </div>
+                            )}
+                            {/* Desktop controls — overlaid bottom-right */}
+                            {roomSchedules.length > 0 && (
+                              <div className="absolute bottom-2 right-2 flex flex-col gap-1 z-20">
+                                {roomSchedules.slice(0, 4).map((schedule: any) => {
+                                  const videoZoom = liveViewVideoZoom[schedule.id] || parseFloat(schedule.zoomLevel || '1');
+                                  const verticalPos = liveViewVerticalPosition[schedule.id] || parseFloat(schedule.verticalPosition || '0');
+                                  return (
+                                    <div key={schedule.id} className="flex gap-1">
+                                      <Button size="sm" variant="outline" className="h-5 w-5 p-0 bg-white/90" onClick={async () => { const v = verticalPos - 10; setLiveViewVerticalPosition(p => ({ ...p, [schedule.id]: v })); try { await apiRequest('PATCH', `/api/schedules/${schedule.id}`, { verticalPosition: v.toString() }); } catch {} }}><ChevronUp className="h-2.5 w-2.5" /></Button>
+                                      <Button size="sm" variant="outline" className="h-5 w-5 p-0 bg-white/90" onClick={async () => { const v = verticalPos + 10; setLiveViewVerticalPosition(p => ({ ...p, [schedule.id]: v })); try { await apiRequest('PATCH', `/api/schedules/${schedule.id}`, { verticalPosition: v.toString() }); } catch {} }}><ChevronDown className="h-2.5 w-2.5" /></Button>
+                                      <Button size="sm" variant="outline" className="h-5 w-5 p-0 bg-white/90" onClick={async () => { const z = Math.max(videoZoom - 0.1, 0.5); setLiveViewVideoZoom(p => ({ ...p, [schedule.id]: z })); try { await apiRequest('PATCH', `/api/schedules/${schedule.id}`, { zoomLevel: z.toString() }); } catch {} }}><ZoomOut className="h-2.5 w-2.5" /></Button>
+                                      <Button size="sm" variant="outline" className="h-5 w-5 p-0 bg-white/90" onClick={async () => { const z = Math.min(videoZoom + 0.1, 2); setLiveViewVideoZoom(p => ({ ...p, [schedule.id]: z })); try { await apiRequest('PATCH', `/api/schedules/${schedule.id}`, { zoomLevel: z.toString() }); } catch {} }}><ZoomIn className="h-2.5 w-2.5" /></Button>
+                                    </div>
+                                  );
+                                })}
                               </div>
                             )}
                           </div>
 
-                          {/* Mobile controls — below video for full visibility */}
+                          {/* ── Mobile: full-width 16:9 container, scale(0.25) origin top left ── */}
+                          <div className="sm:hidden relative overflow-hidden rounded border border-gray-200" style={{ width: '100%', aspectRatio: '16 / 9' }}>
+                            {roomSchedules.length > 0 ? (() => {
+                              const videoCount = Math.min(roomSchedules.length, 4);
+                              const previewAssignments = roomSchedules.slice(0, 4).map((schedule: any) => {
+                                const video = videos?.find((v: any) => v.id === schedule.videoId);
+                                if (!video) return null;
+                                return {
+                                  id: schedule.id,
+                                  roomId: schedule.roomId,
+                                  videoId: schedule.videoId,
+                                  sets: 0,
+                                  reps: liveViewChanges[`${schedule.id}_reps`] ?? schedule.reps ?? '0',
+                                  restTime: 0,
+                                  position: schedule.position || 1,
+                                  isActive: true,
+                                  zoomLevel: String(liveViewVideoZoom[schedule.id] ?? parseFloat(schedule.zoomLevel || '1')),
+                                  verticalPosition: String(liveViewVerticalPosition[schedule.id] ?? parseFloat(schedule.verticalPosition || '0')),
+                                  displayEquipment: schedule.displayEquipment || video.equipment,
+                                  video: {
+                                    ...video,
+                                    title: liveViewChanges[`${schedule.id}_title`] ?? schedule.displayTitle ?? video.title,
+                                    equipment: schedule.displayEquipment || video.equipment,
+                                  },
+                                };
+                              }).filter(Boolean);
+                              const getGridClasses = (count: number) => {
+                                switch (count) {
+                                  case 1: return 'flex items-center justify-center';
+                                  case 2: return 'grid grid-cols-2 gap-0 relative';
+                                  default: return 'grid grid-cols-2 grid-rows-2 gap-0 h-full relative';
+                                }
+                              };
+                              return (
+                                <MobileRoomCanvas
+                                  videoCount={videoCount}
+                                  previewAssignments={previewAssignments}
+                                  getGridClasses={getGridClasses}
+                                  videos={videos}
+                                />
+                              );
+                            })() : (
+                              <div className="h-full flex items-center justify-center text-gray-400">
+                                <div className="text-center"><VideoIcon className="h-8 w-8 mx-auto mb-1" /><p className="text-xs">No videos</p></div>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Mobile controls — below video so full video is visible */}
                           {roomSchedules.length > 0 && (
-                            <div className="sm:hidden flex flex-wrap gap-2 p-2 justify-center bg-gray-50 border-t border-gray-200">
+                            <div className="sm:hidden flex flex-wrap gap-2 mt-2 justify-center">
                               {roomSchedules.slice(0, 4).map((schedule: any) => {
                                 const videoZoom = liveViewVideoZoom[schedule.id] || parseFloat(schedule.zoomLevel || '1');
                                 const verticalPos = liveViewVerticalPosition[schedule.id] || parseFloat(schedule.verticalPosition || '0');
                                 return (
                                   <div key={schedule.id} className="flex gap-1">
-                                    <Button size="sm" variant="outline" className="h-8 w-8 p-0 text-xs"
-                                      title="Move up"
-                                      onClick={async () => {
-                                        const v = verticalPos - 10;
-                                        setLiveViewVerticalPosition(p => ({ ...p, [schedule.id]: v }));
-                                        try { await apiRequest('PATCH', `/api/schedules/${schedule.id}`, { verticalPosition: v.toString() }); } catch {}
-                                      }}><ChevronUp className="h-3 w-3" /></Button>
-                                    <Button size="sm" variant="outline" className="h-8 w-8 p-0 text-xs"
-                                      title="Move down"
-                                      onClick={async () => {
-                                        const v = verticalPos + 10;
-                                        setLiveViewVerticalPosition(p => ({ ...p, [schedule.id]: v }));
-                                        try { await apiRequest('PATCH', `/api/schedules/${schedule.id}`, { verticalPosition: v.toString() }); } catch {}
-                                      }}><ChevronDown className="h-3 w-3" /></Button>
-                                    <Button size="sm" variant="outline" className="h-8 w-8 p-0 text-xs"
-                                      title="Zoom out"
-                                      onClick={async () => {
-                                        const z = Math.max(videoZoom - 0.1, 0.5);
-                                        setLiveViewVideoZoom(p => ({ ...p, [schedule.id]: z }));
-                                        try { await apiRequest('PATCH', `/api/schedules/${schedule.id}`, { zoomLevel: z.toString() }); } catch {}
-                                      }}><ZoomOut className="h-3 w-3" /></Button>
-                                    <Button size="sm" variant="outline" className="h-8 w-8 p-0 text-xs"
-                                      title="Zoom in"
-                                      onClick={async () => {
-                                        const z = Math.min(videoZoom + 0.1, 2);
-                                        setLiveViewVideoZoom(p => ({ ...p, [schedule.id]: z }));
-                                        try { await apiRequest('PATCH', `/api/schedules/${schedule.id}`, { zoomLevel: z.toString() }); } catch {}
-                                      }}><ZoomIn className="h-3 w-3" /></Button>
+                                    <Button size="sm" variant="outline" className="h-8 w-8 p-0" title="Move up" onClick={async () => { const v = verticalPos - 10; setLiveViewVerticalPosition(p => ({ ...p, [schedule.id]: v })); try { await apiRequest('PATCH', `/api/schedules/${schedule.id}`, { verticalPosition: v.toString() }); } catch {} }}><ChevronUp className="h-3 w-3" /></Button>
+                                    <Button size="sm" variant="outline" className="h-8 w-8 p-0" title="Move down" onClick={async () => { const v = verticalPos + 10; setLiveViewVerticalPosition(p => ({ ...p, [schedule.id]: v })); try { await apiRequest('PATCH', `/api/schedules/${schedule.id}`, { verticalPosition: v.toString() }); } catch {} }}><ChevronDown className="h-3 w-3" /></Button>
+                                    <Button size="sm" variant="outline" className="h-8 w-8 p-0" title="Zoom out" onClick={async () => { const z = Math.max(videoZoom - 0.1, 0.5); setLiveViewVideoZoom(p => ({ ...p, [schedule.id]: z })); try { await apiRequest('PATCH', `/api/schedules/${schedule.id}`, { zoomLevel: z.toString() }); } catch {} }}><ZoomOut className="h-3 w-3" /></Button>
+                                    <Button size="sm" variant="outline" className="h-8 w-8 p-0" title="Zoom in" onClick={async () => { const z = Math.min(videoZoom + 0.1, 2); setLiveViewVideoZoom(p => ({ ...p, [schedule.id]: z })); try { await apiRequest('PATCH', `/api/schedules/${schedule.id}`, { zoomLevel: z.toString() }); } catch {} }}><ZoomIn className="h-3 w-3" /></Button>
                                   </div>
                                 );
                               })}
