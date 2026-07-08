@@ -56,11 +56,10 @@ interface RoomWithAssignments extends Room {
 }
 
 // Mobile-only canvas: measures its own width and scales the 1920×1080 canvas to fit exactly.
-function MobileRoomCanvas({ videoCount, previewAssignments, getGridClasses, videos }: {
+function MobileRoomCanvas({ videoCount, previewAssignments, getGridClasses }: {
   videoCount: number;
   previewAssignments: any[];
   getGridClasses: (n: number) => string;
-  videos: any;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(0.2);
@@ -2502,7 +2501,6 @@ function TrainerDashboardInner() {
                                   videoCount={videoCount}
                                   previewAssignments={previewAssignments}
                                   getGridClasses={getGridClasses}
-                                  videos={videos}
                                 />
                               );
                             })() : (
@@ -2602,8 +2600,7 @@ function TrainerDashboardInner() {
               muted
               loop
               playsInline
-              preload="none"
-              poster={`/uploads/thumbnails/${videoPreview.url.split('/').pop()?.replace(/\.[^/.]+$/, '')}.jpg`}
+              preload="metadata"
               style={{ maxHeight: '80vh' }}
             />
             
