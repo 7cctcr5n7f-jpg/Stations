@@ -2021,7 +2021,7 @@ function TrainerDashboardInner() {
                       </div>
                     )}
 
-                    {/* ── Round cards list (vertical, ultra-compact) ─────────────����────────────────────── */}
+                    {/* ── Round cards list (vertical, ultra-compact) ─────────────����──────��─────────────── */}
                     <div className="space-y-1">
                       {roomsWithAssignments.map((room) => {
                         const isEmpty = room.assignments.length === 0;
@@ -2372,9 +2372,13 @@ function TrainerDashboardInner() {
               <CardContent>
                 {/* Live View Grid - desktop: flex-wrap natural width; mobile: single column */}
                 <div className="flex flex-col sm:flex-row sm:flex-wrap gap-3">
-                  {rooms?.slice(0, 10).map((room: Room) => {
-                    const { colorClass } = getRoomColorClasses(room.number);
-                    const roomSchedules = schedules
+                  {(() => {
+                    if (!videos || videos.length === 0) {
+                      console.warn(`[v0] Videos not loaded yet. Loaded ${videos?.length ?? 0} videos, ${schedules?.length ?? 0} schedules`);
+                    }
+                    return rooms?.slice(0, 10).map((room: Room) => {
+                      const { colorClass } = getRoomColorClasses(room.number);
+                      const roomSchedules = schedules
                       .filter((s: any) => s.roomId === room.id && s.scheduleDate === currentDate)
                       .sort((a: any, b: any) => a.position - b.position); // Sort by position to maintain consistent order
                     const roomZoom = liveViewZoom[room.id] || 1;
@@ -2398,7 +2402,14 @@ function TrainerDashboardInner() {
                               const videoCount = Math.min(roomSchedules.length, 4);
                               const previewAssignments = roomSchedules.slice(0, 4).map((schedule: any) => {
                                 const video = videos?.find((v: any) => v.id === schedule.videoId);
-                                if (!video) return null;
+                                if (!video) {
+                                  console.warn(`[v0] Desktop: Schedule ${schedule.id} references missing video ID ${schedule.videoId}`);
+                                  return null;
+                                }
+                                if (!video.url?.trim()) {
+                                  console.warn(`[v0] Desktop: Video ${video.id} (${video.title}) has no URL`);
+                                  return null;
+                                }
                                 return {
                                   id: schedule.id,
                                   roomId: schedule.roomId,
@@ -2469,7 +2480,14 @@ function TrainerDashboardInner() {
                               const videoCount = Math.min(roomSchedules.length, 4);
                               const previewAssignments = roomSchedules.slice(0, 4).map((schedule: any) => {
                                 const video = videos?.find((v: any) => v.id === schedule.videoId);
-                                if (!video) return null;
+                                if (!video) {
+                                  console.warn(`[v0] Mobile: Schedule ${schedule.id} references missing video ID ${schedule.videoId}`);
+                                  return null;
+                                }
+                                if (!video.url?.trim()) {
+                                  console.warn(`[v0] Mobile: Video ${video.id} (${video.title}) has no URL`);
+                                  return null;
+                                }
                                 return {
                                   id: schedule.id,
                                   roomId: schedule.roomId,
@@ -2530,7 +2548,8 @@ function TrainerDashboardInner() {
                         </CardContent>
                       </Card>
                     );
-                  })}
+                    });
+                  })()}
                 </div>
               </CardContent>
             </Card>

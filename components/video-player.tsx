@@ -37,8 +37,16 @@ export default function VideoPlayer({ assignment, displayMode = 'single', videoC
 
   // Initialize video with direct URL loading (no caching for stability)
   useEffect(() => {
+    // Validate URL exists and is not empty
+    const videoUrl = assignment.video.url?.trim();
+    if (!videoUrl) {
+      console.warn(`[v0] Video ${assignment.video.id} (${assignment.video.title}) has no URL - marking as error`);
+      setVideoError(true);
+      return;
+    }
     // Always use original URL for maximum stability
-    setVideoSrc(assignment.video.url);
+    setVideoSrc(videoUrl);
+    setVideoError(false);
     setIsCached(false);
   }, [assignment.video.id, assignment.video.url]);
 
