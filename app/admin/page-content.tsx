@@ -2021,7 +2021,7 @@ function TrainerDashboardInner() {
                       </div>
                     )}
 
-                    {/* ── Round cards list (vertical, ultra-compact) ─────────────����──────��─────────────── */}
+                    {/* ── Round cards list (vertical, ultra-compact) ─────────────����──────���─────────────── */}
                     <div className="space-y-1">
                       {roomsWithAssignments.map((room) => {
                         const isEmpty = room.assignments.length === 0;
@@ -2135,7 +2135,11 @@ function TrainerDashboardInner() {
                                       <div className="relative shrink-0 w-7 h-7 rounded overflow-hidden bg-gray-100 border border-gray-200">
                                         {assignment.video.thumbnailUrl ? (
                                           <img
-                                            src={assignment.video.thumbnailUrl}
+                                            src={
+                                              assignment.video.thumbnailUrl.includes("r2.dev") || assignment.video.thumbnailUrl.includes("r2.cloudflarestorage.com")
+                                                ? `/api/videos/proxy?url=${encodeURIComponent(assignment.video.thumbnailUrl)}`
+                                                : assignment.video.thumbnailUrl
+                                            }
                                             alt={assignment.video.title}
                                             className="w-full h-full object-cover"
                                           />

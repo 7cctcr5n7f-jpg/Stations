@@ -34,7 +34,15 @@ export default function ImageThumbnail({
   // Use the R2 thumbnail URL stored in the DB. If absent or broken, show a
   // neutral placeholder — never run a HEAD check against the video URL, as
   // that triggers a CORS preflight that R2 public buckets block.
-  const thumbnailSrc = video.thumbnailUrl && !thumbError ? video.thumbnailUrl : null;
+  // Route R2 thumbnails through CORS proxy to fix cross-origin loading issues.
+  let thumbnailSrc = null;
+  if (video.thumbnailUrl && !thumbError) {
+    if (video.thumbnailUrl.includes("r2.dev") || video.thumbnailUrl.includes("r2.cloudflarestorage.com")) {
+      thumbnailSrc = `/api/videos/proxy?url=${encodeURIComponent(video.thumbnailUrl)}`;
+    } else {
+      thumbnailSrc = video.thumbnailUrl;
+    }
+  }
 
   return (
     <div 
