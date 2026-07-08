@@ -200,14 +200,23 @@ function TrainerDashboardInner() {
 
   const { data: rooms } = useQuery<Room[]>({
     queryKey: ["/api/rooms"],
+    staleTime: 24 * 60 * 60 * 1000, // 24 hours - rooms change rarely
+    gcTime: 24 * 60 * 60 * 1000, // Cache for full day
+    refetchOnWindowFocus: false,
   });
 
   const { data: videos } = useQuery<Video[]>({
     queryKey: ["/api/videos"],
+    staleTime: 60 * 60 * 1000, // 1 hour - videos updated occasionally
+    gcTime: 24 * 60 * 60 * 1000, // Cache for full day
+    refetchOnWindowFocus: false,
   });
 
   const { data: videoOptions } = useQuery<{bodyParts: string[], secondaryMuscles: string[], equipment: string[]}>({
     queryKey: ["/api/video-options"],
+    staleTime: 24 * 60 * 60 * 1000, // 24 hours - options don't change often
+    gcTime: 24 * 60 * 60 * 1000,
+    refetchOnWindowFocus: false,
   });
 
   // Function to derive categories from primary muscle and equipment (can return multiple)
@@ -235,6 +244,9 @@ function TrainerDashboardInner() {
 
   const { data: roomAssignments } = useQuery<RoomAssignment[]>({
     queryKey: ["/api/room-assignments"],
+    staleTime: 24 * 60 * 60 * 1000, // 24 hours
+    gcTime: 24 * 60 * 60 * 1000,
+    refetchOnWindowFocus: false,
   });
 
   // Get schedules for the current selected date
@@ -253,10 +265,9 @@ function TrainerDashboardInner() {
         return [];
       }
     },
-    staleTime: 0, // Always fetch fresh data when date changes
-    gcTime: 0, // React Query v5 uses gcTime instead of cacheTime
-    refetchOnMount: 'always',
-    refetchOnWindowFocus: false,
+    staleTime: 5 * 60 * 1000, // 5 minutes - sufficient for most use cases
+    gcTime: 60 * 60 * 1000, // Keep in cache for 1 hour
+    refetchOnWindowFocus: false, // Don't refetch on focus - only invalidate on mutations
   });
 
   // Get all schedules for the week to check completion status
@@ -274,7 +285,8 @@ function TrainerDashboardInner() {
         return [];
       }
     },
-    staleTime: 5 * 60 * 1000, // 5 minutes
+    staleTime: 10 * 60 * 1000, // 10 minutes - week view updates less frequently
+    gcTime: 60 * 60 * 1000, // Keep in cache for 1 hour
     refetchOnWindowFocus: false,
   });
 
@@ -2021,7 +2033,7 @@ function TrainerDashboardInner() {
                       </div>
                     )}
 
-                    {/* ── Round cards list (vertical, ultra-compact) ─────────────����──────���─────────────── */}
+                    {/* ── Round cards list (vertical, ultra-compact) ─────────────����──────����─────────────── */}
                     <div className="space-y-1">
                       {roomsWithAssignments.map((room) => {
                         const isEmpty = room.assignments.length === 0;

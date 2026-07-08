@@ -11,6 +11,9 @@ export default function RoomSelectionPage() {
 
   const { data: rooms, isLoading } = useQuery<Room[]>({
     queryKey: ["/api/rooms"],
+    staleTime: 24 * 60 * 60 * 1000, // 24 hours
+    gcTime: 24 * 60 * 60 * 1000,
+    refetchOnWindowFocus: false,
   })
 
   if (isLoading) {
