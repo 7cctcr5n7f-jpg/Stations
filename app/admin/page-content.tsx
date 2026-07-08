@@ -56,24 +56,48 @@ interface RoomWithAssignments extends Room {
 }
 
 // Mobile-only canvas: measures its own width and scales the 1920×1080 canvas to fit exactly.
-function MobileRoomCanvas({ videoCount, previewAssignments, getGridClasses, videos }: {
+const MobileRoomCanvas = ({ videoCount, previewAssignments, getGridClasses }: {
   videoCount: number;
   previewAssignments: any[];
   getGridClasses: (n: number) => string;
-  videos: any;
-}) {
+}) => {
   const containerRef = useRef<HTMLDivElement>(null);
-  const [scale, setScale] = useState(0.2);
+  const [scale, setScale] = useState(0.25); // Start with reasonable default to prevent layout shift
 
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
+    
+    // Use initial measurement only - ResizeObserver is expensive, most mobile widths don't change
     const update = () => setScale(el.offsetWidth / 1920);
     update();
+    
+    // Only observe if screen could actually resize (avoid unnecessary observer)
+    const isResizable = window.innerWidth < 1024; // Only mobile could resize during use
+    if (!isResizable) return;
+    
     const ro = new ResizeObserver(update);
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
+
+  // Memoize video renders to prevent unnecessary re-renders on parent updates
+  const videoElements = useMemo(() => 
+    previewAssignments.map((assignment: any) => (
+      <div key={assignment.id} className={`overflow-hidden ${videoCount === 1 ? 'max-w-[50%] h-full' : videoCount === 2 ? 'h-full w-full' : 'w-full'}`}>
+        <VideoPlayer assignment={assignment} displayMode={videoCount > 1 ? 'split' : 'single'} videoCount={videoCount} isFullscreen={false} />
+      </div>
+    )),
+    [previewAssignments, videoCount]
+  );
+
+  // Memoize dividers to prevent recreation
+  const dividers = useMemo(() => (
+    <>
+      {videoCount === 2 && <div className="absolute top-0 left-1/2 h-full w-0.5 bg-black -translate-x-px z-10" />}
+      {videoCount >= 3 && (<><div className="absolute top-0 left-1/2 h-full w-0.5 bg-black -translate-x-px z-10" /><div className="absolute left-0 top-1/2 w-full h-0.5 bg-black -translate-y-px z-10" /></>)}
+    </>
+  ), [videoCount]);
 
   return (
     <div ref={containerRef} style={{ width: '100%', height: `${1080 * scale}px`, position: 'relative', overflow: 'hidden' }}>
@@ -81,17 +105,12 @@ function MobileRoomCanvas({ videoCount, previewAssignments, getGridClasses, vide
         style={{ width: 1920, height: 1080, transform: `scale(${scale})`, transformOrigin: 'top left', pointerEvents: 'none' }}
         className={`bg-white ${getGridClasses(videoCount)}`}
       >
-        {previewAssignments.map((assignment: any) => (
-          <div key={assignment.id} className={`overflow-hidden ${videoCount === 1 ? 'max-w-[50%] h-full' : videoCount === 2 ? 'h-full w-full' : 'w-full'}`}>
-            <VideoPlayer assignment={assignment} displayMode={videoCount > 1 ? 'split' : 'single'} videoCount={videoCount} isFullscreen={false} />
-          </div>
-        ))}
-        {videoCount === 2 && <div className="absolute top-0 left-1/2 h-full w-0.5 bg-black -translate-x-px z-10" />}
-        {videoCount >= 3 && (<><div className="absolute top-0 left-1/2 h-full w-0.5 bg-black -translate-x-px z-10" /><div className="absolute left-0 top-1/2 w-full h-0.5 bg-black -translate-y-px z-10" /></>)}
+        {videoElements}
+        {dividers}
       </div>
     </div>
   );
-}
+};
 
 const VALID_TABS = ["liveview", "library", "schedule", "cache", "dictionary"] as const;
 
@@ -201,14 +220,23 @@ function TrainerDashboardInner() {
 
   const { data: rooms } = useQuery<Room[]>({
     queryKey: ["/api/rooms"],
+    staleTime: 24 * 60 * 60 * 1000, // 24 hours - rooms change rarely
+    gcTime: 24 * 60 * 60 * 1000, // Cache for full day
+    refetchOnWindowFocus: false,
   });
 
   const { data: videos } = useQuery<Video[]>({
     queryKey: ["/api/videos"],
+    staleTime: 60 * 60 * 1000, // 1 hour - videos updated occasionally
+    gcTime: 24 * 60 * 60 * 1000, // Cache for full day
+    refetchOnWindowFocus: false,
   });
 
   const { data: videoOptions } = useQuery<{bodyParts: string[], secondaryMuscles: string[], equipment: string[]}>({
     queryKey: ["/api/video-options"],
+    staleTime: 24 * 60 * 60 * 1000, // 24 hours - options don't change often
+    gcTime: 24 * 60 * 60 * 1000,
+    refetchOnWindowFocus: false,
   });
 
   // Function to derive categories from primary muscle and equipment (can return multiple)
@@ -236,6 +264,9 @@ function TrainerDashboardInner() {
 
   const { data: roomAssignments } = useQuery<RoomAssignment[]>({
     queryKey: ["/api/room-assignments"],
+    staleTime: 24 * 60 * 60 * 1000, // 24 hours
+    gcTime: 24 * 60 * 60 * 1000,
+    refetchOnWindowFocus: false,
   });
 
   // Get schedules for the current selected date
@@ -254,10 +285,9 @@ function TrainerDashboardInner() {
         return [];
       }
     },
-    staleTime: 0, // Always fetch fresh data when date changes
-    gcTime: 0, // React Query v5 uses gcTime instead of cacheTime
-    refetchOnMount: 'always',
-    refetchOnWindowFocus: false,
+    staleTime: 5 * 60 * 1000, // 5 minutes - sufficient for most use cases
+    gcTime: 60 * 60 * 1000, // Keep in cache for 1 hour
+    refetchOnWindowFocus: false, // Don't refetch on focus - only invalidate on mutations
   });
 
   // Get all schedules for the week to check completion status
@@ -275,7 +305,8 @@ function TrainerDashboardInner() {
         return [];
       }
     },
-    staleTime: 5 * 60 * 1000, // 5 minutes
+    staleTime: 10 * 60 * 1000, // 10 minutes - week view updates less frequently
+    gcTime: 60 * 60 * 1000, // Keep in cache for 1 hour
     refetchOnWindowFocus: false,
   });
 
@@ -2022,7 +2053,7 @@ function TrainerDashboardInner() {
                       </div>
                     )}
 
-                    {/* ── Round cards list (vertical, ultra-compact) ─────────────����────────────────────── */}
+                    {/* ── Round cards list (vertical, ultra-compact) ─────────────����──────����─────────────── */}
                     <div className="space-y-1">
                       {roomsWithAssignments.map((room) => {
                         const isEmpty = room.assignments.length === 0;
@@ -2136,7 +2167,11 @@ function TrainerDashboardInner() {
                                       <div className="relative shrink-0 w-7 h-7 rounded overflow-hidden bg-gray-100 border border-gray-200">
                                         {assignment.video.thumbnailUrl ? (
                                           <img
-                                            src={assignment.video.thumbnailUrl}
+                                            src={
+                                              assignment.video.thumbnailUrl.includes("r2.dev") || assignment.video.thumbnailUrl.includes("r2.cloudflarestorage.com")
+                                                ? `/api/videos/proxy?url=${encodeURIComponent(assignment.video.thumbnailUrl)}`
+                                                : assignment.video.thumbnailUrl
+                                            }
                                             alt={assignment.video.title}
                                             className="w-full h-full object-cover"
                                           />
@@ -2373,9 +2408,14 @@ function TrainerDashboardInner() {
               <CardContent>
                 {/* Live View Grid - desktop: flex-wrap natural width; mobile: single column */}
                 <div className="flex flex-col sm:flex-row sm:flex-wrap gap-3">
-                  {rooms?.slice(0, 10).map((room: Room) => {
-                    const { colorClass } = getRoomColorClasses(room.number);
-                    const roomSchedules = schedules
+                  {useMemo(() => {
+                    if (!videos || videos.length === 0) {
+                      console.warn(`[v0] Videos not loaded yet. Loaded ${videos?.length ?? 0} videos, ${schedules?.length ?? 0} schedules`);
+                      return null;
+                    }
+                    return rooms?.slice(0, 10).map((room: Room) => {
+                      const { colorClass } = getRoomColorClasses(room.number);
+                      const roomSchedules = schedules
                       .filter((s: any) => s.roomId === room.id && s.scheduleDate === currentDate)
                       .sort((a: any, b: any) => a.position - b.position); // Sort by position to maintain consistent order
                     const roomZoom = liveViewZoom[room.id] || 1;
@@ -2399,7 +2439,14 @@ function TrainerDashboardInner() {
                               const videoCount = Math.min(roomSchedules.length, 4);
                               const previewAssignments = roomSchedules.slice(0, 4).map((schedule: any) => {
                                 const video = videos?.find((v: any) => v.id === schedule.videoId);
-                                if (!video) return null;
+                                if (!video) {
+                                  console.warn(`[v0] Desktop: Schedule ${schedule.id} references missing video ID ${schedule.videoId}`);
+                                  return null;
+                                }
+                                if (!video.url?.trim()) {
+                                  console.warn(`[v0] Desktop: Video ${video.id} (${video.title}) has no URL`);
+                                  return null;
+                                }
                                 return {
                                   id: schedule.id,
                                   roomId: schedule.roomId,
@@ -2470,7 +2517,14 @@ function TrainerDashboardInner() {
                               const videoCount = Math.min(roomSchedules.length, 4);
                               const previewAssignments = roomSchedules.slice(0, 4).map((schedule: any) => {
                                 const video = videos?.find((v: any) => v.id === schedule.videoId);
-                                if (!video) return null;
+                                if (!video) {
+                                  console.warn(`[v0] Mobile: Schedule ${schedule.id} references missing video ID ${schedule.videoId}`);
+                                  return null;
+                                }
+                                if (!video.url?.trim()) {
+                                  console.warn(`[v0] Mobile: Video ${video.id} (${video.title}) has no URL`);
+                                  return null;
+                                }
                                 return {
                                   id: schedule.id,
                                   roomId: schedule.roomId,
@@ -2502,7 +2556,6 @@ function TrainerDashboardInner() {
                                   videoCount={videoCount}
                                   previewAssignments={previewAssignments}
                                   getGridClasses={getGridClasses}
-                                  videos={videos}
                                 />
                               );
                             })() : (
@@ -2532,7 +2585,8 @@ function TrainerDashboardInner() {
                         </CardContent>
                       </Card>
                     );
-                  })}
+                    });
+                  }, [rooms, schedules, currentDate, videos, liveViewVideoZoom, liveViewVerticalPosition, liveViewZoom, liveViewChanges, apiRequest, setLiveViewVideoZoom, setLiveViewVerticalPosition])}
                 </div>
               </CardContent>
             </Card>
@@ -2602,8 +2656,7 @@ function TrainerDashboardInner() {
               muted
               loop
               playsInline
-              preload="none"
-              poster={`/uploads/thumbnails/${videoPreview.url.split('/').pop()?.replace(/\.[^/.]+$/, '')}.jpg`}
+              preload="metadata"
               style={{ maxHeight: '80vh' }}
             />
             

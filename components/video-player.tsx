@@ -37,8 +37,24 @@ export default function VideoPlayer({ assignment, displayMode = 'single', videoC
 
   // Initialize video with direct URL loading (no caching for stability)
   useEffect(() => {
-    // Always use original URL for maximum stability
-    setVideoSrc(assignment.video.url);
+    // Validate URL exists and is not empty
+    const videoUrl = assignment.video.url?.trim();
+    if (!videoUrl) {
+      console.warn(`[v0] Video ${assignment.video.id} (${assignment.video.title}) has no URL - marking as error`);
+      setVideoError(true);
+      return;
+    }
+    
+    // Proxy R2 URLs through our CORS-enabled endpoint to fix CORS blocking
+    let finalUrl = videoUrl;
+    if (videoUrl.includes("r2.dev") || videoUrl.includes("r2.cloudflarestorage.com")) {
+      finalUrl = `/api/videos/proxy?url=${encodeURIComponent(videoUrl)}`;
+      console.log("[v0] Using CORS proxy for R2 video:", videoUrl.substring(0, 50) + "...");
+    }
+    
+    // Always use final URL for maximum stability
+    setVideoSrc(finalUrl);
+    setVideoError(false);
     setIsCached(false);
   }, [assignment.video.id, assignment.video.url]);
 
@@ -103,6 +119,7 @@ export default function VideoPlayer({ assignment, displayMode = 'single', videoC
         preload="auto"
         controls={false}
         disablePictureInPicture
+        crossOrigin="anonymous"
       />
       
       {/* Video Title - Top Center */}

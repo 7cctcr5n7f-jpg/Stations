@@ -56,10 +56,16 @@ export default function EquipmentView() {
 
   const { data: rooms } = useQuery<Room[]>({
     queryKey: ["/api/rooms"],
+    staleTime: 24 * 60 * 60 * 1000, // 24 hours
+    gcTime: 24 * 60 * 60 * 1000,
+    refetchOnWindowFocus: false,
   });
 
   const { data: videos } = useQuery<Video[]>({
     queryKey: ["/api/videos"],
+    staleTime: 60 * 60 * 1000, // 1 hour
+    gcTime: 24 * 60 * 60 * 1000,
+    refetchOnWindowFocus: false,
   });
 
   const { data: weekSchedules = [] } = useQuery<any[]>({
@@ -76,8 +82,9 @@ export default function EquipmentView() {
         return [];
       }
     },
-    staleTime: 1000, // Reduce cache time to 1 second for real-time updates
-    refetchOnWindowFocus: true,
+    staleTime: 10 * 60 * 1000, // 10 minutes - reasonable for view
+    gcTime: 60 * 60 * 1000, // Keep cached for 1 hour
+    refetchOnWindowFocus: false, // Don't refetch on every focus
   });
 
   // Calculate week dates
