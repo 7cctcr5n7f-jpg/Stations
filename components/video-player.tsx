@@ -18,6 +18,7 @@ interface VideoPlayerProps {
       duration: string;
       bodyPart: string;
       equipment: string;
+      intensity?: "Low" | "Medium" | "High" | null;
     };
   };
   displayMode?: 'single' | 'split';
@@ -98,6 +99,22 @@ export default function VideoPlayer({ assignment, displayMode = 'single', videoC
   // Calculate height based on video count - only 3+ videos use half height, 1-2 videos use full height
   const containerHeight = videoCount >= 3 ? '50vh' : '100vh';
   const isCompactMode = videoCount >= 3;
+
+  // Get intensity color and styling
+  const getIntensityStyles = (intensity?: string | null) => {
+    switch (intensity) {
+      case "High":
+        return { bg: "bg-red-500/90", text: "text-white", label: "HIGH" };
+      case "Medium":
+        return { bg: "bg-yellow-500/90", text: "text-black", label: "MED" };
+      case "Low":
+        return { bg: "bg-green-500/90", text: "text-white", label: "LOW" };
+      default:
+        return null;
+    }
+  };
+
+  const intensityStyles = getIntensityStyles(assignment.video.intensity);
   
   return (
     <div className="relative bg-white w-full h-full overflow-hidden" style={{ height: containerHeight }}>
@@ -122,6 +139,15 @@ export default function VideoPlayer({ assignment, displayMode = 'single', videoC
         crossOrigin="anonymous"
       />
       
+      {/* Intensity Badge - Top Left */}
+      {intensityStyles && (
+        <div className={`absolute ${isCompactMode ? 'top-3 left-3' : 'top-5 left-5'} z-20 pointer-events-none`}>
+          <div className={`${intensityStyles.bg} ${intensityStyles.text} rounded-lg font-bold uppercase tracking-wider ${isCompactMode ? 'px-2.5 py-1 text-xs' : 'px-4 py-2 text-sm'}`}>
+            {intensityStyles.label}
+          </div>
+        </div>
+      )}
+
       {/* Video Title - Top Center */}
       <div className={`absolute ${isCompactMode ? 'top-3' : 'top-5'} left-1/2 -translate-x-1/2 z-10 w-full px-4 flex justify-center pointer-events-none`}>
         <div className={`bg-white/90 backdrop-blur-sm rounded-lg ${isCompactMode ? 'px-3 py-1.5' : 'px-6 py-3'} text-center max-w-[65%]`}>
