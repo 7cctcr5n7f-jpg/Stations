@@ -56,23 +56,48 @@ interface RoomWithAssignments extends Room {
 }
 
 // Mobile-only canvas: measures its own width and scales the 1920×1080 canvas to fit exactly.
-function MobileRoomCanvas({ videoCount, previewAssignments, getGridClasses }: {
+const MobileRoomCanvas = ({ videoCount, previewAssignments, getGridClasses }: {
   videoCount: number;
   previewAssignments: any[];
   getGridClasses: (n: number) => string;
-}) {
+}) => {
   const containerRef = useRef<HTMLDivElement>(null);
-  const [scale, setScale] = useState(0.2);
+  const [scale, setScale] = useState(0.25); // Start with reasonable default to prevent layout shift
 
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
+    
+    // Use initial measurement only - ResizeObserver is expensive, most mobile widths don't change
     const update = () => setScale(el.offsetWidth / 1920);
     update();
+    
+    // Only observe if screen could actually resize (avoid unnecessary observer)
+    const isResizable = window.innerWidth < 1024; // Only mobile could resize during use
+    if (!isResizable) return;
+    
     const ro = new ResizeObserver(update);
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
+
+  // Memoize video renders to prevent unnecessary re-renders on parent updates
+  const videoElements = useMemo(() => 
+    previewAssignments.map((assignment: any) => (
+      <div key={assignment.id} className={`overflow-hidden ${videoCount === 1 ? 'max-w-[50%] h-full' : videoCount === 2 ? 'h-full w-full' : 'w-full'}`}>
+        <VideoPlayer assignment={assignment} displayMode={videoCount > 1 ? 'split' : 'single'} videoCount={videoCount} isFullscreen={false} />
+      </div>
+    )),
+    [previewAssignments, videoCount]
+  );
+
+  // Memoize dividers to prevent recreation
+  const dividers = useMemo(() => (
+    <>
+      {videoCount === 2 && <div className="absolute top-0 left-1/2 h-full w-0.5 bg-black -translate-x-px z-10" />}
+      {videoCount >= 3 && (<><div className="absolute top-0 left-1/2 h-full w-0.5 bg-black -translate-x-px z-10" /><div className="absolute left-0 top-1/2 w-full h-0.5 bg-black -translate-y-px z-10" /></>)}
+    </>
+  ), [videoCount]);
 
   return (
     <div ref={containerRef} style={{ width: '100%', height: `${1080 * scale}px`, position: 'relative', overflow: 'hidden' }}>
@@ -80,17 +105,12 @@ function MobileRoomCanvas({ videoCount, previewAssignments, getGridClasses }: {
         style={{ width: 1920, height: 1080, transform: `scale(${scale})`, transformOrigin: 'top left', pointerEvents: 'none' }}
         className={`bg-white ${getGridClasses(videoCount)}`}
       >
-        {previewAssignments.map((assignment: any) => (
-          <div key={assignment.id} className={`overflow-hidden ${videoCount === 1 ? 'max-w-[50%] h-full' : videoCount === 2 ? 'h-full w-full' : 'w-full'}`}>
-            <VideoPlayer assignment={assignment} displayMode={videoCount > 1 ? 'split' : 'single'} videoCount={videoCount} isFullscreen={false} />
-          </div>
-        ))}
-        {videoCount === 2 && <div className="absolute top-0 left-1/2 h-full w-0.5 bg-black -translate-x-px z-10" />}
-        {videoCount >= 3 && (<><div className="absolute top-0 left-1/2 h-full w-0.5 bg-black -translate-x-px z-10" /><div className="absolute left-0 top-1/2 w-full h-0.5 bg-black -translate-y-px z-10" /></>)}
+        {videoElements}
+        {dividers}
       </div>
     </div>
   );
-}
+};
 
 const VALID_TABS = ["liveview", "library", "schedule", "cache", "dictionary"] as const;
 
@@ -2388,9 +2408,10 @@ function TrainerDashboardInner() {
               <CardContent>
                 {/* Live View Grid - desktop: flex-wrap natural width; mobile: single column */}
                 <div className="flex flex-col sm:flex-row sm:flex-wrap gap-3">
-                  {(() => {
+                  {useMemo(() => {
                     if (!videos || videos.length === 0) {
                       console.warn(`[v0] Videos not loaded yet. Loaded ${videos?.length ?? 0} videos, ${schedules?.length ?? 0} schedules`);
+                      return null;
                     }
                     return rooms?.slice(0, 10).map((room: Room) => {
                       const { colorClass } = getRoomColorClasses(room.number);
@@ -2416,7 +2437,7 @@ function TrainerDashboardInner() {
                           <div className="hidden sm:block relative overflow-hidden rounded border border-gray-200 mb-1" style={{ width: 480, height: 270 }}>
                             {roomSchedules.length > 0 ? (() => {
                               const videoCount = Math.min(roomSchedules.length, 4);
-                              const previewAssignments = roomSchedules.slice(0, 4).map((schedule: any) => {
+                              const previewAssignments = useMemo(() => roomSchedules.slice(0, 4).map((schedule: any) => {
                                 const video = videos?.find((v: any) => v.id === schedule.videoId);
                                 if (!video) {
                                   console.warn(`[v0] Desktop: Schedule ${schedule.id} references missing video ID ${schedule.videoId}`);
@@ -2444,7 +2465,7 @@ function TrainerDashboardInner() {
                                     equipment: schedule.displayEquipment || video.equipment,
                                   },
                                 };
-                              }).filter(Boolean);
+                              }).filter(Boolean), [roomSchedules, videos, liveViewVideoZoom, liveViewVerticalPosition, liveViewChanges]);
                               const getGridClasses = (count: number) => {
                                 switch (count) {
                                   case 1: return 'flex items-center justify-center';
@@ -2494,7 +2515,7 @@ function TrainerDashboardInner() {
                           <div className="sm:hidden relative overflow-hidden rounded border border-gray-200" style={{ width: '100%', aspectRatio: '16 / 9' }}>
                             {roomSchedules.length > 0 ? (() => {
                               const videoCount = Math.min(roomSchedules.length, 4);
-                              const previewAssignments = roomSchedules.slice(0, 4).map((schedule: any) => {
+                              const previewAssignments = useMemo(() => roomSchedules.slice(0, 4).map((schedule: any) => {
                                 const video = videos?.find((v: any) => v.id === schedule.videoId);
                                 if (!video) {
                                   console.warn(`[v0] Mobile: Schedule ${schedule.id} references missing video ID ${schedule.videoId}`);
@@ -2522,7 +2543,7 @@ function TrainerDashboardInner() {
                                     equipment: schedule.displayEquipment || video.equipment,
                                   },
                                 };
-                              }).filter(Boolean);
+                              }).filter(Boolean), [roomSchedules, videos, liveViewVideoZoom, liveViewVerticalPosition, liveViewChanges]);
                               const getGridClasses = (count: number) => {
                                 switch (count) {
                                   case 1: return 'flex items-center justify-center';
@@ -2565,7 +2586,7 @@ function TrainerDashboardInner() {
                       </Card>
                     );
                     });
-                  })()}
+                  }, [rooms, schedules, currentDate, videos, liveViewVideoZoom, liveViewVerticalPosition, liveViewZoom, liveViewChanges, apiRequest, setLiveViewVideoZoom, setLiveViewVerticalPosition])}
                 </div>
               </CardContent>
             </Card>
