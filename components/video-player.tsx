@@ -119,6 +119,7 @@ export default function VideoPlayer({ assignment, displayMode = 'single', videoC
         preload="auto"
         controls={false}
         disablePictureInPicture
+        crossOrigin="anonymous"
       />
       
       {/* Video Title - Top Center */}

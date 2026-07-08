@@ -32,21 +32,27 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    // Get the video buffer
-    const buffer = await response.arrayBuffer()
+    // Stream the video directly without buffering the entire file
+    // This allows browsers to start playing immediately instead of waiting for full download
+    const headers = new Headers({
+      "Content-Type": response.headers.get("content-type") || "video/mp4",
+      "Cache-Control": "public, max-age=31536000, immutable",
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type, Range",
+      "Accept-Ranges": "bytes",
+    })
 
-    // Return with CORS headers
-    return new NextResponse(buffer, {
+    // Preserve original content-length for proper streaming
+    const contentLength = response.headers.get("content-length")
+    if (contentLength) {
+      headers.set("Content-Length", contentLength)
+    }
+
+    // Return streamed response (don't buffer)
+    return new NextResponse(response.body, {
       status: 200,
-      headers: {
-        "Content-Type": response.headers.get("content-type") || "video/mp4",
-        "Content-Length": buffer.byteLength.toString(),
-        "Cache-Control": "public, max-age=31536000, immutable",
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type, Range",
-        "Accept-Ranges": "bytes",
-      },
+      headers,
     })
   } catch (error) {
     console.error("[v0] Video proxy error:", error)
