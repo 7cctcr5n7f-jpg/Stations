@@ -2,10 +2,6 @@ import { type NextRequest, NextResponse } from "next/server"
 
 export const runtime = "nodejs"
 
-// Simple in-memory cache for video responses to avoid duplicate fetches from R2
-// Each entry: { timestamp, buffer, contentType }
-const videoCache = new Map<string, { timestamp: number; buffer: ArrayBuffer; contentType: string }>()
-
 /**
  * Video proxy endpoint that forwards R2 requests with proper CORS headers.
  * This allows browser-side video playback from R2 by adding Access-Control-Allow-Origin.
@@ -26,27 +22,11 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Invalid URL source" }, { status: 403 })
     }
 
-    // Check cache first to avoid duplicate R2 requests
-    const cached = videoCache.get(url)
-    if (cached) {
-      console.log("[v0] Using cached video:", url.substring(0, 50) + "...")
-      return new NextResponse(cached.buffer, {
-        status: 200,
-        headers: {
-          "Content-Type": cached.contentType,
-          "Cache-Control": "public, max-age=31536000, immutable",
-          "Access-Control-Allow-Origin": "*",
-          "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
-          "Access-Control-Allow-Headers": "Content-Type, Range",
-          "Accept-Ranges": "bytes",
-          "Content-Length": cached.buffer.byteLength.toString(),
-          "X-Cache": "HIT",
-        },
-      })
-    }
-
-    // Fetch the video from R2
-    const response = await fetch(url)
+    // Forward byte-range requests so clients can progressively stream media.
+    const range = request.headers.get("range")
+    const response = await fetch(url, {
+      headers: range ? { Range: range } : undefined,
+    })
 
     if (!response.ok) {
       return NextResponse.json(
@@ -55,28 +35,31 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    // Get buffer for more reliable streaming (response.body can be null in some runtimes)
-    const buffer = await response.arrayBuffer()
-    const contentType = response.headers.get("content-type") || "video/mp4"
-
-    // Cache the video for subsequent requests
-    videoCache.set(url, { timestamp: Date.now(), buffer, contentType })
-    console.log("[v0] Cached video:", url.substring(0, 50) + "...")
-
     const headers = new Headers({
-      "Content-Type": contentType,
       "Cache-Control": "public, max-age=31536000, immutable",
       "Access-Control-Allow-Origin": "*",
       "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
       "Access-Control-Allow-Headers": "Content-Type, Range",
       "Accept-Ranges": "bytes",
-      "Content-Length": buffer.byteLength.toString(),
-      "X-Cache": "MISS",
+      "X-Cache": "BYPASS",
     })
 
-    // Return the video with proper headers for browser streaming
-    return new NextResponse(buffer, {
-      status: 200,
+    const passthroughHeaders = [
+      "content-type",
+      "content-length",
+      "content-range",
+      "etag",
+      "last-modified",
+    ] as const
+
+    for (const key of passthroughHeaders) {
+      const value = response.headers.get(key)
+      if (value) headers.set(key, value)
+    }
+
+    // Stream through directly to avoid buffering full video files in server memory.
+    return new NextResponse(response.body, {
+      status: response.status,
       headers,
     })
   } catch (error) {

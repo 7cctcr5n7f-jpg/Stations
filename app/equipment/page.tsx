@@ -6,11 +6,12 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ChevronLeft, ChevronRight, LogOut } from "lucide-react";
+import { formatLocalDate } from "@/lib/local-date";
 import { getRoomColorClasses } from "@/lib/utils";
 import type { Room, Video } from "@/lib/shared/schema";
 
 export default function EquipmentView() {
-  const [currentDate, setCurrentDate] = useState(new Date().toISOString().split('T')[0]);
+  const [currentDate, setCurrentDate] = useState(formatLocalDate(new Date()));
   const router = useRouter();
   const setLocation = (path: string) => router.push(path);
 
@@ -99,7 +100,7 @@ export default function EquipmentView() {
     for (let i = 0; i < 6; i++) {
       const date = new Date(weekStart);
       date.setDate(weekStart.getDate() + i);
-      const dateString = date.toISOString().split('T')[0];
+      const dateString = formatLocalDate(date);
       const dayName = date.toLocaleDateString('en-US', { weekday: 'short' });
       const dayNumber = date.getDate();
       dates.push({ dateString, dayName, dayNumber });
@@ -146,7 +147,7 @@ export default function EquipmentView() {
                 onClick={() => {
                   const currentWeekStart = new Date(currentDate);
                   currentWeekStart.setDate(currentWeekStart.getDate() - 7);
-                  setCurrentDate(currentWeekStart.toISOString().split('T')[0]);
+                  setCurrentDate(formatLocalDate(currentWeekStart));
                 }}
                 variant="outline"
                 size="sm"
@@ -163,7 +164,7 @@ export default function EquipmentView() {
                 onClick={() => {
                   const currentWeekStart = new Date(currentDate);
                   currentWeekStart.setDate(currentWeekStart.getDate() + 7);
-                  setCurrentDate(currentWeekStart.toISOString().split('T')[0]);
+                  setCurrentDate(formatLocalDate(currentWeekStart));
                 }}
                 variant="outline"
                 size="sm"

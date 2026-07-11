@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { formatLocalDate } from "@/lib/local-date";
 
 interface CacheEntry {
   videoId: number;
@@ -228,7 +229,7 @@ export function useVideoCaching() {
       
       if (!schedules || !videos) return;
 
-      const today = new Date().toISOString().split('T')[0];
+      const today = formatLocalDate(new Date());
       const todaySchedules = schedules.filter(s => s.scheduleDate === today);
       
       const scheduledVideos = todaySchedules

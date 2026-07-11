@@ -12,6 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Check, Play, Filter, Clock, CheckCircle, Calendar } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { formatLocalDate } from "@/lib/local-date";
 import { formatTimeAgo } from "@/lib/utils";
 import type { Video, Room, Schedule } from "@/lib/shared/schema";
 import VideoThumbnail from "./video-thumbnail";
@@ -55,7 +56,6 @@ export default function VideoAssignmentModal({
   
   // Filter states
   const [bodyPartFilter, setBodyPartFilter] = useState<string>("all");
-  const [secondaryMuscleFilter, setSecondaryMuscleFilter] = useState<string>("all");
   const [equipmentFilter, setEquipmentFilter] = useState<string>("all");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [lastUsedFilter, setLastUsedFilter] = useState<string>("all");
@@ -90,9 +90,9 @@ export default function VideoAssignmentModal({
 
   // Fetch all schedules to show which videos are scheduled
   const { data: schedules = [] } = useQuery<Schedule[]>({
-    queryKey: ["/api/schedules", "all"],
+    queryKey: ["/api/schedules", "all-history"],
     queryFn: async () => {
-      const response = await fetch(`/api/schedules`);
+      const response = await fetch(`/api/schedules?window=all`);
       return response.json();
     },
     enabled: isOpen,
@@ -111,14 +111,6 @@ export default function VideoAssignmentModal({
           part.trim().toLowerCase() === bodyPartFilter.toLowerCase()
         ));
       
-      // Check secondary muscles
-      const matchesSecondaryMuscle = secondaryMuscleFilter === "all" || 
-        (secondaryMuscleFilter === "none" && (!video.secondaryMuscle || video.secondaryMuscle === "none")) ||
-        (video.secondaryMuscle && video.secondaryMuscle !== "none" && 
-         video.secondaryMuscle.split(',').some(muscle => 
-           muscle.trim().toLowerCase() === secondaryMuscleFilter.toLowerCase()
-         ));
-      
       // Check equipment
       const matchesEquipment = equipmentFilter === "all" || 
         (video.equipment && video.equipment.split(',').some(eq => 
@@ -129,20 +121,26 @@ export default function VideoAssignmentModal({
       let matchesLastUsed = true;
       if (lastUsedFilter !== "all") {
         const videoSchedules = schedules.filter(s => s.videoId === video.id);
-        const today = new Date();
-        const pastSchedules = videoSchedules.filter(s => new Date(s.scheduleDate) < today);
-        
+        const today = formatLocalDate(new Date());
+        const pastSchedules = videoSchedules.filter(s => s.scheduleDate < today);
+
         if (lastUsedFilter === "never") {
           matchesLastUsed = pastSchedules.length === 0;
         } else {
-          const mostRecent = pastSchedules.length > 0 
-            ? Math.max(...pastSchedules.map(s => new Date(s.scheduleDate).getTime()))
-            : 0;
-          
-          if (mostRecent === 0) {
-            matchesLastUsed = lastUsedFilter === "never";
+          const mostRecentDate = pastSchedules.length > 0
+            ? pastSchedules.sort((a, b) => b.scheduleDate.localeCompare(a.scheduleDate))[0].scheduleDate
+            : null;
+
+          if (!mostRecentDate) {
+            matchesLastUsed = false;
           } else {
-            const daysSince = Math.floor((today.getTime() - mostRecent) / (1000 * 60 * 60 * 24));
+            const mostRecent = new Date(`${mostRecentDate}T12:00:00`);
+            if (Number.isNaN(mostRecent.getTime())) {
+              matchesLastUsed = false;
+              return false;
+            }
+            const todayDate = new Date();
+            const daysSince = Math.floor((todayDate.getTime() - mostRecent.getTime()) / (1000 * 60 * 60 * 24));
             
             switch (lastUsedFilter) {
               case "week":
@@ -167,9 +165,9 @@ export default function VideoAssignmentModal({
       // Check search term
       const matchesSearch = searchTerm === "" || video.title.toLowerCase().includes(searchTerm.toLowerCase());
       
-      return matchesCategory && matchesBodyPart && matchesSecondaryMuscle && matchesEquipment && matchesLastUsed && matchesSearch;
+      return matchesCategory && matchesBodyPart && matchesEquipment && matchesLastUsed && matchesSearch;
     }).sort((a, b) => a.title.toLowerCase().localeCompare(b.title.toLowerCase()));
-  }, [videos, categoryFilter, bodyPartFilter, secondaryMuscleFilter, equipmentFilter, lastUsedFilter, schedules, searchTerm]);
+  }, [videos, categoryFilter, bodyPartFilter, equipmentFilter, lastUsedFilter, schedules, searchTerm]);
 
   // Get unique values for filters - handle comma-separated values
   const bodyParts = useMemo(() => {
@@ -183,19 +181,6 @@ export default function VideoAssignmentModal({
       }
     });
     return Array.from(parts).sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
-  }, [videos]);
-
-  const secondaryMuscles = useMemo(() => {
-    const muscles = new Set<string>();
-    videos.forEach(video => {
-      if (video.secondaryMuscle && video.secondaryMuscle !== "none") {
-        video.secondaryMuscle.split(',').forEach(muscle => {
-          const trimmed = muscle.trim();
-          if (trimmed) muscles.add(trimmed);
-        });
-      }
-    });
-    return Array.from(muscles).sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
   }, [videos]);
 
   const equipmentTypes = useMemo(() => {
@@ -243,6 +228,7 @@ export default function VideoAssignmentModal({
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/schedules", "date", currentDate] });
       queryClient.invalidateQueries({ queryKey: ["/api/schedules", "all"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/schedules", "all-history"] });
       queryClient.invalidateQueries({ queryKey: ["/api/stats"] });
       toast({ title: `${selectedVideoIds.length} video(s) scheduled successfully` });
       onClose();
@@ -290,7 +276,7 @@ export default function VideoAssignmentModal({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="w-full sm:max-w-4xl lg:max-w-7xl max-h-[90vh] overflow-y-auto p-4 sm:p-6">
+      <DialogContent className="w-full sm:max-w-5xl lg:max-w-[95vw] h-[88vh] overflow-hidden p-4 sm:p-5 flex flex-col">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-lg sm:text-xl">
             <Filter className="h-5 w-5 flex-shrink-0" />
@@ -298,7 +284,7 @@ export default function VideoAssignmentModal({
           </DialogTitle>
         </DialogHeader>
         
-        <div className="space-y-4 sm:space-y-6">
+        <div className="space-y-4 min-h-0 flex-1 flex flex-col">
           {/* Room Selection */}
           <div>
             <Label htmlFor="room-select" className="text-sm font-medium mb-2 block">
@@ -325,7 +311,7 @@ export default function VideoAssignmentModal({
           </div>
 
           {/* Search Filter and Action Buttons - responsive layout */}
-          <div className="mb-4 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
             <Input
               type="text"
               placeholder="Search videos..."
@@ -358,8 +344,8 @@ export default function VideoAssignmentModal({
           </div>
 
           {/* Video Table with Column Filters */}
-          <div>
-            <div className="flex items-center justify-between mb-3">
+          <div className="min-h-0 flex-1 flex flex-col">
+            <div className="flex items-center justify-between mb-2">
               <Label className="text-sm font-medium">
                 {maxSelectableVideos === 0 ? (
                   <span className="text-red-600">Room is full (4/4 videos). Remove existing videos to add new ones.</span>
@@ -369,9 +355,6 @@ export default function VideoAssignmentModal({
                     {existingSchedulesForRoom.length > 0 && (
                       <span className="text-gray-600"> ({existingSchedulesForRoom.length}/4 slots used)</span>
                     )}
-                    <span className="text-gray-500 text-xs block mt-1">
-                      1 video = full center, 2-4 videos = grid layout
-                    </span>
                   </>
                 )}
               </Label>
@@ -382,7 +365,7 @@ export default function VideoAssignmentModal({
                 </div>
               )}
             </div>
-            <div className="border rounded-lg overflow-hidden max-h-96 overflow-y-auto overflow-x-auto">
+            <div className="border rounded-lg overflow-hidden flex-1 min-h-0 overflow-y-auto overflow-x-auto">
               <Table className="text-xs whitespace-nowrap">
                 <TableHeader className="sticky top-0 bg-gray-50 z-10">
                   {/* Column Headers */}
@@ -392,7 +375,6 @@ export default function VideoAssignmentModal({
                     <TableHead className="p-2 text-xs">Video</TableHead>
                     <TableHead className="p-2 text-xs">Category</TableHead>
                     <TableHead className="p-2 text-xs">Primary Muscle</TableHead>
-                    <TableHead className="p-2 text-xs">Secondary Muscle</TableHead>
                     <TableHead className="p-2 text-xs">Equipment</TableHead>
                     <TableHead className="p-2 text-xs">Last Scheduled</TableHead>
                     <TableHead className="p-2 text-xs">Usage Count</TableHead>
@@ -425,20 +407,6 @@ export default function VideoAssignmentModal({
                           <SelectItem value="all">All</SelectItem>
                           {bodyParts.map((part) => (
                             <SelectItem key={part} value={part}>{part}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </TableHead>
-                    <TableHead className="p-1">
-                      <Select value={secondaryMuscleFilter} onValueChange={setSecondaryMuscleFilter}>
-                        <SelectTrigger className="h-7 text-xs">
-                          <SelectValue placeholder="All" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="all">All</SelectItem>
-                          <SelectItem value="none">None</SelectItem>
-                          {secondaryMuscles.map((muscle) => (
-                            <SelectItem key={muscle} value={muscle}>{muscle}</SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
@@ -481,7 +449,7 @@ export default function VideoAssignmentModal({
                     const videoSchedules = schedules.filter(s => s.videoId === video.id);
                     
                     // Separate past and future schedules
-                    const today = new Date().toISOString().split('T')[0];
+                    const today = formatLocalDate(new Date());
                     const pastSchedules = videoSchedules.filter(s => s.scheduleDate < today);
                     const futureSchedules = videoSchedules.filter(s => s.scheduleDate >= today);
                     
@@ -536,15 +504,6 @@ export default function VideoAssignmentModal({
                           <Badge variant="secondary" className="bg-green-100 text-green-800 text-xs px-1 py-0">
                             {video.bodyPart}
                           </Badge>
-                        </TableCell>
-                        <TableCell className="p-2">
-                          {video.secondaryMuscle ? (
-                            <Badge variant="outline" className="bg-blue-50 text-blue-800 text-xs px-1 py-0">
-                              {video.secondaryMuscle}
-                            </Badge>
-                          ) : (
-                            <span className="text-gray-400 text-xs">-</span>
-                          )}
                         </TableCell>
                         <TableCell className="p-2">
                           <Badge variant="outline" className="text-xs px-1 py-0">

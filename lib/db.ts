@@ -105,14 +105,16 @@ export function mapVideo(row: any): Video {
 }
 
 export function mapSchedule(row: any): Schedule {
+  const scheduleDate =
+    typeof row.schedule_date === "string"
+      ? row.schedule_date
+      : `${row.schedule_date.getFullYear()}-${String(row.schedule_date.getMonth() + 1).padStart(2, "0")}-${String(row.schedule_date.getDate()).padStart(2, "0")}`
+
   return {
     id: row.id,
     roomId: row.room_id,
     videoId: row.video_id,
-    scheduleDate:
-      typeof row.schedule_date === "string"
-        ? row.schedule_date
-        : new Date(row.schedule_date).toISOString().split("T")[0],
+    scheduleDate,
     reps: row.reps ?? null,
     position: row.position ?? 1,
     displayTitle: row.display_title ?? null,

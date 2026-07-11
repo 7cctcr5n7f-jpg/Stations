@@ -4,8 +4,9 @@ import { useEffect, useState, useRef, useCallback } from "react"
 import { useRouter, useParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import VideoPlayer from "@/components/video-player"
-import { X, Minimize } from "lucide-react"
+import { X, Minimize, RefreshCw } from "lucide-react"
 import { getRoomColorClasses } from "@/lib/utils"
+import { formatLocalDate } from "@/lib/local-date"
 
 // ---------------------------------------------------------------------------
 // IndexedDB helpers — store schedule JSON and video blobs locally so the
@@ -14,6 +15,7 @@ import { getRoomColorClasses } from "@/lib/utils"
 
 const DB_NAME = "stations-room-cache"
 const DB_VERSION = 1
+const SCHEDULE_CACHE_TTL_MS = 30 * 60 * 1000
 
 function openDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -49,71 +51,34 @@ async function idbSet(storeName: string, key: string, value: unknown): Promise<v
 }
 
 // ---------------------------------------------------------------------------
-// Fetch schedule + video list from the server, cache results in IndexedDB.
-// Returns the assembled assignments array ready for VideoPlayer.
+// Fetch room/day assignments from the server and cache results in IndexedDB.
 // ---------------------------------------------------------------------------
 
-async function fetchAndCacheSchedule(roomId: string, date: string): Promise<{ assignments: any[]; nextDayEquipment: string[] }> {
-  const [schedulesRes, videosRes] = await Promise.all([
-    fetch(`/api/schedules?roomId=${roomId}&date=${date}`),
-    fetch(`/api/videos`),
-  ])
+type RoomSchedulePayload = {
+  assignments: any[]
+  fingerprint?: string
+}
 
-  const schedules: any[] = await schedulesRes.json()
-  const videos: any[] = await videosRes.json()
+async function fetchAndCacheSchedule(
+  roomId: string,
+  date: string,
+): Promise<{ assignments: any[]; nextDayEquipment: string[]; fingerprint: string }> {
+  const response = await fetch(`/api/rooms/${roomId}/schedule?date=${date}`)
+  if (!response.ok) {
+    throw new Error(`Failed to load room schedule (${response.status})`)
+  }
+
+  const payload = (await response.json()) as RoomSchedulePayload
+  const assignments = Array.isArray(payload.assignments) ? payload.assignments : []
+  const fingerprint = typeof payload.fingerprint === "string" ? payload.fingerprint : ""
 
   // Persist to IndexedDB for offline / date-change use
   await Promise.all([
-    idbSet("schedules", `${roomId}-${date}`, schedules),
-    idbSet("schedules", `${roomId}-videos`, videos),
+    idbSet("schedules", `${roomId}-${date}`, assignments),
+    idbSet("schedules", `${roomId}-${date}-meta`, { fetchedAt: Date.now(), fingerprint }),
   ])
 
-  const tomorrow = new Date()
-  tomorrow.setDate(tomorrow.getDate() + 1)
-  const nextDate = tomorrow.toISOString().split("T")[0]
-
-  // Fetch next-day schedule in background (no await — don't block)
-  fetch(`/api/schedules?roomId=${roomId}&date=${nextDate}`)
-    .then((r) => r.json())
-    .then((ns) => idbSet("schedules", `${roomId}-${nextDate}`, ns))
-    .catch(() => {})
-
-  return buildAssignments(schedules, videos, roomId, date, videos)
-}
-
-function buildAssignments(
-  schedules: any[],
-  videos: any[],
-  roomId: string,
-  date: string,
-  allVideos: any[],
-): { assignments: any[]; nextDayEquipment: string[] } {
-  const assignments: any[] = schedules
-    .map((s) => {
-      const video = videos.find((v) => v.id === s.videoId)
-      if (!video) return null
-      return {
-        id: s.id,
-        roomId: s.roomId,
-        videoId: s.videoId,
-        sets: 0,
-        reps: s.reps || "0",
-        restTime: 0,
-        position: s.position || 1,
-        isActive: true,
-        zoomLevel: s.zoomLevel || "1",
-        verticalPosition: s.verticalPosition || "0",
-        displayEquipment: s.displayEquipment || video.equipment,
-        video: {
-          ...video,
-          title: s.displayTitle || video.title,
-          equipment: s.displayEquipment || video.equipment,
-        },
-      }
-    })
-    .filter(Boolean)
-
-  return { assignments: assignments.slice(0, 4), nextDayEquipment: [] }
+  return { assignments, nextDayEquipment: [], fingerprint }
 }
 
 // ---------------------------------------------------------------------------
@@ -153,13 +118,15 @@ export default function RoomDisplayPage() {
   const params = useParams()
   const roomId = params.id as string
 
-  const [currentDate, setCurrentDate] = useState(() => new Date().toISOString().split("T")[0])
+  const [currentDate, setCurrentDate] = useState(() => formatLocalDate(new Date()))
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [room, setRoom] = useState<any>(null)
   const [assignments, setAssignments] = useState<any[]>([])
   const [nextDayEquipment, setNextDayEquipment] = useState<string[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [isRefreshing, setIsRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const scheduleFingerprintRef = useRef("")
   // dateRef used only for the midnight date-change check
   const dateRef = useRef(currentDate)
   dateRef.current = currentDate
@@ -174,19 +141,25 @@ export default function RoomDisplayPage() {
 
   // -- Load schedule (from cache first, then network) --
   const loadSchedule = useCallback(
-    async (date: string) => {
+    async (date: string, forceRefresh = false) => {
       try {
         // Optimistically show cached data immediately
-        const cached = await idbGet<any[]>("schedules", `${roomId}-${date}`)
-        const cachedVideos = await idbGet<any[]>("schedules", `${roomId}-videos`)
-        if (cached && cachedVideos) {
-          const { assignments: cachedAssignments } = buildAssignments(cached, cachedVideos, roomId, date, cachedVideos)
+        const cachedAssignments = await idbGet<any[]>("schedules", `${roomId}-${date}`)
+        const cachedMeta = await idbGet<{ fetchedAt?: number; fingerprint?: string }>("schedules", `${roomId}-${date}-meta`)
+        if (cachedAssignments) {
           setAssignments(cachedAssignments)
           setIsLoading(false)
+          scheduleFingerprintRef.current = cachedMeta?.fingerprint ?? ""
+
+          const fetchedAt = typeof cachedMeta?.fetchedAt === "number" ? cachedMeta.fetchedAt : 0
+          if (!forceRefresh && Date.now() - fetchedAt < SCHEDULE_CACHE_TTL_MS) {
+            return
+          }
         }
 
         // Always fetch fresh from server
-        const { assignments: fresh } = await fetchAndCacheSchedule(roomId, date)
+        const { assignments: fresh, fingerprint } = await fetchAndCacheSchedule(roomId, date)
+        scheduleFingerprintRef.current = fingerprint
         setAssignments(fresh)
         setIsLoading(false)
 
@@ -207,7 +180,7 @@ export default function RoomDisplayPage() {
   // -- Date change detection (check every 60 s) --
   useEffect(() => {
     const interval = setInterval(() => {
-      const newDate = new Date().toISOString().split("T")[0]
+      const newDate = formatLocalDate(new Date())
       if (newDate !== dateRef.current) {
         setCurrentDate(newDate)
       }
@@ -215,9 +188,27 @@ export default function RoomDisplayPage() {
     return () => clearInterval(interval)
   }, [])
 
-  // SSE removed: workouts only change once per day. Trainers can manually
-  // refresh the page after publishing a new schedule. This prevents the
-  // SSE reconnect loop from causing black-screen flashes during playback.
+  // Lightweight schedule-change check: every 30 minutes ask for a cheap
+  // fingerprint, and only refetch full assignments when it changed.
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      try {
+        const date = dateRef.current
+        const response = await fetch(`/api/rooms/${roomId}/schedule?date=${date}&mode=fingerprint`)
+        if (!response.ok) return
+
+        const data = (await response.json()) as { fingerprint?: string }
+        const serverFingerprint = typeof data.fingerprint === "string" ? data.fingerprint : ""
+        if (serverFingerprint !== scheduleFingerprintRef.current) {
+          await loadSchedule(date, true)
+        }
+      } catch {
+        // Non-fatal: keep current schedule on screen
+      }
+    }, 30 * 60 * 1000)
+
+    return () => clearInterval(interval)
+  }, [roomId, loadSchedule])
 
   // -- Fullscreen --
   useEffect(() => {
@@ -253,6 +244,15 @@ export default function RoomDisplayPage() {
       document.exitFullscreen()
     } else {
       document.documentElement.requestFullscreen?.()
+    }
+  }
+
+  const handleManualRefresh = async () => {
+    setIsRefreshing(true)
+    try {
+      await loadSchedule(currentDate, true)
+    } finally {
+      setIsRefreshing(false)
     }
   }
 
@@ -294,12 +294,21 @@ export default function RoomDisplayPage() {
   const videoCount = assignments.length
 
   const getGridClasses = (count: number) => {
+    if (count > 4) {
+      const columns = count <= 6 ? 3 : 4
+      return {
+        container: "grid gap-0 h-full",
+        video: "w-full h-full",
+        style: { gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`, gridAutoRows: "minmax(0, 1fr)" } as const,
+      }
+    }
+
     switch (count) {
-      case 1: return { container: "flex items-center justify-center", video: "max-w-[50%] h-full" }
-      case 2: return { container: "grid grid-cols-2 gap-0 relative", video: "h-full w-full" }
+      case 1: return { container: "flex items-center justify-center", video: "max-w-[50%] h-full", style: undefined as const }
+      case 2: return { container: "grid grid-cols-2 gap-0 relative", video: "h-full w-full", style: undefined as const }
       case 3:
-      case 4: return { container: "grid grid-cols-2 grid-rows-2 gap-0 h-full relative", video: "w-full" }
-      default: return { container: "flex items-center justify-center", video: "max-w-[50%] h-full" }
+      case 4: return { container: "grid grid-cols-2 grid-rows-2 gap-0 h-full relative", video: "w-full", style: undefined as const }
+      default: return { container: "flex items-center justify-center", video: "max-w-[50%] h-full", style: undefined as const }
     }
   }
 
@@ -321,6 +330,14 @@ export default function RoomDisplayPage() {
             </div>
           </div>
           <div className="flex space-x-3">
+            <Button
+              onClick={handleManualRefresh}
+              disabled={isRefreshing}
+              className="bg-gray-700 hover:bg-gray-800 text-white"
+            >
+              <RefreshCw className={`mr-2 h-4 w-4 ${isRefreshing ? "animate-spin" : ""}`} />
+              Refresh
+            </Button>
             <Button onClick={handleToggleFullscreen} className="bg-blue-600 hover:bg-blue-700 text-white">
               <Minimize className="mr-2 h-4 w-4" />
               Toggle Fullscreen
@@ -360,7 +377,7 @@ export default function RoomDisplayPage() {
             </div>
           </div>
         ) : (
-          <div className={`h-full bg-white ${gridClasses.container}`}>
+          <div className={`h-full bg-white ${gridClasses.container}`} style={gridClasses.style}>
             {assignments.map((assignment) => (
               <div key={assignment.id} className={`${gridClasses.video} overflow-hidden`}>
                 <VideoPlayer

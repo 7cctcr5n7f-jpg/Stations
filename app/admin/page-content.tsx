@@ -35,6 +35,7 @@ import {
 import { getIntensityStyle, INTENSITY_LEVELS } from "@/lib/intensity";
 const tenRoundsLogo = "/logo.png";
 import { getRoomColorClasses, formatTimeAgo, formatTimeAgoShort, getDayOfWeek, capitalizeFirst } from "@/lib/utils";
+import { formatLocalDate } from "@/lib/local-date";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { videoCacheManager } from "@/lib/video-cache";
@@ -42,7 +43,7 @@ import { EditableSelect } from "@/components/editable-select";
 import { SimpleMultiSelect } from "@/components/simple-multi-select";
 import { SearchableSelect } from "@/components/searchable-select";
 import { VideoOptionsButton } from "@/components/video-options-manager";
-import type { Room, Video, RoomAssignment, Schedule } from "@/lib/shared/schema";
+import type { Room, Video, Schedule } from "@/lib/shared/schema";
 
 interface Stats {
   activeRooms: number;
@@ -178,13 +179,15 @@ function TrainerDashboardInner() {
   // Unknown abbreviations surfaced by the AI dictionary lookup
   const [unknownTerms, setUnknownTerms] = useState<UnknownTerm[]>([]);
   const [showTermsReview, setShowTermsReview] = useState(false);
-  const [currentDate, setCurrentDate] = useState(new Date().toISOString().split('T')[0]);
+  const [currentDate, setCurrentDate] = useState(formatLocalDate(new Date()));
 
   // Auto-update current date at midnight only if user is on today's date
   useEffect(() => {
     const updateDate = () => {
-      const todayDate = new Date().toISOString().split('T')[0];
-      const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+      const todayDate = formatLocalDate(new Date());
+      const yesterdayDate = new Date();
+      yesterdayDate.setDate(yesterdayDate.getDate() - 1);
+      const yesterday = formatLocalDate(yesterdayDate);
       
       // Only auto-update if the user is currently viewing today's date or yesterday's date
       // This prevents interrupting users who are manually working on future dates
@@ -261,13 +264,6 @@ function TrainerDashboardInner() {
   // useEffect(() => {
   //   // Cache system disabled for now
   // }, [videos]);
-
-  const { data: roomAssignments } = useQuery<RoomAssignment[]>({
-    queryKey: ["/api/room-assignments"],
-    staleTime: 24 * 60 * 60 * 1000, // 24 hours
-    gcTime: 24 * 60 * 60 * 1000,
-    refetchOnWindowFocus: false,
-  });
 
   // Get schedules for the current selected date
   const { data: schedules = [] } = useQuery<any[]>({
@@ -369,7 +365,6 @@ function TrainerDashboardInner() {
       apiRequest("PATCH", `/api/videos/${videoId}`, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/videos"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/schedules", "date", currentDate] });
       toast({ title: "Video updated successfully" });
     },
     onError: () => {
@@ -966,7 +961,8 @@ function TrainerDashboardInner() {
       
       // Invalidate all relevant queries to refresh the UI
       queryClient.invalidateQueries({ queryKey: ["/api/videos"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/schedules"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/schedules", "date", currentDate] });
+      queryClient.invalidateQueries({ queryKey: ["/api/schedules", "all"] });
       queryClient.invalidateQueries({ queryKey: ["/api/stats"] });
       queryClient.invalidateQueries({ queryKey: ["/api/video-options"] });
       
@@ -1109,8 +1105,8 @@ function TrainerDashboardInner() {
       setHasUnsavedChanges(false);
       
       // Force refresh of schedule data
-      queryClient.invalidateQueries({ queryKey: ["/api/schedules"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/schedules", currentDate] });
+      queryClient.invalidateQueries({ queryKey: ["/api/schedules", "date", currentDate] });
+      queryClient.invalidateQueries({ queryKey: ["/api/schedules", "all"] });
       
       toast({ title: "All changes saved successfully" });
     } catch (error) {
@@ -1881,16 +1877,21 @@ function TrainerDashboardInner() {
               const weekEnd = new Date(weekStart);
               weekEnd.setDate(weekStart.getDate() + 5);
 
-              const mondayStr = weekStart.toISOString().split('T')[0];
-              const tuesdayStr = new Date(weekStart.getTime() + 86400000).toISOString().split('T')[0];
-              const wednesdayStr = new Date(weekStart.getTime() + 2*86400000).toISOString().split('T')[0];
-              const thursdayStr = new Date(weekStart.getTime() + 3*86400000).toISOString().split('T')[0];
-              const fridayStr = new Date(weekStart.getTime() + 4*86400000).toISOString().split('T')[0];
-              const saturdayStr = new Date(weekStart.getTime() + 5*86400000).toISOString().split('T')[0];
+              const monday = new Date(weekStart);
+              const tuesday = new Date(weekStart); tuesday.setDate(weekStart.getDate() + 1);
+              const wednesday = new Date(weekStart); wednesday.setDate(weekStart.getDate() + 2);
+              const thursday = new Date(weekStart); thursday.setDate(weekStart.getDate() + 3);
+              const friday = new Date(weekStart); friday.setDate(weekStart.getDate() + 4);
+              const saturday = new Date(weekStart); saturday.setDate(weekStart.getDate() + 5);
+
+              const mondayStr = formatLocalDate(monday);
+              const tuesdayStr = formatLocalDate(tuesday);
+              const wednesdayStr = formatLocalDate(wednesday);
+              const thursdayStr = formatLocalDate(thursday);
+              const fridayStr = formatLocalDate(friday);
+              const saturdayStr = formatLocalDate(saturday);
 
               const weekDays = [mondayStr, tuesdayStr, wednesdayStr, thursdayStr, fridayStr, saturdayStr];
-
-              const weekLabel = `${weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${weekEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
 
               // Category donut data
               const categoryCounts = schedules?.reduce((acc: Record<string, number>, schedule: any) => {
@@ -1918,183 +1919,237 @@ function TrainerDashboardInner() {
                   color: CATEGORY_COLORS[name] || '#6b7280',
                 }));
 
+              const msInDay = 24 * 60 * 60 * 1000;
+              const previousWeekStart = new Date(weekStart);
+              previousWeekStart.setDate(weekStart.getDate() - 7);
+              const previousWeekEnd = new Date(weekEnd);
+              previousWeekEnd.setDate(weekEnd.getDate() - 7);
+              const nextWeekStart = new Date(weekStart);
+              nextWeekStart.setDate(weekStart.getDate() + 7);
+              const nextWeekEnd = new Date(weekEnd);
+              nextWeekEnd.setDate(weekEnd.getDate() + 7);
+
+              const parseScheduleDate = (value?: string | null): Date | null => {
+                if (!value) return null;
+                const isDateOnly = /^\d{4}-\d{2}-\d{2}$/.test(value);
+                const date = new Date(isDateOnly ? `${value}T00:00:00` : value);
+                return Number.isNaN(date.getTime()) ? null : date;
+              };
+              const inRange = (d: Date | null, start: Date, end: Date) => !!d && d >= start && d <= end;
+
+              const emptyRounds = roomsWithAssignments.filter((room) => room.assignments.length === 0).length;
+              const singleVideoRounds = roomsWithAssignments.filter((room) => room.assignments.length === 1).length;
+              const reusedVideoIds = new Set<number>();
+              roomsWithAssignments.forEach((room) => {
+                room.assignments.forEach((assignment) => {
+                  const lastUsed = parseScheduleDate(assignment.video.lastUsed ?? null);
+                  const nextScheduled = parseScheduleDate(assignment.video.nextScheduled ?? null);
+                  const wasUsedRecently =
+                    inRange(lastUsed, previousWeekStart, previousWeekEnd) ||
+                    inRange(lastUsed, weekStart, weekEnd) ||
+                    inRange(nextScheduled, nextWeekStart, nextWeekEnd);
+                  if (wasUsedRecently) reusedVideoIds.add(assignment.videoId);
+                });
+              });
+              const recentExerciseCount = reusedVideoIds.size;
+              const emptyRoundsPassed = emptyRounds === 0;
+              const singleVideoRoundsPassed = singleVideoRounds <= 1;
+              const recentExercisePassed = recentExerciseCount === 0;
+              const emptyRoundsLabel = `${emptyRounds} ${emptyRounds === 1 ? "Empty Round" : "Empty Rounds"}`;
+              const singleVideoLabel = `${singleVideoRounds} ${
+                singleVideoRounds === 1 ? "Round has" : "Rounds have"
+              } only 1 video assigned`;
+              const recentExerciseLabel = `${recentExerciseCount} ${
+                recentExerciseCount === 1 ? "Exercise" : "Exercises"
+              } used this/last week or scheduled next week`;
+
               return (
                 <>
-                  {/* Header row: week label + prev/next + actions - responsive layout */}
-                  <div className="flex flex-col sm:flex-row items-center justify-between gap-3 sm:gap-4">
-                    <div className="flex items-center gap-2 w-full sm:w-auto">
+                  {/* Compact controls */}
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5 min-w-0 flex-1">
                       <button
                         onClick={() => {
                           const d = new Date(currentDate);
                           d.setDate(d.getDate() - 7);
-                          setCurrentDate(d.toISOString().split('T')[0]);
+                          setCurrentDate(formatLocalDate(d));
                         }}
-                        className="flex items-center justify-center w-9 h-9 sm:w-8 sm:h-8 rounded-full border border-gray-200 bg-white hover:bg-gray-50 transition-colors text-gray-600 flex-shrink-0"
+                        className="flex items-center justify-center w-8 h-8 rounded-md border border-gray-200 bg-white hover:bg-gray-50 transition-colors text-gray-600 shrink-0"
                         aria-label="Previous week"
                       >
-                        <ChevronLeft className="h-4 w-4" />
+                        <ChevronLeft className="h-3.5 w-3.5" />
                       </button>
-                      <span className="text-sm sm:text-base font-semibold text-gray-900 flex-1 text-center">{weekLabel}</span>
+                      <div className="flex items-center gap-1 overflow-x-auto min-w-0">
+                        {weekDays.map((dateStr) => {
+                          const d = new Date(dateStr);
+                          const dayName = d.toLocaleDateString('en-US', { weekday: 'short' });
+                          const dayNum = d.getDate();
+                          const daySchedules = weekSchedules?.filter((s: any) => s.scheduleDate === dateStr) || [];
+                          const filled = new Set(daySchedules.map((s: any) => s.roomId)).size;
+                          const isSelected = currentDate === dateStr;
+                          return (
+                            <button
+                              key={dateStr}
+                              onClick={() => setCurrentDate(dateStr)}
+                              className={`h-8 px-2.5 rounded-md border text-xs font-medium whitespace-nowrap transition-colors ${
+                                isSelected
+                                  ? "bg-gray-900 border-gray-900 text-white"
+                                  : "bg-white border-gray-200 text-gray-700 hover:bg-gray-50"
+                              }`}
+                              title={`${dayName} ${dayNum} • ${filled} rounds scheduled`}
+                            >
+                              {dayName} {dayNum}
+                            </button>
+                          );
+                        })}
+                      </div>
                       <button
                         onClick={() => {
                           const d = new Date(currentDate);
                           d.setDate(d.getDate() + 7);
-                          setCurrentDate(d.toISOString().split('T')[0]);
+                          setCurrentDate(formatLocalDate(d));
                         }}
-                        className="flex items-center justify-center w-9 h-9 sm:w-8 sm:h-8 rounded-full border border-gray-200 bg-white hover:bg-gray-50 transition-colors text-gray-600 flex-shrink-0"
+                        className="flex items-center justify-center w-8 h-8 rounded-md border border-gray-200 bg-white hover:bg-gray-50 transition-colors text-gray-600 shrink-0"
                         aria-label="Next week"
                       >
-                        <ChevronRight className="h-4 w-4" />
+                        <ChevronRight className="h-3.5 w-3.5" />
                       </button>
                     </div>
-
-                    {/* Quick copy + Build button - stacked on mobile, horizontal on desktop */}
-                    <div className="flex flex-wrap items-center justify-center sm:justify-end gap-2 w-full sm:w-auto">
-                      <span className="text-xs text-gray-400 hidden sm:inline">Copy:</span>
+                    <div className="flex flex-wrap items-center justify-end gap-1.5">
                       <button
                         onClick={() => copyScheduleMutation.mutate({ sourceDate: mondayStr, targetDate: thursdayStr })}
                         disabled={copyScheduleMutation.isPending}
-                        className="text-xs px-3 py-2 sm:px-2.5 sm:py-1.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 text-gray-600 transition-colors disabled:opacity-50 whitespace-nowrap"
+                        className="text-xs px-2 py-1 rounded-md border border-gray-200 bg-white hover:bg-gray-50 text-gray-600 transition-colors disabled:opacity-50 whitespace-nowrap"
                         title="Copy Monday → Thursday"
-                      >Mon → Thu</button>
+                      >Mon→Thu</button>
                       <button
                         onClick={() => copyScheduleMutation.mutate({ sourceDate: tuesdayStr, targetDate: fridayStr })}
                         disabled={copyScheduleMutation.isPending}
-                        className="text-xs px-3 py-2 sm:px-2.5 sm:py-1.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 text-gray-600 transition-colors disabled:opacity-50 whitespace-nowrap"
+                        className="text-xs px-2 py-1 rounded-md border border-gray-200 bg-white hover:bg-gray-50 text-gray-600 transition-colors disabled:opacity-50 whitespace-nowrap"
                         title="Copy Tuesday → Friday"
-                      >Tue → Fri</button>
+                      >Tue→Fri</button>
                       <button
                         onClick={() => copyScheduleMutation.mutate({ sourceDate: wednesdayStr, targetDate: saturdayStr })}
                         disabled={copyScheduleMutation.isPending}
-                        className="text-xs px-3 py-2 sm:px-2.5 sm:py-1.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 text-gray-600 transition-colors disabled:opacity-50 whitespace-nowrap"
+                        className="text-xs px-2 py-1 rounded-md border border-gray-200 bg-white hover:bg-gray-50 text-gray-600 transition-colors disabled:opacity-50 whitespace-nowrap"
                         title="Copy Wednesday → Saturday"
-                      >Wed → Sat</button>
+                      >Wed→Sat</button>
                       <Button
                         onClick={() => fillScheduleMutation.mutate(currentDate)}
                         disabled={fillScheduleMutation.isPending}
                         size="sm"
-                        className="bg-gray-900 text-white hover:bg-gray-800 gap-1.5 ml-2"
+                        className="bg-gray-900 text-white hover:bg-gray-800 gap-1.5 h-8"
                       >
                         {fillScheduleMutation.isPending ? (
                           <Loader2 className="h-3.5 w-3.5 animate-spin" />
                         ) : (
                           <Wand2 className="h-3.5 w-3.5" />
                         )}
-                        {(schedules?.length ?? 0) > 0 ? 'Fill Rounds' : 'Build Workout'}
+                        AI Fill Rounds
                       </Button>
                     </div>
                   </div>
 
-                  {/* Day pills */}
-                  <div className="flex gap-1.5">
-                    {weekDays.map((dateStr) => {
-                      const d = new Date(dateStr);
-                      const dayName = d.toLocaleDateString('en-US', { weekday: 'short' });
-                      const dayNum = d.getDate();
-                      const daySchedules = weekSchedules?.filter((s: any) => s.scheduleDate === dateStr) || [];
-                      const filled = new Set(daySchedules.map((s: any) => s.roomId)).size;
-                      const isSelected = currentDate === dateStr;
-                      const isComplete = filled >= 10;
-                      return (
-                        <button
-                          key={dateStr}
-                          onClick={() => setCurrentDate(dateStr)}
-                          className={`flex-1 flex flex-col items-center py-2 px-1 rounded-xl border transition-all ${
-                            isSelected
-                              ? 'bg-gray-900 border-gray-900 text-white shadow-md'
-                              : isComplete
-                              ? 'bg-green-50 border-green-200 text-green-800 hover:bg-green-100'
-                              : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'
-                          }`}
-                        >
-                          <span className={`text-[10px] font-medium uppercase tracking-wider ${isSelected ? 'text-gray-300' : isComplete ? 'text-green-600' : 'text-gray-400'}`}>{dayName}</span>
-                          <span className={`text-lg font-bold leading-tight ${isSelected ? 'text-white' : 'text-gray-900'}`}>{dayNum}</span>
-                          <span className={`text-[10px] mt-0.5 ${isSelected ? 'text-gray-400' : isComplete ? 'text-green-500 font-medium' : 'text-gray-400'}`}>
-                            {filled}/10
-                          </span>
-                        </button>
-                      );
-                    })}
+                  {/* Attention summary */}
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-1.5">
+                    <div
+                      className={`flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-xs ${
+                        emptyRoundsPassed
+                          ? "border-emerald-200 bg-emerald-50/60 text-emerald-700"
+                          : "border-red-200 bg-red-50/50 text-red-700"
+                      }`}
+                    >
+                      {emptyRoundsPassed ? <CheckCircle className="h-3.5 w-3.5" /> : <AlertCircle className="h-3.5 w-3.5" />}
+                      <span className="font-medium">{emptyRoundsLabel}</span>
+                    </div>
+                    <div
+                      className={`flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-xs ${
+                        singleVideoRoundsPassed
+                          ? "border-emerald-200 bg-emerald-50/60 text-emerald-700"
+                          : "border-amber-200 bg-amber-50/50 text-amber-700"
+                      }`}
+                    >
+                      {singleVideoRoundsPassed ? <CheckCircle className="h-3.5 w-3.5" /> : <AlertCircle className="h-3.5 w-3.5" />}
+                      <span className="font-medium">{singleVideoLabel}</span>
+                    </div>
+                    <div
+                      className={`flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-xs ${
+                        recentExercisePassed
+                          ? "border-emerald-200 bg-emerald-50/60 text-emerald-700"
+                          : "border-orange-200 bg-orange-50/50 text-orange-700"
+                      }`}
+                    >
+                      {recentExercisePassed ? <CheckCircle className="h-3.5 w-3.5" /> : <Clock className="h-3.5 w-3.5" />}
+                      <span className="font-medium">{recentExerciseLabel}</span>
+                    </div>
                   </div>
 
-                  {/* Category breakdown stacked bar + rounds list */}
-                  <div className="w-full space-y-4">
+                  {/* Category breakdown + rounds list */}
+                  <div className="w-full space-y-3">
                     {/* Stacked bar chart */}
                     {donutData.length > 0 && (
-                      <div className="bg-white border border-gray-100 rounded-xl p-3 shadow-sm">
-                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
+                      <div className="bg-white border border-gray-100 rounded-lg p-2">
+                        <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-1">
                           {new Date(currentDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} — Category Breakdown
                         </p>
-                        {/* Stacked horizontal bar with inline percentages */}
-                        <div className="flex items-center h-7 rounded-md overflow-hidden bg-gray-100 border border-gray-200 mb-2">
+                        <div className="flex items-center h-4 rounded overflow-hidden bg-gray-100 border border-gray-200 mb-1.5">
                           {donutData.map((d) => (
                             <div
                               key={d.name}
-                              className="h-full hover:opacity-80 transition-opacity cursor-default flex items-center justify-center relative group"
+                              className="h-full hover:opacity-80 transition-opacity cursor-default"
                               style={{ width: `${d.pct}%`, backgroundColor: d.color, minWidth: d.pct > 8 ? 'auto' : '0px' }}
                               title={`${d.name}: ${d.pct}% (${d.value} videos)`}
-                            >
-                              {d.pct > 10 && (
-                                <span className="text-[9px] font-bold text-white drop-shadow-md">{d.pct}%</span>
-                              )}
-                            </div>
+                            />
                           ))}
                         </div>
-                        {/* Legend with name, percentage, and count */}
-                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-1.5 text-[10px]">
+                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-1 text-[10px]">
                           {donutData.map((d) => (
-                            <div key={d.name} className="flex items-center gap-1 p-1 rounded bg-gray-50 border border-gray-150">
-                              <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: d.color }} />
-                              <span className="text-gray-700 font-medium truncate flex-1">{d.name}</span>
-                              <span className="text-gray-600 font-semibold shrink-0">{d.pct}%</span>
+                            <div key={d.name} className="flex items-center gap-1">
+                              <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: d.color }} />
+                              <span className="text-gray-600 truncate">{d.name}</span>
+                              <span className="text-gray-500 tabular-nums">{d.pct}%</span>
                             </div>
                           ))}
                         </div>
                       </div>
                     )}
 
-                    {/* ── Round cards list (vertical, ultra-compact) ─────────────����──────����─────────────── */}
-                    <div className="space-y-1">
+                    <div className="space-y-1.5">
                       {roomsWithAssignments.map((room) => {
-                        const isEmpty = room.assignments.length === 0;
-                        const isFull = room.assignments.length >= 2;
+                        const videoCount = room.assignments.length;
+                        const status = videoCount === 0 ? "empty" : videoCount === 1 ? "attention" : "complete";
+                        const statusDotClass =
+                          status === "empty"
+                            ? "bg-red-500"
+                            : status === "attention"
+                            ? "bg-amber-500"
+                            : "bg-green-500";
+
                         return (
                           <div
                             key={room.id}
-                            className={`rounded border bg-white overflow-hidden transition-shadow hover:shadow-sm ${
-                              isEmpty ? 'border-red-200 bg-red-50/20' : isFull ? 'border-green-200 bg-green-50/20' : 'border-amber-200 bg-amber-50/20'
-                            }`}
+                            className="rounded-md border border-gray-200 bg-white overflow-hidden"
                           >
-                            {/* Header: round number + status + add button */}
-                            <div className={`flex items-center justify-between px-2 py-1 border-b text-xs gap-2 ${
-                              isEmpty ? 'border-red-200 bg-red-50/40' : isFull ? 'border-green-200 bg-green-50/40' : 'border-amber-200 bg-amber-50/40'
-                            }`}>
+                            <div className="flex items-center justify-between px-2.5 py-1.5 border-b border-gray-100 text-xs gap-2">
                               <div className="flex items-center gap-2 min-w-0">
-                                <span className={`flex items-center justify-center w-5 h-5 rounded-full text-[10px] font-bold shrink-0 ${
-                                  isEmpty ? 'bg-gray-300 text-gray-600' : isFull ? 'bg-green-600 text-white' : 'bg-amber-500 text-white'
-                                }`}>{room.number}</span>
-                                <span className="font-semibold text-gray-700 truncate">Round {room.number}</span>
+                                <span className="text-xs font-semibold text-gray-900">Round {room.number}</span>
+                                <span className={`h-2 w-2 rounded-full ${statusDotClass}`} />
                               </div>
                               <div className="flex items-center gap-1.5 shrink-0">
-                                <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${
-                                  isEmpty ? 'bg-red-100 text-red-600' : isFull ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'
-                                }`}>
-                                  {isEmpty ? 'empty' : `${room.assignments.length}/2`}
+                                <span className="text-[10px] font-medium text-gray-600 tabular-nums">
+                                  {videoCount} Video{videoCount === 1 ? "" : "s"}
                                 </span>
-                                {!isFull && (
-                                  <button
-                                    onClick={() => handleAssignVideo(null, room.id)}
-                                    className="w-4 h-4 rounded flex items-center justify-center text-gray-400 hover:text-gray-600 hover:bg-gray-200 transition-colors"
-                                    title="Add video"
-                                  >
-                                    <Plus className="h-3 w-3" />
-                                  </button>
-                                )}
+                                <button
+                                  onClick={() => handleAssignVideo(null, room.id)}
+                                  className="w-5 h-5 rounded flex items-center justify-center text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
+                                  title="Add video"
+                                >
+                                  <Plus className="h-3 w-3" />
+                                </button>
                               </div>
                             </div>
 
-                            {/* Videos inline or empty state - droppable zone */}
-                            {isEmpty ? (
+                            {videoCount === 0 ? (
                               <button
                                 onDragOver={(e) => { 
                                   e.preventDefault(); 
@@ -2117,13 +2172,13 @@ function TrainerDashboardInner() {
                                   }
                                 }}
                                 onClick={() => handleAssignVideo(null, room.id)}
-                                className="w-full py-2 text-xs text-gray-400 hover:text-gray-600 hover:bg-gray-50/50 transition-colors"
+                                className="w-full py-2 text-xs text-gray-400 hover:text-gray-600 hover:bg-gray-50 transition-colors"
                               >
-                                + assign video or drop here
+                                + Assign video or drop here
                               </button>
                             ) : (
                               <div 
-                                className="divide-y divide-gray-200 text-[11px]"
+                                className="divide-y divide-gray-100 text-[11px]"
                                 onDragOver={(e) => { 
                                   e.preventDefault(); 
                                   e.dataTransfer.dropEffect = 'move';
@@ -2143,16 +2198,29 @@ function TrainerDashboardInner() {
                                   }
                                 }}
                               >
-                                {room.assignments.map((assignment, idx) => {
+                                {room.assignments.map((assignment) => {
                                   const videoEquipmentOptions = assignment.video.equipment.split(',').map((e: string) => e.trim()).filter((e: string) => e);
                                   const allEquipmentOptions = videoOptions?.equipment || [];
                                   const defaultEquipment = assignment.displayEquipment || videoEquipmentOptions[0] || '';
+                                  const categoryValue = assignment.video.category || assignment.video.bodyPart || "";
+                                  const derivedCategories = deriveCategories(assignment.video.bodyPart, assignment.video.equipment);
+                                  const primaryCategory = categoryValue || derivedCategories[0] || "Missing";
+                                  const categoryColor = CATEGORY_COLORS[primaryCategory] || "#6b7280";
                                   const repsVal = scheduleChanges[assignment.id]?.reps !== undefined ? scheduleChanges[assignment.id].reps : assignment.reps;
+                                  const lastUsedText = formatTimeAgoShort(assignment.video.lastUsed ?? null);
+                                  const intensityStyle = getIntensityStyle(assignment.video.intensity);
+                                  const lastUsedDate = assignment.video.lastUsed ? new Date(assignment.video.lastUsed) : null;
+                                  const daysSinceLastUsed =
+                                    lastUsedDate && !Number.isNaN(lastUsedDate.getTime())
+                                      ? Math.floor((Date.now() - lastUsedDate.getTime()) / msInDay)
+                                      : null;
+                                  const isVeryRecent = daysSinceLastUsed !== null && daysSinceLastUsed <= 1;
+                                  const isRecentWeek = daysSinceLastUsed !== null && daysSinceLastUsed <= 7;
 
                                   return (
                                     <div
                                       key={assignment.id}
-                                      className={`flex items-center gap-1.5 px-2 py-1 group ${draggedSchedule?.id === assignment.id ? 'opacity-40' : ''}`}
+                                      className={`flex items-center gap-1.5 px-2.5 py-1.5 group ${draggedSchedule?.id === assignment.id ? 'opacity-40' : ''}`}
                                       draggable
                                       onDragStart={(e) => { 
                                         setDraggedSchedule(assignment); 
@@ -2162,8 +2230,7 @@ function TrainerDashboardInner() {
                                       }}
                                       onDragEnd={() => setDraggedSchedule(null)}
                                     >
-                                      <GripVertical className="h-2.5 w-2.5 text-gray-300 cursor-grab shrink-0" />
-                                      {/* Thumbnail */}
+                                      <GripVertical className="h-3 w-3 text-gray-300 cursor-grab shrink-0" />
                                       <div className="relative shrink-0 w-7 h-7 rounded overflow-hidden bg-gray-100 border border-gray-200">
                                         {assignment.video.thumbnailUrl ? (
                                           <img
@@ -2182,15 +2249,20 @@ function TrainerDashboardInner() {
                                         )}
                                         {/* Intensity dot badge */}
                                         <span
-                                          className={`absolute bottom-0 right-0 w-1.5 h-1.5 rounded-full border border-white ${getIntensityStyle(assignment.video.intensity).dot}`}
-                                          title={getIntensityStyle(assignment.video.intensity).label}
+                                          className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-white shadow-sm ${intensityStyle.dot}`}
+                                          title={intensityStyle.label}
                                         />
                                       </div>
-                                      {/* Title */}
+                                      <span
+                                        className="text-[9px] font-semibold px-1.5 py-0.5 rounded border shrink-0"
+                                        style={{ color: categoryColor, borderColor: `${categoryColor}66`, backgroundColor: `${categoryColor}1A` }}
+                                        title={`Category: ${primaryCategory}`}
+                                      >
+                                        {primaryCategory}
+                                      </span>
                                       <span className="text-xs font-medium text-gray-800 truncate flex-1 min-w-0" title={assignment.video.title}>
                                         {assignment.video.title}
                                       </span>
-                                      {/* Reps inline input - compact */}
                                       <Input
                                         type="text"
                                         value={repsVal}
@@ -2224,20 +2296,21 @@ function TrainerDashboardInner() {
                                             setScheduleChanges(prev => { const n = { ...prev }; delete n[assignment.id]; return n; });
                                           }
                                         }}
-                                        className="w-12 h-5 text-[10px] px-1 text-center shrink-0 border-gray-200"
+                                        className="w-32 h-7 text-sm px-3 text-center shrink-0 border-gray-200"
                                       />
-                                      {/* Last used */}
                                       {assignment.video.lastUsed && (
-                                        <span className="text-[10px] text-gray-500 shrink-0 whitespace-nowrap">
-                                          Last: {(() => {
-                                            const diffMs = Date.now() - new Date(assignment.video.lastUsed).getTime();
-                                            const diffDays = Math.floor(diffMs / (24 * 60 * 60 * 1000));
-                                            const diffWeeks = Math.floor(diffDays / 7);
-                                            return diffWeeks > 0 ? `${diffWeeks}w` : diffDays > 0 ? `${diffDays}d` : 'today';
-                                          })()}
+                                        <span
+                                          className={`text-[10px] shrink-0 whitespace-nowrap px-1.5 py-0.5 rounded ${
+                                            isVeryRecent
+                                              ? "bg-red-50 text-red-600"
+                                              : isRecentWeek
+                                              ? "bg-amber-50 text-amber-700"
+                                              : "text-gray-500"
+                                          }`}
+                                        >
+                                          Last: {lastUsedText}
                                         </span>
                                       )}
-                                      {/* Equipment select */}
                                       <SearchableSelect
                                         options={allEquipmentOptions}
                                         value={defaultEquipment}
@@ -2252,13 +2325,12 @@ function TrainerDashboardInner() {
                                           } catch {}
                                         }}
                                         placeholder="Equip."
-                                        className="w-28 h-6 text-[11px] shrink-0"
+                                        className="w-44 h-7 text-sm shrink-0"
                                         allowAll={false}
                                       />
-                                      {/* Delete */}
                                       <button
                                         onClick={() => deleteScheduleMutation.mutate(assignment.id)}
-                                        className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-600 transition-all shrink-0"
+                                        className="ml-3 text-gray-400 hover:text-red-600 transition-colors shrink-0"
                                         title="Remove"
                                       >
                                         <Trash2 className="h-3 w-3" />
@@ -2321,7 +2393,7 @@ function TrainerDashboardInner() {
                       onClick={() => {
                         const currentDateObj = new Date(currentDate);
                         currentDateObj.setDate(currentDateObj.getDate() - 7);
-                        setCurrentDate(currentDateObj.toISOString().split('T')[0]);
+                        setCurrentDate(formatLocalDate(currentDateObj));
                       }}
                       variant="outline"
                       size="sm"
@@ -2346,7 +2418,7 @@ function TrainerDashboardInner() {
                           const date = new Date(startDate);
                           date.setDate(startDate.getDate() + i);
                           
-                          const dateString = date.toISOString().split('T')[0];
+                          const dateString = formatLocalDate(date);
                           const dayName = date.toLocaleDateString('en-US', { weekday: 'short' });
                           const dayNumber = date.getDate();
                           
@@ -2390,7 +2462,7 @@ function TrainerDashboardInner() {
                       onClick={() => {
                         const currentDateObj = new Date(currentDate);
                         currentDateObj.setDate(currentDateObj.getDate() + 7);
-                        setCurrentDate(currentDateObj.toISOString().split('T')[0]);
+                        setCurrentDate(formatLocalDate(currentDateObj));
                       }}
                       variant="outline"
                       size="sm"

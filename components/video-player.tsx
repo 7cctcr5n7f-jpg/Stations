@@ -30,11 +30,17 @@ export default function VideoPlayer({ assignment, displayMode = 'single', videoC
   const videoRef = useRef<HTMLVideoElement>(null);
   const [videoLoaded, setVideoLoaded] = useState(false);
   const [videoError, setVideoError] = useState(false);
+  const [retryAttempted, setRetryAttempted] = useState(false);
   const zoom = parseFloat(assignment.zoomLevel || "1");
   const verticalPos = parseFloat(assignment.verticalPosition || "0");
   const [videoSrc, setVideoSrc] = useState(assignment.video.url);
+  const [sourceVersion, setSourceVersion] = useState(0);
   const [isCached, setIsCached] = useState(false);
-  const [isDownloading, setIsDownloading] = useState(false);
+
+  const withRetryBuster = (url: string) => {
+    const separator = url.includes("?") ? "&" : "?";
+    return `${url}${separator}retry=${Date.now()}`;
+  };
 
   // Initialize video with direct URL loading (no caching for stability)
   useEffect(() => {
@@ -55,49 +61,73 @@ export default function VideoPlayer({ assignment, displayMode = 'single', videoC
     
     // Always use final URL for maximum stability
     setVideoSrc(finalUrl);
+    setSourceVersion(0);
+    setVideoLoaded(false);
     setVideoError(false);
+    setRetryAttempted(false);
     setIsCached(false);
   }, [assignment.video.id, assignment.video.url]);
 
   useEffect(() => {
-    if (videoRef.current) {
-      const video = videoRef.current;
-      
-      const handleCanPlay = () => {
-        setVideoLoaded(true);
-        // Immediate play for cached videos, small delay for multi-video to prevent CPU spikes
-        const playDelay = isCached ? 0 : (videoCount >= 3 ? Math.random() * 200 : 0);
-        setTimeout(() => {
-          video.play().catch(console.error);
-        }, playDelay);
-      };
-      
-      const handleLoadedData = () => {
-        // Video is fully loaded and ready for smooth playback
-        setVideoLoaded(true);
-      };
-      
-      const handleError = (e: Event) => {
-        console.error('Video failed to load:', videoSrc);
+    if (!videoRef.current || videoLoaded || videoError) return;
+
+    // Self-heal stalled loads: retry exactly once, then fail gracefully.
+    const loadTimeout = setTimeout(() => {
+      if (videoLoaded || videoError) return;
+
+      if (!retryAttempted) {
+        setRetryAttempted(true);
+        setVideoLoaded(false);
+        setVideoError(false);
+        setSourceVersion((v) => v + 1);
+      } else {
         setVideoError(true);
-      };
+      }
+    }, 15000);
 
-      video.addEventListener('canplay', handleCanPlay);
-      video.addEventListener('loadeddata', handleLoadedData);
-      video.addEventListener('error', handleError);
-      
-      return () => {
-        video.removeEventListener('canplay', handleCanPlay);
-        video.removeEventListener('loadeddata', handleLoadedData);
-        video.removeEventListener('error', handleError);
-      };
+    return () => {
+      clearTimeout(loadTimeout);
     }
-  }, [videoSrc, isCached, videoCount]);
+  }, [videoLoaded, videoError, retryAttempted, sourceVersion]);
+
+  const handlePlayable = () => {
+    if (videoError) return;
+
+    setVideoLoaded(true);
+    const video = videoRef.current;
+    if (!video) return;
+
+    // Immediate play for cached videos, small delay for multi-video to prevent CPU spikes
+    const playDelay = isCached ? 0 : (videoCount >= 3 ? Math.random() * 200 : 0);
+    setTimeout(() => {
+      video.play().catch(console.error);
+    }, playDelay);
+  };
+
+  const handleVideoError = () => {
+    if (!retryAttempted) {
+      setRetryAttempted(true);
+      setVideoLoaded(false);
+      setVideoError(false);
+      setSourceVersion((v) => v + 1);
+      return;
+    }
+
+    console.error('Video failed to load after retry:', videoSrc);
+    setVideoError(true);
+  };
+
+  const handleManualReload = () => {
+    setVideoLoaded(false);
+    setVideoError(false);
+    setRetryAttempted(false);
+    setSourceVersion((v) => v + 1);
+  };
 
 
 
-  // Calculate height based on video count - only 3+ videos use half height, 1-2 videos use full height
-  const containerHeight = videoCount >= 3 ? '50vh' : '100vh';
+  // For 5+ videos, let the parent grid control sizing so all assignments can render.
+  const containerHeight = videoCount > 4 ? '100%' : (videoCount >= 3 ? '50vh' : '100vh');
   const isCompactMode = videoCount >= 3;
 
   // Get intensity color and styling
@@ -119,8 +149,9 @@ export default function VideoPlayer({ assignment, displayMode = 'single', videoC
   return (
     <div className="relative bg-white w-full h-full overflow-hidden" style={{ height: containerHeight }}>
       <video
+        key={`${assignment.id}-${sourceVersion}`}
         ref={videoRef}
-        src={videoSrc}
+        src={sourceVersion === 0 ? videoSrc : withRetryBuster(videoSrc)}
         className={`${videoLoaded ? 'block' : 'hidden'} w-full`}
         style={{
           height: containerHeight,
@@ -137,6 +168,9 @@ export default function VideoPlayer({ assignment, displayMode = 'single', videoC
         controls={false}
         disablePictureInPicture
         crossOrigin="anonymous"
+        onCanPlay={handlePlayable}
+        onLoadedData={handlePlayable}
+        onError={handleVideoError}
       />
       
       {/* Intensity Badge - Top Left */}
@@ -227,7 +261,14 @@ export default function VideoPlayer({ assignment, displayMode = 'single', videoC
           <div className="text-center">
             <Play className="h-16 w-16 mx-auto mb-4 opacity-50" />
             <h3 className="text-2xl font-bold mb-4">{assignment.video.title}</h3>
-            <p className="text-red-400 text-lg">Video failed to load</p>
+            <p className="text-red-400 text-lg">Video failed to load. Other videos will continue.</p>
+            <button
+              type="button"
+              onClick={handleManualReload}
+              className="mt-4 px-4 py-2 rounded-md bg-white text-black font-medium hover:bg-gray-200"
+            >
+              Reload video
+            </button>
           </div>
         </div>
       )}
