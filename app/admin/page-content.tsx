@@ -2052,7 +2052,7 @@ function TrainerDashboardInner() {
                     </div>
                     <div className="flex items-center gap-2 rounded-md border border-orange-200 bg-orange-50/50 px-2.5 py-1.5 text-xs text-orange-700">
                       <Clock className="h-3.5 w-3.5" />
-                      <span className="font-medium">{recentExerciseCount} Exercises used/scheduled around this week</span>
+                      <span className="font-medium">{recentExerciseCount} Exercises used this/last week or scheduled next week</span>
                     </div>
                   </div>
 
@@ -2174,6 +2174,7 @@ function TrainerDashboardInner() {
                                   const videoEquipmentOptions = assignment.video.equipment.split(',').map((e: string) => e.trim()).filter((e: string) => e);
                                   const allEquipmentOptions = videoOptions?.equipment || [];
                                   const defaultEquipment = assignment.displayEquipment || videoEquipmentOptions[0] || '';
+                                  const categoryValue = assignment.video.category || assignment.video.bodyPart || "";
                                   const repsVal = scheduleChanges[assignment.id]?.reps !== undefined ? scheduleChanges[assignment.id].reps : assignment.reps;
                                   const lastUsedText = formatTimeAgoShort(assignment.video.lastUsed ?? null);
                                   const lastUsedDate = assignment.video.lastUsed ? new Date(assignment.video.lastUsed) : null;
@@ -2223,6 +2224,37 @@ function TrainerDashboardInner() {
                                       <span className="text-xs font-medium text-gray-800 truncate flex-1 min-w-0" title={assignment.video.title}>
                                         {assignment.video.title}
                                       </span>
+                                      <SearchableSelect
+                                        options={dynamicCategories.filter((c) => c !== "Missing")}
+                                        value={categoryValue}
+                                        onValueChange={(value) => {
+                                          updateVideoInlineMutation.mutate({
+                                            videoId: assignment.video.id,
+                                            field: "category",
+                                            value,
+                                          });
+                                        }}
+                                        placeholder="Category"
+                                        className="w-24 h-6 text-[10px] shrink-0"
+                                        allowAll={false}
+                                      />
+                                      <Input
+                                        type="text"
+                                        defaultValue={assignment.video.duration ?? ""}
+                                        onBlur={(e) => {
+                                          const value = e.target.value.trim();
+                                          if (value !== (assignment.video.duration ?? "")) {
+                                            updateVideoInlineMutation.mutate({
+                                              videoId: assignment.video.id,
+                                              field: "duration",
+                                              value,
+                                            });
+                                          }
+                                        }}
+                                        className="w-14 h-5 text-[10px] px-1 text-center shrink-0 border-gray-200"
+                                        placeholder="Dur"
+                                        title="Duration"
+                                      />
                                       <Input
                                         type="text"
                                         value={repsVal}
