@@ -2175,10 +2175,14 @@ function TrainerDashboardInner() {
                                   const allEquipmentOptions = videoOptions?.equipment || [];
                                   const defaultEquipment = assignment.displayEquipment || videoEquipmentOptions[0] || '';
                                   const categoryValue = assignment.video.category || assignment.video.bodyPart || "";
+                                  const derivedCategories = deriveCategories(assignment.video.bodyPart, assignment.video.equipment);
+                                  const primaryCategory = categoryValue || derivedCategories[0] || "Missing";
+                                  const categoryColor = CATEGORY_COLORS[primaryCategory] || "#6b7280";
                                   const exerciseOptions = (videos || []).map((v) => `${v.id}: ${v.title}`);
                                   const selectedExerciseValue = `${assignment.video.id}: ${assignment.video.title}`;
                                   const repsVal = scheduleChanges[assignment.id]?.reps !== undefined ? scheduleChanges[assignment.id].reps : assignment.reps;
                                   const lastUsedText = formatTimeAgoShort(assignment.video.lastUsed ?? null);
+                                  const intensityStyle = getIntensityStyle(assignment.video.intensity);
                                   const lastUsedDate = assignment.video.lastUsed ? new Date(assignment.video.lastUsed) : null;
                                   const daysSinceLastUsed =
                                     lastUsedDate && !Number.isNaN(lastUsedDate.getTime())
@@ -2219,10 +2223,23 @@ function TrainerDashboardInner() {
                                         )}
                                         {/* Intensity dot badge */}
                                         <span
-                                          className={`absolute bottom-0 right-0 w-1.5 h-1.5 rounded-full border border-white ${getIntensityStyle(assignment.video.intensity).dot}`}
-                                          title={getIntensityStyle(assignment.video.intensity).label}
+                                          className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-white shadow-sm ${intensityStyle.dot}`}
+                                          title={intensityStyle.label}
                                         />
                                       </div>
+                                      <span
+                                        className="text-[9px] font-semibold px-1.5 py-0.5 rounded border shrink-0"
+                                        style={{ color: categoryColor, borderColor: `${categoryColor}66`, backgroundColor: `${categoryColor}1A` }}
+                                        title={`Category: ${primaryCategory}`}
+                                      >
+                                        {primaryCategory}
+                                      </span>
+                                      <span
+                                        className={`text-[9px] font-semibold px-1.5 py-0.5 rounded shrink-0 ${intensityStyle.badge}`}
+                                        title={`Intensity: ${intensityStyle.label}`}
+                                      >
+                                        {intensityStyle.label}
+                                      </span>
                                       <SearchableSelect
                                         options={exerciseOptions}
                                         value={selectedExerciseValue}

@@ -120,22 +120,23 @@ export default function VideoAssignmentModal({
       // Check last used filter
       let matchesLastUsed = true;
       if (lastUsedFilter !== "all") {
-        const videoSchedules = schedules.filter(s => s.videoId === video.id);
-        const today = formatLocalDate(new Date());
-        const pastSchedules = videoSchedules.filter(s => s.scheduleDate < today);
-        
+        const rawLastUsed = video.lastUsed ?? null;
         if (lastUsedFilter === "never") {
-          matchesLastUsed = pastSchedules.length === 0;
+          matchesLastUsed = !rawLastUsed;
         } else {
-          const mostRecentDate = pastSchedules.length > 0
-            ? pastSchedules.sort((a, b) => b.scheduleDate.localeCompare(a.scheduleDate))[0].scheduleDate
-            : null;
-          
-          if (!mostRecentDate) {
-            matchesLastUsed = lastUsedFilter === "never";
+          if (!rawLastUsed) {
+            matchesLastUsed = false;
           } else {
-            const todayDate = new Date(`${today}T12:00:00`);
-            const mostRecent = new Date(`${mostRecentDate}T12:00:00`);
+            const lastUsedIso =
+              /^\d{4}-\d{2}-\d{2}$/.test(rawLastUsed)
+                ? `${rawLastUsed}T12:00:00`
+                : rawLastUsed;
+            const mostRecent = new Date(lastUsedIso);
+            if (Number.isNaN(mostRecent.getTime())) {
+              matchesLastUsed = false;
+              return false;
+            }
+            const todayDate = new Date();
             const daysSince = Math.floor((todayDate.getTime() - mostRecent.getTime()) / (1000 * 60 * 60 * 24));
             
             switch (lastUsedFilter) {
