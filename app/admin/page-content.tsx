@@ -2175,6 +2175,8 @@ function TrainerDashboardInner() {
                                   const allEquipmentOptions = videoOptions?.equipment || [];
                                   const defaultEquipment = assignment.displayEquipment || videoEquipmentOptions[0] || '';
                                   const categoryValue = assignment.video.category || assignment.video.bodyPart || "";
+                                  const exerciseOptions = (videos || []).map((v) => `${v.id}: ${v.title}`);
+                                  const selectedExerciseValue = `${assignment.video.id}: ${assignment.video.title}`;
                                   const repsVal = scheduleChanges[assignment.id]?.reps !== undefined ? scheduleChanges[assignment.id].reps : assignment.reps;
                                   const lastUsedText = formatTimeAgoShort(assignment.video.lastUsed ?? null);
                                   const lastUsedDate = assignment.video.lastUsed ? new Date(assignment.video.lastUsed) : null;
@@ -2221,9 +2223,27 @@ function TrainerDashboardInner() {
                                           title={getIntensityStyle(assignment.video.intensity).label}
                                         />
                                       </div>
-                                      <span className="text-xs font-medium text-gray-800 truncate flex-1 min-w-0" title={assignment.video.title}>
-                                        {assignment.video.title}
-                                      </span>
+                                      <SearchableSelect
+                                        options={exerciseOptions}
+                                        value={selectedExerciseValue}
+                                        onValueChange={async (value) => {
+                                          const [videoIdText] = value.split(":");
+                                          const nextVideoId = Number(videoIdText);
+                                          if (!Number.isFinite(nextVideoId) || nextVideoId === assignment.video.id) return;
+
+                                          try {
+                                            await apiRequest("PATCH", `/api/schedules/${assignment.id}`, { videoId: nextVideoId });
+                                            queryClient.setQueryData(["/api/schedules", "date", currentDate], (oldData: any) => {
+                                              if (!oldData) return oldData;
+                                              return oldData.map((s: any) => s.id === assignment.id ? { ...s, videoId: nextVideoId } : s);
+                                            });
+                                            queryClient.invalidateQueries({ queryKey: ["/api/schedules", "all"] });
+                                          } catch {}
+                                        }}
+                                        placeholder="Exercise"
+                                        className="w-56 h-6 text-[10px] shrink min-w-[9rem] max-w-[16rem]"
+                                        allowAll={false}
+                                      />
                                       <SearchableSelect
                                         options={dynamicCategories.filter((c) => c !== "Missing")}
                                         value={categoryValue}
