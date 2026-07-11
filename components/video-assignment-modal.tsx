@@ -90,7 +90,7 @@ export default function VideoAssignmentModal({
 
   // Fetch all schedules to show which videos are scheduled
   const { data: schedules = [] } = useQuery<Schedule[]>({
-    queryKey: ["/api/schedules", "all"],
+    queryKey: ["/api/schedules", "all-history"],
     queryFn: async () => {
       const response = await fetch(`/api/schedules?window=all`);
       return response.json();
@@ -120,18 +120,21 @@ export default function VideoAssignmentModal({
       // Check last used filter
       let matchesLastUsed = true;
       if (lastUsedFilter !== "all") {
-        const rawLastUsed = video.lastUsed ?? null;
+        const videoSchedules = schedules.filter(s => s.videoId === video.id);
+        const today = formatLocalDate(new Date());
+        const pastSchedules = videoSchedules.filter(s => s.scheduleDate < today);
+
         if (lastUsedFilter === "never") {
-          matchesLastUsed = !rawLastUsed;
+          matchesLastUsed = pastSchedules.length === 0;
         } else {
-          if (!rawLastUsed) {
+          const mostRecentDate = pastSchedules.length > 0
+            ? pastSchedules.sort((a, b) => b.scheduleDate.localeCompare(a.scheduleDate))[0].scheduleDate
+            : null;
+
+          if (!mostRecentDate) {
             matchesLastUsed = false;
           } else {
-            const lastUsedIso =
-              /^\d{4}-\d{2}-\d{2}$/.test(rawLastUsed)
-                ? `${rawLastUsed}T12:00:00`
-                : rawLastUsed;
-            const mostRecent = new Date(lastUsedIso);
+            const mostRecent = new Date(`${mostRecentDate}T12:00:00`);
             if (Number.isNaN(mostRecent.getTime())) {
               matchesLastUsed = false;
               return false;
@@ -225,6 +228,7 @@ export default function VideoAssignmentModal({
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/schedules", "date", currentDate] });
       queryClient.invalidateQueries({ queryKey: ["/api/schedules", "all"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/schedules", "all-history"] });
       queryClient.invalidateQueries({ queryKey: ["/api/stats"] });
       toast({ title: `${selectedVideoIds.length} video(s) scheduled successfully` });
       onClose();

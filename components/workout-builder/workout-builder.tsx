@@ -71,6 +71,7 @@ import {
 import { cn } from "@/lib/utils";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { formatLocalDate } from "@/lib/local-date";
 import type { Video } from "@/lib/shared/schema";
 import type {
   BuilderParams,
@@ -157,7 +158,7 @@ function getMondayOf(date: Date): Date {
 }
 
 function toIso(d: Date): string {
-  return d.toISOString().split("T")[0];
+  return formatLocalDate(d);
 }
 
 function scoreColor(score: number): string {
@@ -593,7 +594,7 @@ export function WorkoutBuilder() {
                 <button
                   key={mode}
                   type="button"
-                  onClick={() => patchParams({ mode, startDate: mode === "week" ? toIso(getMondayOf(new Date())) : new Date().toISOString().split("T")[0] })}
+                  onClick={() => patchParams({ mode, startDate: mode === "week" ? toIso(getMondayOf(new Date())) : formatLocalDate(new Date()) })}
                   className={cn(
                     "rounded-md px-3 py-1 text-xs font-medium transition-colors",
                     params.mode === mode

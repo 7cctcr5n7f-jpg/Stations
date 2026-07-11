@@ -1952,6 +1952,16 @@ function TrainerDashboardInner() {
                 });
               });
               const recentExerciseCount = reusedVideoIds.size;
+              const emptyRoundsPassed = emptyRounds === 0;
+              const singleVideoRoundsPassed = singleVideoRounds <= 1;
+              const recentExercisePassed = recentExerciseCount === 0;
+              const emptyRoundsLabel = `${emptyRounds} ${emptyRounds === 1 ? "Empty Round" : "Empty Rounds"}`;
+              const singleVideoLabel = `${singleVideoRounds} ${
+                singleVideoRounds === 1 ? "Round has" : "Rounds have"
+              } only 1 video assigned`;
+              const recentExerciseLabel = `${recentExerciseCount} ${
+                recentExerciseCount === 1 ? "Exercise" : "Exercises"
+              } used this/last week or scheduled next week`;
 
               return (
                 <>
@@ -2042,17 +2052,35 @@ function TrainerDashboardInner() {
 
                   {/* Attention summary */}
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-1.5">
-                    <div className="flex items-center gap-2 rounded-md border border-red-200 bg-red-50/50 px-2.5 py-1.5 text-xs text-red-700">
-                      <AlertCircle className="h-3.5 w-3.5" />
-                      <span className="font-medium">{emptyRounds} Empty Rounds</span>
+                    <div
+                      className={`flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-xs ${
+                        emptyRoundsPassed
+                          ? "border-emerald-200 bg-emerald-50/60 text-emerald-700"
+                          : "border-red-200 bg-red-50/50 text-red-700"
+                      }`}
+                    >
+                      {emptyRoundsPassed ? <CheckCircle className="h-3.5 w-3.5" /> : <AlertCircle className="h-3.5 w-3.5" />}
+                      <span className="font-medium">{emptyRoundsLabel}</span>
                     </div>
-                    <div className="flex items-center gap-2 rounded-md border border-amber-200 bg-amber-50/50 px-2.5 py-1.5 text-xs text-amber-700">
-                      <AlertCircle className="h-3.5 w-3.5" />
-                      <span className="font-medium">{singleVideoRounds} Rounds have only 1 video assigned</span>
+                    <div
+                      className={`flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-xs ${
+                        singleVideoRoundsPassed
+                          ? "border-emerald-200 bg-emerald-50/60 text-emerald-700"
+                          : "border-amber-200 bg-amber-50/50 text-amber-700"
+                      }`}
+                    >
+                      {singleVideoRoundsPassed ? <CheckCircle className="h-3.5 w-3.5" /> : <AlertCircle className="h-3.5 w-3.5" />}
+                      <span className="font-medium">{singleVideoLabel}</span>
                     </div>
-                    <div className="flex items-center gap-2 rounded-md border border-orange-200 bg-orange-50/50 px-2.5 py-1.5 text-xs text-orange-700">
-                      <Clock className="h-3.5 w-3.5" />
-                      <span className="font-medium">{recentExerciseCount} Exercises used this/last week or scheduled next week</span>
+                    <div
+                      className={`flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-xs ${
+                        recentExercisePassed
+                          ? "border-emerald-200 bg-emerald-50/60 text-emerald-700"
+                          : "border-orange-200 bg-orange-50/50 text-orange-700"
+                      }`}
+                    >
+                      {recentExercisePassed ? <CheckCircle className="h-3.5 w-3.5" /> : <Clock className="h-3.5 w-3.5" />}
+                      <span className="font-medium">{recentExerciseLabel}</span>
                     </div>
                   </div>
 
@@ -2178,8 +2206,6 @@ function TrainerDashboardInner() {
                                   const derivedCategories = deriveCategories(assignment.video.bodyPart, assignment.video.equipment);
                                   const primaryCategory = categoryValue || derivedCategories[0] || "Missing";
                                   const categoryColor = CATEGORY_COLORS[primaryCategory] || "#6b7280";
-                                  const exerciseOptions = (videos || []).map((v) => `${v.id}: ${v.title}`);
-                                  const selectedExerciseValue = `${assignment.video.id}: ${assignment.video.title}`;
                                   const repsVal = scheduleChanges[assignment.id]?.reps !== undefined ? scheduleChanges[assignment.id].reps : assignment.reps;
                                   const lastUsedText = formatTimeAgoShort(assignment.video.lastUsed ?? null);
                                   const intensityStyle = getIntensityStyle(assignment.video.intensity);
@@ -2234,64 +2260,9 @@ function TrainerDashboardInner() {
                                       >
                                         {primaryCategory}
                                       </span>
-                                      <span
-                                        className={`text-[9px] font-semibold px-1.5 py-0.5 rounded shrink-0 ${intensityStyle.badge}`}
-                                        title={`Intensity: ${intensityStyle.label}`}
-                                      >
-                                        {intensityStyle.label}
+                                      <span className="text-xs font-medium text-gray-800 truncate flex-1 min-w-0" title={assignment.video.title}>
+                                        {assignment.video.title}
                                       </span>
-                                      <SearchableSelect
-                                        options={exerciseOptions}
-                                        value={selectedExerciseValue}
-                                        onValueChange={async (value) => {
-                                          const [videoIdText] = value.split(":");
-                                          const nextVideoId = Number(videoIdText);
-                                          if (!Number.isFinite(nextVideoId) || nextVideoId === assignment.video.id) return;
-
-                                          try {
-                                            await apiRequest("PATCH", `/api/schedules/${assignment.id}`, { videoId: nextVideoId });
-                                            queryClient.setQueryData(["/api/schedules", "date", currentDate], (oldData: any) => {
-                                              if (!oldData) return oldData;
-                                              return oldData.map((s: any) => s.id === assignment.id ? { ...s, videoId: nextVideoId } : s);
-                                            });
-                                            queryClient.invalidateQueries({ queryKey: ["/api/schedules", "all"] });
-                                          } catch {}
-                                        }}
-                                        placeholder="Exercise"
-                                        className="w-56 h-6 text-[10px] shrink min-w-[9rem] max-w-[16rem]"
-                                        allowAll={false}
-                                      />
-                                      <SearchableSelect
-                                        options={dynamicCategories.filter((c) => c !== "Missing")}
-                                        value={categoryValue}
-                                        onValueChange={(value) => {
-                                          updateVideoInlineMutation.mutate({
-                                            videoId: assignment.video.id,
-                                            field: "category",
-                                            value,
-                                          });
-                                        }}
-                                        placeholder="Category"
-                                        className="w-24 h-6 text-[10px] shrink-0"
-                                        allowAll={false}
-                                      />
-                                      <Input
-                                        type="text"
-                                        defaultValue={assignment.video.duration ?? ""}
-                                        onBlur={(e) => {
-                                          const value = e.target.value.trim();
-                                          if (value !== (assignment.video.duration ?? "")) {
-                                            updateVideoInlineMutation.mutate({
-                                              videoId: assignment.video.id,
-                                              field: "duration",
-                                              value,
-                                            });
-                                          }
-                                        }}
-                                        className="w-14 h-5 text-[10px] px-1 text-center shrink-0 border-gray-200"
-                                        placeholder="Dur"
-                                        title="Duration"
-                                      />
                                       <Input
                                         type="text"
                                         value={repsVal}
@@ -2325,7 +2296,7 @@ function TrainerDashboardInner() {
                                             setScheduleChanges(prev => { const n = { ...prev }; delete n[assignment.id]; return n; });
                                           }
                                         }}
-                                        className="w-12 h-5 text-[10px] px-1 text-center shrink-0 border-gray-200"
+                                        className="w-32 h-7 text-sm px-3 text-center shrink-0 border-gray-200"
                                       />
                                       {assignment.video.lastUsed && (
                                         <span
@@ -2354,12 +2325,12 @@ function TrainerDashboardInner() {
                                           } catch {}
                                         }}
                                         placeholder="Equip."
-                                        className="w-28 h-6 text-[11px] shrink-0"
+                                        className="w-44 h-7 text-sm shrink-0"
                                         allowAll={false}
                                       />
                                       <button
                                         onClick={() => deleteScheduleMutation.mutate(assignment.id)}
-                                        className="text-gray-400 hover:text-red-600 transition-colors shrink-0"
+                                        className="ml-3 text-gray-400 hover:text-red-600 transition-colors shrink-0"
                                         title="Remove"
                                       >
                                         <Trash2 className="h-3 w-3" />
