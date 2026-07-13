@@ -3,6 +3,7 @@ export const dynamic = "force-dynamic"
 import { type NextRequest, NextResponse } from "next/server"
 import { sql, mapSchedule } from "@/lib/db"
 import { broadcastScheduleChange } from "@/app/api/schedules/sse/route"
+import { syncChowForScheduleChanges } from "@/lib/chow"
 
 export const runtime = "nodejs"
 
@@ -89,8 +90,29 @@ export async function POST(request: NextRequest) {
       RETURNING *
     `
     const created = mapSchedule(rows[0])
+    const chowSyncs = await syncChowForScheduleChanges([
+      { scheduleDate: created.scheduleDate, roomId: created.roomId },
+    ])
+    const freshRow = (await sql`SELECT * FROM schedules WHERE id = ${created.id}`)[0]
+    const fallbackRow =
+      freshRow ??
+      (
+        await sql`
+          SELECT *
+          FROM schedules
+          WHERE room_id = ${created.roomId} AND schedule_date = ${created.scheduleDate}
+          ORDER BY position ASC, id ASC
+          LIMIT 1
+        `
+      )[0]
+    const responseSchedule = fallbackRow ? mapSchedule(fallbackRow) : created
     broadcastScheduleChange(created.roomId, { type: "schedule_created", scheduleId: created.id, roomId: created.roomId, date: created.scheduleDate })
-    return NextResponse.json(created, { status: 201 })
+    for (const sync of chowSyncs) {
+      for (const date of sync.syncedDates) {
+        broadcastScheduleChange(sync.roomId, { type: "schedule_published", roomId: sync.roomId, date })
+      }
+    }
+    return NextResponse.json(responseSchedule, { status: 201 })
   } catch (error) {
     console.error("[v0] Failed to create schedule:", error)
     return NextResponse.json({ message: "Failed to create schedule" }, { status: 500 })

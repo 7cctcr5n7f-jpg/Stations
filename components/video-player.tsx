@@ -31,7 +31,7 @@ export default function VideoPlayer({ assignment, displayMode = 'single', videoC
   const [videoLoaded, setVideoLoaded] = useState(false);
   const [videoError, setVideoError] = useState(false);
   const [retryAttempted, setRetryAttempted] = useState(false);
-  const zoom = parseFloat(assignment.zoomLevel || "1");
+  const zoom = Math.max(parseFloat(assignment.zoomLevel || "1"), 1.02); // min 1.02 clips video edge codec artifacts
   const verticalPos = parseFloat(assignment.verticalPosition || "0");
   const [videoSrc, setVideoSrc] = useState(assignment.video.url);
   const [sourceVersion, setSourceVersion] = useState(0);
@@ -47,20 +47,14 @@ export default function VideoPlayer({ assignment, displayMode = 'single', videoC
     // Validate URL exists and is not empty
     const videoUrl = assignment.video.url?.trim();
     if (!videoUrl) {
-      console.warn(`[v0] Video ${assignment.video.id} (${assignment.video.title}) has no URL - marking as error`);
+      console.warn(`[v0] Video ${assignment.video.id} has no URL - marking as error`);
       setVideoError(true);
       return;
     }
     
-    // Proxy R2 URLs through our CORS-enabled endpoint to fix CORS blocking
-    let finalUrl = videoUrl;
-    if (videoUrl.includes("r2.dev") || videoUrl.includes("r2.cloudflarestorage.com")) {
-      finalUrl = `/api/videos/proxy?url=${encodeURIComponent(videoUrl)}`;
-      console.log("[v0] Using CORS proxy for R2 video:", videoUrl.substring(0, 50) + "...");
-    }
-    
-    // Always use final URL for maximum stability
-    setVideoSrc(finalUrl);
+    // Use the R2 public URL directly. Cloudflare's CDN serves range requests
+    // natively; no Vercel proxy hop needed.
+    setVideoSrc(videoUrl);
     setSourceVersion(0);
     setVideoLoaded(false);
     setVideoError(false);
@@ -126,8 +120,10 @@ export default function VideoPlayer({ assignment, displayMode = 'single', videoC
 
 
 
-  // For 5+ videos, let the parent grid control sizing so all assignments can render.
-  const containerHeight = videoCount > 4 ? '100%' : (videoCount >= 3 ? '50vh' : '100vh');
+  // Always use 100% so the video fills its grid/flex parent without overflowing
+  // (using vh caused the container to exceed available height when a header was present,
+  // creating a dark clipping artifact at the overflow edge)
+  const containerHeight = '100%';
   const isCompactMode = videoCount >= 3;
 
   // Get intensity color and styling
@@ -147,18 +143,23 @@ export default function VideoPlayer({ assignment, displayMode = 'single', videoC
   const intensityStyles = getIntensityStyles(assignment.video.intensity);
   
   return (
-    <div className="relative bg-white w-full h-full overflow-hidden" style={{ height: containerHeight }}>
+    <div className="relative bg-white w-full h-full overflow-hidden">
       <video
         key={`${assignment.id}-${sourceVersion}`}
         ref={videoRef}
         src={sourceVersion === 0 ? videoSrc : withRetryBuster(videoSrc)}
-        className={`${videoLoaded ? 'block' : 'hidden'} w-full`}
+        className="w-full"
+        tabIndex={-1}
         style={{
           height: containerHeight,
           objectFit: 'contain',
           objectPosition: 'center',
           transform: `scale(${zoom}) translateY(${verticalPos}px)`,
-          transformOrigin: 'center'
+          transformOrigin: 'center',
+          backgroundColor: 'white',
+          outline: 'none',
+          border: 'none',
+          display: videoLoaded ? 'block' : 'none',
         }}
         loop
         muted
@@ -167,7 +168,7 @@ export default function VideoPlayer({ assignment, displayMode = 'single', videoC
         preload="auto"
         controls={false}
         disablePictureInPicture
-        crossOrigin="anonymous"
+        crossOrigin={undefined}
         onCanPlay={handlePlayable}
         onLoadedData={handlePlayable}
         onError={handleVideoError}
@@ -182,9 +183,9 @@ export default function VideoPlayer({ assignment, displayMode = 'single', videoC
         </div>
       )}
 
-      {/* Video Title - Top Center */}
-      <div className={`absolute ${isCompactMode ? 'top-3' : 'top-5'} left-1/2 -translate-x-1/2 z-10 w-full px-4 flex justify-center pointer-events-none`}>
-        <div className={`bg-white/90 backdrop-blur-sm rounded-lg ${isCompactMode ? 'px-3 py-1.5' : 'px-6 py-3'} text-center max-w-[65%]`}>
+      {/* Video Title - Top Center, padded to avoid intensity badge (left) and reps card (right) */}
+      <div className={`absolute ${isCompactMode ? 'top-3' : 'top-5'} left-0 right-0 z-10 flex justify-center pointer-events-none ${isCompactMode ? 'pl-[84px] pr-[116px]' : 'pl-[110px] pr-[160px]'}`}>
+        <div className={`bg-white/90 backdrop-blur-sm rounded-lg ${isCompactMode ? 'px-3 py-1.5' : 'px-6 py-3'} text-center`}>
           <h3 className={`${isCompactMode ? 'text-base' : 'text-2xl'} font-bold text-black leading-tight`}>
             {assignment.video.title}
           </h3>
@@ -207,11 +208,11 @@ export default function VideoPlayer({ assignment, displayMode = 'single', videoC
               bg-black/75 backdrop-blur-md
               rounded-2xl overflow-hidden
               shadow-[0_4px_24px_rgba(0,0,0,0.35)]
-              ${isCompactMode ? 'min-w-[56px]' : 'min-w-[76px]'}
+              ${isCompactMode ? 'w-[96px]' : 'w-[130px]'}
             `}>
               {/* Reps block */}
               {hasReps && (
-                <div className={`flex flex-col items-center justify-center ${isCompactMode ? 'px-3 pt-2.5 pb-2' : 'px-4 pt-4 pb-3'}`}>
+                <div className={`flex flex-col items-center justify-center w-full ${isCompactMode ? 'px-3 pt-2.5 pb-2' : 'px-4 pt-4 pb-3'}`}>
                   {isNumericOnly ? (
                     <>
                       <span className={`font-black text-white leading-none ${isCompactMode ? 'text-2xl' : 'text-4xl'}`}>
@@ -222,7 +223,7 @@ export default function VideoPlayer({ assignment, displayMode = 'single', videoC
                       </span>
                     </>
                   ) : (
-                    <span className={`font-bold text-white text-center leading-tight uppercase tracking-wide ${isCompactMode ? 'text-xs' : 'text-sm'}`}>
+                    <span className={`font-bold text-white text-center leading-tight uppercase tracking-wide break-words w-full ${isCompactMode ? 'text-xs' : 'text-sm'}`}>
                       {repsStr}
                     </span>
                   )}
@@ -235,7 +236,7 @@ export default function VideoPlayer({ assignment, displayMode = 'single', videoC
               )}
               {equipmentStr && (
                 <div className={`flex items-center justify-center w-full ${isCompactMode ? 'px-2 py-1.5' : 'px-3 py-2'}`}>
-                  <span className={`text-white/60 font-medium uppercase tracking-widest text-center ${isCompactMode ? 'text-[9px]' : 'text-[10px]'}`}>
+                  <span className={`text-white/60 font-medium uppercase tracking-widest text-center break-words w-full ${isCompactMode ? 'text-[9px]' : 'text-[10px]'}`}>
                     {equipmentStr}
                   </span>
                 </div>

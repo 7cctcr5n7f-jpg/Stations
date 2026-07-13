@@ -2,20 +2,10 @@ export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
 export const maxDuration = 60
 
-import path from "path"
-import os from "os"
-import fs from "fs"
 import { type NextRequest, NextResponse } from "next/server"
 import { sql, mapVideo } from "@/lib/db"
-import { uploadToR2 } from "@/lib/r2"
-
-// Use require() so webpack does not attempt to bundle these native-binary
-// packages — they must be resolved at runtime via node_modules.
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const ffmpegInstaller = require("@ffmpeg-installer/ffmpeg") as { path: string }
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const ffmpeg = require("fluent-ffmpeg") as typeof import("fluent-ffmpeg")
-ffmpeg.setFfmpegPath(ffmpegInstaller.path)
+import { deleteFromR2ByPublicUrl } from "@/lib/r2"
+import { generateThumbnailForVideoUrl } from "@/lib/video-thumbnail"
 
 /**
  * POST /api/videos/[id]/thumbnail/generate
@@ -28,8 +18,6 @@ export async function POST(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const tmpThumb = path.join(os.tmpdir(), `thumb-out-${Date.now()}.jpg`)
-
   try {
     const { id } = await params
     const videoId = Number(id)
@@ -55,34 +43,8 @@ export async function POST(
       return NextResponse.json({ error: "Video URL is not HTTP/HTTPS" }, { status: 400 })
     }
 
-    // Pass the remote URL directly to ffmpeg with -ss before -i so it seeks
-    // via HTTP range requests rather than downloading the whole file first.
-    // -vframes 1 grabs exactly one frame and exits immediately.
-    await new Promise<void>((resolve, reject) => {
-      ffmpeg()
-        .input(videoUrl)
-        .inputOptions(["-ss 00:00:01"])   // seek to 1 s BEFORE opening (fast seek)
-        .outputOptions(["-vframes 1", "-q:v 3", "-vf scale=320:-1"])
-        .output(tmpThumb)
-        .on("end", () => resolve())
-        .on("error", (err) => {
-          // If 1-second seek fails (video shorter than 1s), retry at 0
-          ffmpeg()
-            .input(videoUrl)
-            .inputOptions(["-ss 00:00:00"])
-            .outputOptions(["-vframes 1", "-q:v 3", "-vf scale=320:-1"])
-            .output(tmpThumb)
-            .on("end", () => resolve())
-            .on("error", (err2) => reject(err2))
-            .run()
-        })
-        .run()
-    })
-
-    // Upload the JPEG to R2
-    const thumbBuffer = fs.readFileSync(tmpThumb)
-    const key = `thumbnails/${videoId}-${Date.now()}.jpg`
-    const thumbnailUrl = await uploadToR2(key, thumbBuffer, "image/jpeg")
+    const previousThumbnailUrl = video.thumbnail_url as string | null | undefined
+    const thumbnailUrl = await generateThumbnailForVideoUrl(videoId, videoUrl)
 
     // Persist the URL in the DB
     const updated = await sql`
@@ -92,6 +54,14 @@ export async function POST(
       RETURNING *
     `
 
+    const [thumbRefRow] = previousThumbnailUrl
+      ? await sql`SELECT COUNT(*)::int AS count FROM videos WHERE id <> ${videoId} AND thumbnail_url = ${previousThumbnailUrl}`
+      : [{ count: 1 }]
+
+    if (previousThumbnailUrl && previousThumbnailUrl !== thumbnailUrl && thumbRefRow.count === 0) {
+      await deleteFromR2ByPublicUrl(previousThumbnailUrl)
+    }
+
     return NextResponse.json(mapVideo(updated[0]))
   } catch (error) {
     console.error("[thumbnail/generate] error:", error)
@@ -99,7 +69,5 @@ export async function POST(
       { error: "Failed to generate thumbnail", detail: String(error) },
       { status: 500 }
     )
-  } finally {
-    try { fs.unlinkSync(tmpThumb) } catch {}
   }
 }

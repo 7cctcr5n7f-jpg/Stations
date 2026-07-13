@@ -112,6 +112,8 @@ export interface BuilderParams {
   mode: GenerationMode
   /** Start date: yyyy-mm-dd. For single = target day; for week = Monday of the week. */
   startDate: string
+  /** When true, generate a single exercise per room for a dropset week. */
+  dropsetWeek: boolean
   focus: WorkoutFocus
   /** 0 = 100% Strength, 100 = 100% HIIT. Default 60. */
   hiitStrengthRatio: number
@@ -127,6 +129,7 @@ export interface BuilderParams {
 export const DEFAULT_BUILDER_PARAMS: BuilderParams = {
   mode: "week",
   startDate: "",
+  dropsetWeek: false,
   focus: "Balanced" as WorkoutFocus,
   hiitStrengthRatio: 60,
   boxingVolume: 50,

@@ -308,15 +308,14 @@ export default function VideoUploadModal({ isOpen, onClose }: VideoUploadModalPr
     }));
   };
 
-  const handleFileSelect = (file: File) => {
+  const handleFileSelect = useCallback((file: File) => {
     if (file.type.startsWith('video/')) {
-      setFormData(prev => ({ ...prev, file }));
-      
-      // Auto-populate title from filename if empty
-      if (!formData.title) {
-        const fileName = file.name.replace(/\.[^/.]+$/, "");
-        setFormData(prev => ({ ...prev, title: fileName }));
-      }
+      const fileName = file.name.replace(/\.[^/.]+$/, "");
+      setFormData(prev => ({
+        ...prev,
+        file,
+        title: prev.title || fileName,
+      }));
     } else {
       toast({
         title: "Invalid file type",
@@ -324,9 +323,9 @@ export default function VideoUploadModal({ isOpen, onClose }: VideoUploadModalPr
         variant: "destructive"
       });
     }
-  };
+  }, [toast]);
 
-  const handleMultipleFiles = (files: File[]) => {
+  const handleMultipleFiles = useCallback((files: File[]) => {
     const newBatchVideos = files.map(file => ({
       file,
       title: file.name.replace(/\.[^/.]+$/, ""),
@@ -337,7 +336,7 @@ export default function VideoUploadModal({ isOpen, onClose }: VideoUploadModalPr
     
     setBatchVideos(newBatchVideos);
     setIsBatchMode(true);
-  };
+  }, []);
 
   const updateBatchVideo = (index: number, field: keyof BatchVideoData, value: any) => {
     setBatchVideos(prev => prev.map((video, i) => 
@@ -404,7 +403,7 @@ export default function VideoUploadModal({ isOpen, onClose }: VideoUploadModalPr
     } else if (files.length > 1) {
       handleMultipleFiles(files);
     }
-  }, []);
+  }, [handleFileSelect, handleMultipleFiles]);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();

@@ -2,7 +2,7 @@ export const dynamic = "force-dynamic"
 
 import { type NextRequest, NextResponse } from "next/server"
 import { sql, mapVideo } from "@/lib/db"
-import { uploadToR2 } from "@/lib/r2"
+import { deleteFromR2ByPublicUrl, uploadToR2 } from "@/lib/r2"
 
 export const runtime = "nodejs"
 
@@ -37,6 +37,9 @@ export async function POST(
     const key = `thumbnails/${videoId}-${Date.now()}.${ext}`
     const thumbnailUrl = await uploadToR2(key, buffer, contentType)
 
+    const previousRows = await sql`SELECT thumbnail_url FROM videos WHERE id = ${videoId}`
+    const previousThumbnailUrl = previousRows[0]?.thumbnail_url as string | null | undefined
+
     const rows = await sql`
       UPDATE videos
       SET thumbnail_url = ${thumbnailUrl}
@@ -46,6 +49,14 @@ export async function POST(
 
     if (rows.length === 0) {
       return NextResponse.json({ error: "Video not found" }, { status: 404 })
+    }
+
+    const [thumbRefRow] = previousThumbnailUrl
+      ? await sql`SELECT COUNT(*)::int AS count FROM videos WHERE id <> ${videoId} AND thumbnail_url = ${previousThumbnailUrl}`
+      : [{ count: 1 }]
+
+    if (previousThumbnailUrl && previousThumbnailUrl !== thumbnailUrl && thumbRefRow.count === 0) {
+      await deleteFromR2ByPublicUrl(previousThumbnailUrl)
     }
 
     return NextResponse.json(mapVideo(rows[0]))

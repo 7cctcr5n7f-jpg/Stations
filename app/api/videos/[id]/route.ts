@@ -1,5 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { sql, mapVideo } from "@/lib/db"
+import { deleteFromR2ByPublicUrl } from "@/lib/r2"
 
 export const dynamic = "force-dynamic"
 
@@ -115,13 +116,30 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
   try {
     const { id } = await params
     const videoId = Number(id)
+    const existingRows = await sql`SELECT url, thumbnail_url FROM videos WHERE id = ${videoId}`
+    if (existingRows.length === 0) {
+      return NextResponse.json({ error: "Video not found" }, { status: 404 })
+    }
+
     // Remove dependent rows first to avoid orphaned schedules/assignments.
     await sql`DELETE FROM schedules WHERE video_id = ${videoId}`
     await sql`DELETE FROM room_assignments WHERE video_id = ${videoId}`
     const rows = await sql`DELETE FROM videos WHERE id = ${videoId} RETURNING id`
-    if (rows.length === 0) {
-      return NextResponse.json({ error: "Video not found" }, { status: 404 })
-    }
+
+    const oldUrl = existingRows[0].url as string | null
+    const oldThumbnailUrl = existingRows[0].thumbnail_url as string | null
+    const [videoRefRow] = oldUrl
+      ? await sql`SELECT COUNT(*)::int AS count FROM videos WHERE url = ${oldUrl}`
+      : [{ count: 1 }]
+    const [thumbnailRefRow] = oldThumbnailUrl
+      ? await sql`SELECT COUNT(*)::int AS count FROM videos WHERE thumbnail_url = ${oldThumbnailUrl}`
+      : [{ count: 1 }]
+
+    await Promise.all([
+      oldUrl && videoRefRow.count === 0 ? deleteFromR2ByPublicUrl(oldUrl) : Promise.resolve(),
+      oldThumbnailUrl && thumbnailRefRow.count === 0 ? deleteFromR2ByPublicUrl(oldThumbnailUrl) : Promise.resolve(),
+    ])
+
     return NextResponse.json({ success: true })
   } catch (error) {
     console.error("[v0] /api/videos/[id] DELETE error:", error)

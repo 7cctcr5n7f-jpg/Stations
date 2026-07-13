@@ -12,7 +12,7 @@
  *   R2_PUBLIC_URL        — Public bucket URL (e.g. "https://pub-xxx.r2.dev" or custom domain)
  */
 
-import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3"
+import { DeleteObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3"
 
 function getR2Client(): S3Client {
   const accountId = process.env.R2_ACCOUNT_ID
@@ -63,4 +63,36 @@ export async function uploadToR2(
   )
 
   return `${publicUrl}/${key}`
+}
+
+function getBucketAndPublicUrl() {
+  const bucket = process.env.R2_BUCKET_NAME
+  const publicUrl = process.env.R2_PUBLIC_URL?.replace(/\/$/, "")
+
+  if (!bucket) throw new Error("R2_BUCKET_NAME is not set.")
+  if (!publicUrl) throw new Error("R2_PUBLIC_URL is not set.")
+
+  return { bucket, publicUrl }
+}
+
+export function getR2KeyFromPublicUrl(url: string): string | null {
+  const { publicUrl } = getBucketAndPublicUrl()
+  if (!url.startsWith(`${publicUrl}/`)) return null
+  return url.slice(publicUrl.length + 1)
+}
+
+export async function deleteFromR2ByPublicUrl(url: string | null | undefined): Promise<void> {
+  if (!url) return
+
+  const key = getR2KeyFromPublicUrl(url)
+  if (!key) return
+
+  const { bucket } = getBucketAndPublicUrl()
+  const client = getR2Client()
+  await client.send(
+    new DeleteObjectCommand({
+      Bucket: bucket,
+      Key: key,
+    })
+  )
 }

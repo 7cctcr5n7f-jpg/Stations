@@ -14,6 +14,7 @@ export default function RoleSelectionPage() {
   const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false)
   const [password, setPassword] = useState("")
   const [passwordError, setPasswordError] = useState("")
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
   const handleAdminClick = () => {
     setIsPasswordModalOpen(true)
@@ -21,13 +22,30 @@ export default function RoleSelectionPage() {
     setPasswordError("")
   }
 
-  const handlePasswordSubmit = () => {
-    if (password === "1708") {
+  const handlePasswordSubmit = async () => {
+    try {
+      setIsSubmitting(true)
+      setPasswordError("")
+      const response = await fetch("/api/admin/session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ password }),
+      })
+
+      if (!response.ok) {
+        setPasswordError("Incorrect password")
+        setPassword("")
+        return
+      }
+
       setIsPasswordModalOpen(false)
       router.push("/admin")
-    } else {
-      setPasswordError("Incorrect password")
-      setPassword("")
+    } catch (error) {
+      console.error("[auth] Failed to sign in:", error)
+      setPasswordError("Unable to sign in")
+    } finally {
+      setIsSubmitting(false)
     }
   }
 
@@ -112,11 +130,11 @@ export default function RoleSelectionPage() {
               {passwordError && <p className="text-sm text-red-500 text-center">{passwordError}</p>}
             </div>
             <div className="flex gap-2">
-              <Button variant="outline" onClick={() => setIsPasswordModalOpen(false)} className="flex-1">
+              <Button variant="outline" onClick={() => setIsPasswordModalOpen(false)} className="flex-1" disabled={isSubmitting}>
                 Cancel
               </Button>
-              <Button onClick={handlePasswordSubmit} className="flex-1 bg-gray-500 hover:bg-gray-600">
-                Access Admin
+              <Button onClick={handlePasswordSubmit} className="flex-1 bg-gray-500 hover:bg-gray-600" disabled={isSubmitting}>
+                {isSubmitting ? "Checking..." : "Access Admin"}
               </Button>
             </div>
           </div>

@@ -351,6 +351,7 @@ export function WorkoutBuilder() {
   const [params, setParams] = useState<BuilderParams>({
     mode: "week",
     startDate: monday,
+    dropsetWeek: false,
     focus: "Balanced",
     hiitStrengthRatio: 60,
     boxingVolume: 50,
@@ -609,6 +610,21 @@ export function WorkoutBuilder() {
           </div>
         </CardHeader>
         <CardContent className="space-y-5">
+          <div className="flex items-center justify-between rounded-lg border border-gray-200 bg-white px-3 py-2">
+            <div>
+              <Label htmlFor="dropset-week" className="text-sm font-medium cursor-pointer">
+                Dropset Week
+              </Label>
+              <p className="text-xs text-muted-foreground">
+                {params.dropsetWeek ? "Generate 1 exercise per room." : "Generate 2 exercises per room."}
+              </p>
+            </div>
+            <Switch
+              id="dropset-week"
+              checked={params.dropsetWeek}
+              onCheckedChange={(value) => patchParams({ dropsetWeek: value })}
+            />
+          </div>
 
           {/* Row 1: Date + Focus side by side */}
           <div className="grid grid-cols-2 gap-4">

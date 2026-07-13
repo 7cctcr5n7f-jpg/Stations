@@ -1,13 +1,13 @@
 "use client"
 
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Trash2, X, Sparkles, Loader2 } from "lucide-react";
+import { Trash2, X, Sparkles, Loader2, Upload } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
@@ -57,6 +57,8 @@ export default function VideoEditModal({ isOpen, onClose, video }: VideoEditModa
     spaceRequirement: "",
     boxingType: "",
   });
+  const [replacementFile, setReplacementFile] = useState<File | null>(null);
+  const replacementInputRef = useRef<HTMLInputElement>(null);
   
 
   
@@ -246,6 +248,41 @@ export default function VideoEditModal({ isOpen, onClose, video }: VideoEditModa
     },
   });
 
+  const replaceVideoMutation = useMutation({
+    mutationFn: async (file: File) => {
+      const payload = new FormData();
+      payload.append("video", file);
+      const response = await fetch(`/api/videos/${video?.id}/replace`, {
+        method: "POST",
+        body: payload,
+        credentials: "include",
+      });
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => null);
+        throw new Error(errorData?.error || "Failed to replace video");
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/videos"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/schedules"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/rooms"] });
+      toast({
+        title: "Video replaced successfully",
+        description: "The exercise record was preserved and the media file was updated.",
+      });
+      setReplacementFile(null);
+      handleClose();
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Failed to replace video",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
   const handleClose = () => {
     setFormData({
       title: "",
@@ -261,6 +298,7 @@ export default function VideoEditModal({ isOpen, onClose, video }: VideoEditModa
       spaceRequirement: "",
       boxingType: "",
     });
+    setReplacementFile(null);
 
     onClose();
   };
@@ -310,6 +348,50 @@ export default function VideoEditModal({ isOpen, onClose, video }: VideoEditModa
               <p className="text-sm text-gray-600">Duration: {video.duration}</p>
               <p className="text-xs text-gray-500 mt-1">Last used: {video.lastUsed ? new Date(video.lastUsed).toLocaleDateString() : 'Never'}</p>
             </div>
+          </div>
+
+          <div className="space-y-2 rounded-lg border border-gray-200 p-4">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <Label className="text-sm font-medium">Replace Video File</Label>
+                <p className="text-xs text-gray-500">
+                  Keeps this exercise ID, metadata, and schedules while swapping the media file.
+                </p>
+              </div>
+              <input
+                ref={replacementInputRef}
+                type="file"
+                accept="video/*"
+                className="hidden"
+                onChange={(e) => setReplacementFile(e.target.files?.[0] ?? null)}
+              />
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => replacementInputRef.current?.click()}
+              >
+                <Upload className="mr-2 h-4 w-4" />
+                Choose file
+              </Button>
+            </div>
+            {replacementFile ? (
+              <div className="flex items-center justify-between gap-3 rounded-md bg-gray-50 px-3 py-2 text-sm">
+                <span className="truncate">{replacementFile.name}</span>
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={() => replaceVideoMutation.mutate(replacementFile)}
+                  disabled={replaceVideoMutation.isPending}
+                >
+                  {replaceVideoMutation.isPending ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Upload className="mr-2 h-4 w-4" />
+                  )}
+                  Replace video
+                </Button>
+              </div>
+            ) : null}
           </div>
 
           {/* Video Title */}

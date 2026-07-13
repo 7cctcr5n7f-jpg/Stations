@@ -21,6 +21,7 @@ import VideoHealthDashboard from "@/components/video-health-dashboard";
 import VideoThumbnail from "@/components/video-thumbnail";
 import ImageThumbnail from "@/components/image-thumbnail";
 import EnhancedCacheDashboard from "@/components/enhanced-cache-dashboard";
+import { IntegrityAuditPanel } from "@/components/integrity-audit-panel";
 import { ExerciseDictionary } from "@/components/exercise-dictionary";
 import { WorkoutBuilder } from "@/components/workout-builder/workout-builder";
 import { BuilderConfig } from "@/components/workout-builder/builder-config";
@@ -29,7 +30,7 @@ import {
   Dumbbell, LogOut, TrendingUp, Play, Video as VideoIcon, Calendar, 
   DoorOpen, Plus, Trash2, Edit, Clock, CheckCircle, Download, Wifi, WifiOff,
   Monitor, ZoomIn, ZoomOut, Save, ChevronsUpDown, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, GripVertical, X, Copy,
-  Sparkles, AlertCircle, Loader2, Search, CalendarDays, BookOpen, Image,
+  Sparkles, AlertCircle, Loader2, Search, CalendarDays, BookOpen, Image as ImageIcon,
   Wand2, Settings2
 } from "lucide-react";
 import { getIntensityStyle, INTENSITY_LEVELS } from "@/lib/intensity";
@@ -52,8 +53,21 @@ interface Stats {
   todaySchedules: number;
 }
 
+interface ChowSelection {
+  weekStart: string;
+  roomId: number | null;
+}
+
 interface RoomWithAssignments extends Room {
   assignments: Array<Schedule & { video: Video }>;
+}
+
+function getMondayIso(date: string): string {
+  const currentDateObj = new Date(`${date}T12:00:00`);
+  const currentDay = currentDateObj.getDay();
+  const daysFromMonday = currentDay === 0 ? 6 : currentDay - 1;
+  currentDateObj.setDate(currentDateObj.getDate() - daysFromMonday);
+  return formatLocalDate(currentDateObj);
 }
 
 // Mobile-only canvas: measures its own width and scales the 1920×1080 canvas to fit exactly.
@@ -306,6 +320,19 @@ function TrainerDashboardInner() {
     refetchOnWindowFocus: false,
   });
 
+  const { data: chowSelection } = useQuery<ChowSelection>({
+    queryKey: ["/api/schedules/chow", getMondayIso(currentDate)],
+    queryFn: async () => {
+      const response = await fetch(`/api/schedules/chow?date=${currentDate}`);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch CHOW settings: ${response.status}`);
+      }
+      return response.json();
+    },
+    staleTime: 0,
+    refetchOnWindowFocus: false,
+  });
+
   const deleteScheduleMutation = useMutation({
     mutationFn: (scheduleId: number) => apiRequest("DELETE", `/api/schedules/${scheduleId}`),
     onSuccess: () => {
@@ -402,6 +429,26 @@ function TrainerDashboardInner() {
         title: "Failed to move exercise", 
         description: error?.message || "Please try again",
         variant: "destructive" 
+      });
+    },
+  });
+
+  const updateChowMutation = useMutation({
+    mutationFn: ({ roomId }: { roomId: number | null }) =>
+      apiRequest("PUT", "/api/schedules/chow", { date: currentDate, roomId }),
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/schedules", "date", currentDate] });
+      queryClient.invalidateQueries({ queryKey: ["/api/schedules", "all"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/schedules/chow", getMondayIso(currentDate)] });
+      toast({
+        title: variables.roomId ? "Challenge Of The Week updated" : "Challenge Of The Week removed",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Failed to update Challenge Of The Week",
+        description: error?.message || "Assign the Monday exercise first, then try again.",
+        variant: "destructive",
       });
     },
   });
@@ -1173,7 +1220,13 @@ function TrainerDashboardInner() {
                 <p className="text-xs text-gray-500">Dashboard Access</p>
               </div>
               <Button
-                onClick={() => setLocation("/")}
+                onClick={async () => {
+                  await fetch("/api/admin/session", {
+                    method: "DELETE",
+                    credentials: "include",
+                  }).catch(() => undefined)
+                  setLocation("/")
+                }}
                 variant="outline"
                 size="sm"
                 className="bg-gray-500 hover:bg-gray-600 text-white border-gray-500 hover:border-gray-600 text-sm py-2 px-3"
@@ -1256,7 +1309,7 @@ function TrainerDashboardInner() {
                       {thumbProgress?.running ? (
                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                       ) : (
-                        <Image className="mr-2 h-4 w-4" />
+                        <ImageIcon className="mr-2 h-4 w-4" />
                       )}
                       {thumbProgress?.running
                         ? `${thumbProgress.processed}/${thumbProgress.total}`
@@ -2016,6 +2069,31 @@ function TrainerDashboardInner() {
                       </button>
                     </div>
                     <div className="flex flex-wrap items-center justify-end gap-1.5">
+                      <div className="flex items-center gap-2 rounded-md border border-gray-200 bg-white px-2 py-1">
+                        <span className="text-xs font-medium text-gray-600 whitespace-nowrap">
+                          Challenge Of The Week
+                        </span>
+                        <span className="text-xs text-gray-400 whitespace-nowrap">Room:</span>
+                        <Select
+                          value={chowSelection?.roomId ? String(chowSelection.roomId) : "none"}
+                          onValueChange={(value) =>
+                            updateChowMutation.mutate({ roomId: value === "none" ? null : Number(value) })
+                          }
+                          disabled={updateChowMutation.isPending || !rooms?.length}
+                        >
+                          <SelectTrigger className="h-7 w-[120px] text-xs">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="none">None</SelectItem>
+                            {(rooms ?? []).map((room) => (
+                              <SelectItem key={room.id} value={String(room.id)}>
+                                Room {room.number}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
                       <button
                         onClick={() => copyScheduleMutation.mutate({ sourceDate: mondayStr, targetDate: thursdayStr })}
                         disabled={copyScheduleMutation.isPending}
@@ -2233,12 +2311,9 @@ function TrainerDashboardInner() {
                                       <GripVertical className="h-3 w-3 text-gray-300 cursor-grab shrink-0" />
                                       <div className="relative shrink-0 w-7 h-7 rounded overflow-hidden bg-gray-100 border border-gray-200">
                                         {assignment.video.thumbnailUrl ? (
+                                          // Keep direct R2 thumbnail delivery so previews bypass Vercel.
                                           <img
-                                            src={
-                                              assignment.video.thumbnailUrl.includes("r2.dev") || assignment.video.thumbnailUrl.includes("r2.cloudflarestorage.com")
-                                                ? `/api/videos/proxy?url=${encodeURIComponent(assignment.video.thumbnailUrl)}`
-                                                : assignment.video.thumbnailUrl
-                                            }
+                                            src={assignment.video.thumbnailUrl}
                                             alt={assignment.video.title}
                                             className="w-full h-full object-cover"
                                           />
@@ -2362,6 +2437,7 @@ function TrainerDashboardInner() {
 
           {/* Cache Tab */}
           <TabsContent value="cache" className="space-y-6">
+            <IntegrityAuditPanel />
             <EnhancedCacheDashboard />
             <CacheManager />
           </TabsContent>
@@ -2490,8 +2566,6 @@ function TrainerDashboardInner() {
                       const roomSchedules = schedules
                       .filter((s: any) => s.roomId === room.id && s.scheduleDate === currentDate)
                       .sort((a: any, b: any) => a.position - b.position); // Sort by position to maintain consistent order
-                    const roomZoom = liveViewZoom[room.id] || 1;
-                    
                     return (
                       <Card key={room.id} className="border-2" style={{ width: 'fit-content' }}>
                         <CardHeader className="p-2">
@@ -2658,7 +2732,7 @@ function TrainerDashboardInner() {
                       </Card>
                     );
                     });
-                  }, [rooms, schedules, currentDate, videos, liveViewVideoZoom, liveViewVerticalPosition, liveViewZoom, liveViewChanges, apiRequest, setLiveViewVideoZoom, setLiveViewVerticalPosition])}
+                  }, [rooms, schedules, currentDate, videos, liveViewVideoZoom, liveViewVerticalPosition, liveViewChanges, setLiveViewVideoZoom, setLiveViewVerticalPosition])}
                 </div>
               </CardContent>
             </Card>

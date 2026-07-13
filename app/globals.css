@@ -56,6 +56,13 @@
   body {
     @apply bg-background text-foreground;
   }
+  /* Prevent inline baseline gap and browser default styling on video elements */
+  video {
+    display: block;
+    outline: none;
+    border: none;
+    box-shadow: none;
+  }
 }
 
 /* Room color palette (rounds 1-12) used dynamically across the app */
