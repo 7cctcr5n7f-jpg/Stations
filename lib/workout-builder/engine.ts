@@ -118,33 +118,6 @@ function gloveCompatible(v: Video): boolean {
   return !tokens.some((t) => GRIP_EQUIPMENT.some((g) => t === g || t.includes(g)))
 }
 
-// Isolation muscle groups that suit a single-movement dropset.
-const ISOLATION_MUSCLES = [
-  "bicep", "tricep", "calf", "calves", "forearm", "shoulder", "delt",
-  "lateral", "rear delt", "abductor", "adductor", "hamstring", "quad", "glute",
-]
-
-// Equipment tokens that imply adjustable/descending load (dropset-friendly).
-const WEIGHTED_EQUIPMENT = ["db", "dumbbell", "dumbbells", "cable", "machine", "bb", "barbell", "kb", "kettlebell", "plate"]
-
-function isWeighted(v: Video): boolean {
-  if (v.weightRequired) return true
-  const tokens = equipmentTokens(v)
-  return tokens.some((t) => WEIGHTED_EQUIPMENT.some((w) => t === w || t.includes(w)))
-}
-
-// Should the engine propose a single-exercise dropset for this pick?
-// Dropsets suit weighted isolation strength moves at low/medium intensity.
-function isDropsetCandidate(v: Video, cfg: RoundConfig, isBoxing: boolean): boolean {
-  if (isBoxing || cfg.coreOnly) return false
-  if (!isWeighted(v)) return false
-  if (v.intensity === "High") return false
-  const et = norm(v.exerciseType)
-  if (et && !et.includes("strength") && !et.includes("hypertrophy")) return false
-  const muscles = [exerciseCategory(v), ...muscleTokens(v)]
-  return muscles.some((m) => ISOLATION_MUSCLES.some((iso) => m.includes(iso)))
-}
-
 function daysSince(iso: string | null | undefined, now: Date): number | null {
   if (!iso) return null
   const then = new Date(iso).getTime()
@@ -596,10 +569,10 @@ export function generateWorkout(input: EngineInput): WorkoutDraft {
 
     const glovesOn = boxingRound && ex1.isBoxing
 
-    // ---- structure: dropset (single movement) vs two exercises ----
-    const dropset = isDropsetCandidate(ex1.video, cfg, boxingRound)
+    // ---- structure: single movement for dropset week vs two exercises ----
+    const dropset = Boolean(input.params?.dropsetWeek)
     if (dropset) {
-      reasons.unshift("Dropset proposed — one movement taken to failure with descending weight")
+      reasons.unshift("Dropset Week enabled — one exercise assigned for this room")
     } else {
       // Pick a complementary second exercise. Default is two per station.
       let pool2 = videos.filter((v) => !usedVideoIds.has(v.id) && passesHardRules(v, cfg, limits, usedEquipmentCounts))
@@ -633,18 +606,11 @@ export function generateWorkout(input: EngineInput): WorkoutDraft {
       const scored2 = scoreAll(pool2)
       if (scored2.length) {
         const candidate2 = scored2[0]
-        // On boxing rounds the second exercise is optional — only add it when it
-        // is a decent fit; otherwise leave the round as a single boxing block.
-        const threshold = boxingRound ? 45 : 0
-        if (candidate2.score >= threshold) {
-          const ex2 = makeExercise(candidate2, cfg)
-          commit(ex2.video)
-          if (glovesOn) ex2.reasons.unshift("Glove-compatible — safe to perform with boxing gloves on")
-          exercises.push(ex2)
-          reasons.push(ex2.reasons[0])
-        } else if (boxingRound) {
-          roundWarnings.push("Kept as a single boxing block — no strong glove-friendly second exercise")
-        }
+        const ex2 = makeExercise(candidate2, cfg)
+        commit(ex2.video)
+        if (glovesOn) ex2.reasons.unshift("Glove-compatible — safe to perform with boxing gloves on")
+        exercises.push(ex2)
+        reasons.push(ex2.reasons[0])
       } else if (boxingRound && glovesOn) {
         roundWarnings.push("Kept as a single boxing block — gloves limit the second exercise")
       } else {

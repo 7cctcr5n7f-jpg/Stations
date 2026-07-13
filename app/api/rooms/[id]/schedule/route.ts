@@ -22,6 +22,11 @@ function buildScheduleFingerprint(rows: Array<Record<string, unknown>>): string 
         row.rest_time ?? "",
         row.is_active ?? "",
         row.heart_rate_zone ?? "",
+        row.video_url ?? "",
+        row.video_title ?? "",
+        row.video_equipment ?? "",
+        row.video_intensity ?? "",
+        row.video_category ?? "",
       ].join("|"),
     )
     .join(";")
@@ -52,21 +57,27 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     if (mode === "fingerprint") {
       const rows = await sql`
         SELECT
-          id,
-          video_id,
-          reps,
-          position,
-          display_title,
-          display_equipment,
-          zoom_level,
-          vertical_position,
-          sets,
-          rest_time,
-          is_active,
-          heart_rate_zone
+          schedules.id,
+          schedules.video_id,
+          schedules.reps,
+          schedules.position,
+          schedules.display_title,
+          schedules.display_equipment,
+          schedules.zoom_level,
+          schedules.vertical_position,
+          schedules.sets,
+          schedules.rest_time,
+          schedules.is_active,
+          schedules.heart_rate_zone,
+          v.url AS video_url,
+          v.title AS video_title,
+          v.equipment AS video_equipment,
+          v.intensity AS video_intensity,
+          v.category AS video_category
         FROM schedules
+        INNER JOIN videos v ON v.id = schedules.video_id
         WHERE room_id = ${roomId} AND schedule_date = ${date}
-        ORDER BY position ASC, id ASC
+        ORDER BY schedules.position ASC, schedules.id ASC
       `
 
       return NextResponse.json({

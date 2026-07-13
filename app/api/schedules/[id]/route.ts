@@ -3,6 +3,7 @@ export const dynamic = "force-dynamic"
 import { type NextRequest, NextResponse } from "next/server"
 import { sql, mapSchedule } from "@/lib/db"
 import { broadcastScheduleChange } from "@/app/api/schedules/sse/route"
+import { syncChowForScheduleChanges } from "@/lib/chow"
 
 export const runtime = "nodejs"
 
@@ -30,6 +31,11 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     const { id } = await params
     const scheduleId = Number(id)
     const body = await request.json()
+    const existingRows = await sql`SELECT * FROM schedules WHERE id = ${scheduleId}`
+    if (existingRows.length === 0) {
+      return NextResponse.json({ message: "Schedule not found" }, { status: 404 })
+    }
+    const previous = mapSchedule(existingRows[0])
 
     const setClauses: string[] = []
     const values: unknown[] = []
@@ -50,13 +56,31 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     values.push(scheduleId)
     const query = `UPDATE schedules SET ${setClauses.join(", ")} WHERE id = $${i} RETURNING *`
     const rows = (await sql.query(query, values)) as Record<string, unknown>[]
-
-    if (rows.length === 0) {
-      return NextResponse.json({ message: "Schedule not found" }, { status: 404 })
-    }
     const updated = mapSchedule(rows[0])
+    const chowSyncs = await syncChowForScheduleChanges([
+      { scheduleDate: previous.scheduleDate, roomId: previous.roomId },
+      { scheduleDate: updated.scheduleDate, roomId: updated.roomId },
+    ])
+    const updatedRow = (await sql`SELECT * FROM schedules WHERE id = ${scheduleId}`)[0]
+    const fallbackRow =
+      updatedRow ??
+      (
+        await sql`
+          SELECT *
+          FROM schedules
+          WHERE room_id = ${updated.roomId} AND schedule_date = ${updated.scheduleDate}
+          ORDER BY position ASC, id ASC
+          LIMIT 1
+        `
+      )[0]
+    const responseSchedule = fallbackRow ? mapSchedule(fallbackRow) : updated
     broadcastScheduleChange(updated.roomId, { type: "schedule_updated", scheduleId: updated.id, roomId: updated.roomId, date: updated.scheduleDate })
-    return NextResponse.json(updated)
+    for (const sync of chowSyncs) {
+      for (const date of sync.syncedDates) {
+        broadcastScheduleChange(sync.roomId, { type: "schedule_published", roomId: sync.roomId, date })
+      }
+    }
+    return NextResponse.json(responseSchedule)
   } catch (error) {
     console.error("[v0] Failed to update schedule:", error)
     return NextResponse.json({ message: "Failed to update schedule" }, { status: 500 })
@@ -68,10 +92,19 @@ export async function DELETE(_request: NextRequest, { params }: { params: Promis
     const { id } = await params
     const scheduleId = Number(id)
     // Fetch before deleting so we know which room to notify
-    const rows = await sql`SELECT room_id, schedule_date FROM schedules WHERE id = ${scheduleId}`
+    const rows = await sql`SELECT * FROM schedules WHERE id = ${scheduleId}`
+    const previous = rows[0] ? mapSchedule(rows[0]) : null
     await sql`DELETE FROM schedules WHERE id = ${scheduleId}`
-    if (rows.length > 0) {
-      broadcastScheduleChange(rows[0].room_id, { type: "schedule_deleted", scheduleId, roomId: rows[0].room_id, date: rows[0].schedule_date })
+    const chowSyncs = previous
+      ? await syncChowForScheduleChanges([{ scheduleDate: previous.scheduleDate, roomId: previous.roomId }])
+      : []
+    if (previous) {
+      broadcastScheduleChange(previous.roomId, { type: "schedule_deleted", scheduleId, roomId: previous.roomId, date: previous.scheduleDate })
+    }
+    for (const sync of chowSyncs) {
+      for (const date of sync.syncedDates) {
+        broadcastScheduleChange(sync.roomId, { type: "schedule_published", roomId: sync.roomId, date })
+      }
     }
     return NextResponse.json({ success: true })
   } catch (error) {

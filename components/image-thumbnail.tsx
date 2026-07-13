@@ -31,17 +31,11 @@ export default function ImageThumbnail({
     large: "w-24 h-18"
   };
 
-  // Use the R2 thumbnail URL stored in the DB. If absent or broken, show a
-  // neutral placeholder — never run a HEAD check against the video URL, as
-  // that triggers a CORS preflight that R2 public buckets block.
-  // Route R2 thumbnails through CORS proxy to fix cross-origin loading issues.
+  // Use the R2 public URL directly — <img> makes non-CORS requests by default,
+  // so no proxy or crossorigin attribute is needed for display.
   let thumbnailSrc = null;
   if (video.thumbnailUrl && !thumbError) {
-    if (video.thumbnailUrl.includes("r2.dev") || video.thumbnailUrl.includes("r2.cloudflarestorage.com")) {
-      thumbnailSrc = `/api/videos/proxy?url=${encodeURIComponent(video.thumbnailUrl)}`;
-    } else {
-      thumbnailSrc = video.thumbnailUrl;
-    }
+    thumbnailSrc = video.thumbnailUrl;
   }
 
   return (
@@ -50,6 +44,7 @@ export default function ImageThumbnail({
       onClick={onClick}
     >
       {thumbnailSrc ? (
+        // Keep direct R2 delivery so thumbnails come from Cloudflare, not Vercel.
         <img 
           src={thumbnailSrc}
           alt={video.title}

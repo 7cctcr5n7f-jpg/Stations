@@ -5,6 +5,7 @@ export const maxDuration = 60
 import { type NextRequest, NextResponse } from "next/server"
 import { sql, mapRoom } from "@/lib/db"
 import { broadcastScheduleChange } from "@/app/api/schedules/sse/route"
+import { syncChowForScheduleChanges } from "@/lib/chow"
 import { generateWorkout } from "@/lib/workout-builder/engine"
 import {
   getWeeklyTemplate,
@@ -145,6 +146,14 @@ export async function POST(request: NextRequest) {
 
     for (const roomId of filledRoomIds) {
       broadcastScheduleChange(roomId, { type: "schedule_published", roomId, date })
+    }
+    const chowSyncs = await syncChowForScheduleChanges(
+      filledRoomIds.map((roomId) => ({ scheduleDate: date, roomId })),
+    )
+    for (const sync of chowSyncs) {
+      for (const syncedDate of sync.syncedDates) {
+        broadcastScheduleChange(sync.roomId, { type: "schedule_published", roomId: sync.roomId, date: syncedDate })
+      }
     }
 
     return NextResponse.json({

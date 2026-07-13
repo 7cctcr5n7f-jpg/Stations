@@ -5,19 +5,25 @@ export const maxDuration = 60
 import { type NextRequest, NextResponse } from "next/server"
 import { sql, mapSchedule } from "@/lib/db"
 import { broadcastScheduleChange } from "@/app/api/schedules/sse/route"
+import { syncChowForScheduleChanges } from "@/lib/chow"
 import type { GeneratedRound } from "@/lib/workout-builder/types"
 
 // Helper: publish one day's rounds and return created schedules
 async function publishDay(date: string, rounds: GeneratedRound[], replace: boolean) {
   const filled = rounds.filter((r) => r.exercises && r.exercises.length > 0)
-  if (!filled.length) return []
+  if (!filled.length) return { created: [] as ReturnType<typeof mapSchedule>[], affectedRoomIds: [] as number[] }
+
+  const affectedRoomIds = new Set<number>()
 
   if (replace) {
+    const existingRows = await sql`SELECT DISTINCT room_id FROM schedules WHERE schedule_date = ${date}`
+    for (const row of existingRows) affectedRoomIds.add(Number(row.room_id))
     await sql`DELETE FROM schedules WHERE schedule_date = ${date}`
   }
 
   const created = []
   for (const r of filled) {
+    affectedRoomIds.add(r.roomId)
     let position = 1
     for (const ex of r.exercises) {
       // Dropset rounds always publish "Dropset" regardless of exercise-level reps.
@@ -36,7 +42,7 @@ async function publishDay(date: string, rounds: GeneratedRound[], replace: boole
       position++
     }
   }
-  return created
+  return { created, affectedRoomIds: Array.from(affectedRoomIds) }
 }
 
 // POST — supports both single-day and weekly publish.
@@ -67,14 +73,25 @@ export async function POST(request: NextRequest) {
       }
 
       const allCreated = []
+      const chowChanges: Array<{ scheduleDate: string; roomId: number }> = []
       for (const day of toPublish) {
-        const created = await publishDay(day.date, day.rounds, replace)
-        allCreated.push(...created)
+        const result = await publishDay(day.date, day.rounds, replace)
+        allCreated.push(...result.created)
+        for (const roomId of result.affectedRoomIds) {
+          chowChanges.push({ scheduleDate: day.date, roomId })
+        }
       }
+
+      const chowSyncs = await syncChowForScheduleChanges(chowChanges)
 
       const roomIds = Array.from(new Set(allCreated.map((c) => c.roomId)))
       for (const roomId of roomIds) {
         broadcastScheduleChange(roomId, { type: "schedule_published", roomId })
+      }
+      for (const sync of chowSyncs) {
+        for (const date of sync.syncedDates) {
+          broadcastScheduleChange(sync.roomId, { type: "schedule_published", roomId: sync.roomId, date })
+        }
       }
 
       return NextResponse.json(
@@ -89,14 +106,24 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ message: "date and rounds are required" }, { status: 400 })
     }
 
-    const created = await publishDay(date, rounds, replace)
+    const result = await publishDay(date, rounds, replace)
+    const created = result.created
     if (!created.length) {
       return NextResponse.json({ message: "No filled rounds to publish" }, { status: 400 })
     }
 
+    const chowSyncs = await syncChowForScheduleChanges(
+      result.affectedRoomIds.map((roomId) => ({ scheduleDate: date, roomId })),
+    )
+
     const roomIds = Array.from(new Set(created.map((c) => c.roomId)))
     for (const roomId of roomIds) {
       broadcastScheduleChange(roomId, { type: "schedule_published", roomId, date })
+    }
+    for (const sync of chowSyncs) {
+      for (const syncedDate of sync.syncedDates) {
+        broadcastScheduleChange(sync.roomId, { type: "schedule_published", roomId: sync.roomId, date: syncedDate })
+      }
     }
 
     return NextResponse.json({ ok: true, count: created.length, schedules: created }, { status: 201 })

@@ -82,34 +82,6 @@ async function fetchAndCacheSchedule(
 }
 
 // ---------------------------------------------------------------------------
-// Download videos into IndexedDB blobs. Only fetches URLs not already cached.
-// ---------------------------------------------------------------------------
-
-async function cacheVideos(assignments: any[]): Promise<void> {
-  for (const a of assignments) {
-    const key = `video-${a.video.id}`
-    const existing = await idbGet<{ blob: Blob }>("videos", key)
-    if (existing) continue
-
-    try {
-      const res = await fetch(a.video.url)
-      if (!res.ok) continue
-      const blob = await res.blob()
-      await idbSet("videos", key, { blob, url: a.video.url, cachedAt: Date.now() })
-    } catch {
-      // Non-fatal: video will stream from R2
-    }
-  }
-}
-
-/** Returns a blob:// URL for a cached video, or null if not yet cached. */
-async function getCachedVideoUrl(videoId: number): Promise<string | null> {
-  const entry = await idbGet<{ blob: Blob }>("videos", `video-${videoId}`)
-  if (!entry?.blob) return null
-  return URL.createObjectURL(entry.blob)
-}
-
-// ---------------------------------------------------------------------------
 // Main room display component
 // ---------------------------------------------------------------------------
 
@@ -163,8 +135,8 @@ export default function RoomDisplayPage() {
         setAssignments(fresh)
         setIsLoading(false)
 
-        // Background: cache video blobs for offline use
-        cacheVideos(fresh).catch(() => {})
+        // Keep direct R2 media delivery. Browser/CDN caching handles playback
+        // without triggering cross-origin blob fetch failures in the console.
       } catch (e: any) {
         setError(e.message)
         setIsLoading(false)
@@ -209,20 +181,6 @@ export default function RoomDisplayPage() {
 
     return () => clearInterval(interval)
   }, [roomId, loadSchedule])
-
-  // -- Fullscreen --
-  useEffect(() => {
-    const timeout = setTimeout(async () => {
-      try {
-        if (document.documentElement.requestFullscreen) {
-          await document.documentElement.requestFullscreen()
-        }
-      } catch {
-        // Fullscreen blocked — ignore
-      }
-    }, 500)
-    return () => clearTimeout(timeout)
-  }, [])
 
   useEffect(() => {
     const check = () => setIsFullscreen(!!document.fullscreenElement)
@@ -317,7 +275,7 @@ export default function RoomDisplayPage() {
   nextDate.setDate(nextDate.getDate() + 1)
 
   return (
-    <div className="h-screen bg-white flex flex-col">
+    <div className="h-screen bg-white flex flex-col border-0 outline-none">
       {!isFullscreen && (
         <div className="bg-[hsl(198,18%,21%)] text-white p-4 flex items-center justify-between">
           <div className="flex items-center space-x-4">
@@ -368,7 +326,7 @@ export default function RoomDisplayPage() {
         </div>
       )}
 
-      <div className="flex-1 bg-white">
+      <div className="flex-1 bg-white overflow-hidden border-0">
         {assignments.length === 0 ? (
           <div className="h-full flex items-center justify-center text-gray-800">
             <div className="text-center">
@@ -377,9 +335,9 @@ export default function RoomDisplayPage() {
             </div>
           </div>
         ) : (
-          <div className={`h-full bg-white ${gridClasses.container}`} style={gridClasses.style}>
+          <div className={`h-full bg-white overflow-hidden border-0 ${gridClasses.container}`} style={gridClasses.style}>
             {assignments.map((assignment) => (
-              <div key={assignment.id} className={`${gridClasses.video} overflow-hidden`}>
+              <div key={assignment.id} className={`${gridClasses.video} border-0`}>
                 <VideoPlayer
                   assignment={assignment}
                   displayMode={videoCount > 1 ? "split" : "single"}
