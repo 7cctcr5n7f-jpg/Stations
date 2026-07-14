@@ -5,6 +5,7 @@ export const maxDuration = 120
 import { type NextRequest, NextResponse } from "next/server"
 import { sql, mapRoom } from "@/lib/db"
 import { generateWorkout } from "@/lib/workout-builder/engine"
+import { validateWeek } from "@/lib/workout-builder/validator"
 import {
   getAllWeeklyTemplates,
   getWeeklyTemplate,
@@ -13,7 +14,7 @@ import {
   getSettings,
   getVideosWithLastScheduled,
 } from "@/lib/workout-builder/db"
-import type { BuilderParams, GeneratedRound } from "@/lib/workout-builder/types"
+import type { BuilderParams, GeneratedRound, MovementPatternCategory, WeeklyTemplate } from "@/lib/workout-builder/types"
 
 // Helper: given a Monday date string, return yyyy-mm-dd strings for Mon–Sat
 function weekDates(mondayIso: string): string[] {
@@ -33,6 +34,15 @@ function attachRoomNumbers(
   roomNumberById: Map<number, number>,
 ) {
   return configs.map((c) => ({ ...c, roomNumber: roomNumberById.get(c.roomId) }))
+}
+
+// Collect all movement patterns from a workout day's rounds.
+function collectDayPatterns(rounds: GeneratedRound[]): MovementPatternCategory[] {
+  const patterns = new Set<MovementPatternCategory>()
+  for (const round of rounds) {
+    for (const p of round.movementPatterns) patterns.add(p)
+  }
+  return [...patterns]
 }
 
 // POST { params: BuilderParams, lockedRounds?: GeneratedRound[] }
@@ -59,7 +69,7 @@ export async function POST(request: NextRequest) {
     const roomNumberById = new Map(rooms.map((r) => [r.id, r.number]))
     const roomById = new Map(rooms.map((r) => [r.id, r]))
 
-    let configs = roundConfigs.length
+    const configs = roundConfigs.length
       ? attachRoomNumbers(roundConfigs, roomNumberById)
       : rooms.map((r) => ({
           roomId: r.id,
@@ -117,21 +127,22 @@ export async function POST(request: NextRequest) {
     const templateByWeekday = new Map(allTemplates.map((t) => [t.weekday, t]))
 
     const days = []
+    const dayTemplates: (WeeklyTemplate | null)[] = []
     // Track used video IDs across the whole week for better rotation
     const weekUsedVideoIds = new Set<number>()
 
     // Mirror pairs: Mon(idx 0) ↔ Thu(idx 3), Tue(idx 1) ↔ Fri(idx 4), Wed(idx 2) ↔ Sat(idx 5)
-    // We store video IDs used on each day so the mirror day can exclude them.
+    // We store video IDs and movement patterns used on each day so the mirror day can differentiate.
     const videosByDayIndex: number[][] = []
+    const patternsByDayIndex: MovementPatternCategory[][] = []
 
     for (let dayIndex = 0; dayIndex < dates.length; dayIndex++) {
       const date = dates[dayIndex]
       const weekday = new Date(date + "T12:00:00").getDay()
       const template = templateByWeekday.get(weekday) ?? null
+      dayTemplates.push(template)
 
       // Build a modified lastScheduledById that penalises videos used earlier this week.
-      // For mirror days (Thu/Fri/Sat), also hard-exclude the videos from the corresponding
-      // earlier day (Mon/Tue/Wed) so the workout is noticeably different.
       const lastScheduledWithWeek = { ...videoData.lastScheduledById }
       for (const id of weekUsedVideoIds) {
         if (!lastScheduledWithWeek[id]) {
@@ -140,13 +151,14 @@ export async function POST(request: NextRequest) {
       }
 
       // Mirror day exclusion: mark the counterpart day's videos as "used today"
-      // so they are deprioritised (freshness score pushes them down)
       const mirrorIdx = dayIndex - 3 // Thu→Mon, Fri→Tue, Sat→Wed
       const mirrorVideos = mirrorIdx >= 0 ? (videosByDayIndex[mirrorIdx] ?? []) : []
       for (const id of mirrorVideos) {
-        // Override to today's date regardless of previous value — strong freshness penalty
         lastScheduledWithWeek[id] = date
       }
+
+      // Pass mirror day movement patterns for variation enforcement
+      const mirrorDayMovementPatterns = mirrorIdx >= 0 ? (patternsByDayIndex[mirrorIdx] ?? []) : undefined
 
       const dayDraft = generateWorkout({
         date,
@@ -159,6 +171,7 @@ export async function POST(request: NextRequest) {
         lastScheduledById: lastScheduledWithWeek,
         lockedByRoomId: {},
         params,
+        mirrorDayMovementPatterns,
       })
 
       dayDraft.rounds = dayDraft.rounds.map((rd) => {
@@ -167,7 +180,7 @@ export async function POST(request: NextRequest) {
       })
       dayDraft.rounds.sort((a, b) => a.roomNumber - b.roomNumber)
 
-      // Record this day's video IDs for mirror-day exclusion and week-wide rotation
+      // Record this day's video IDs and patterns for mirror-day exclusion
       const dayVideoIds: number[] = []
       for (const rd of dayDraft.rounds) {
         for (const ex of rd.exercises) {
@@ -176,11 +189,15 @@ export async function POST(request: NextRequest) {
         }
       }
       videosByDayIndex[dayIndex] = dayVideoIds
+      patternsByDayIndex[dayIndex] = collectDayPatterns(dayDraft.rounds)
 
       days.push(dayDraft)
     }
 
-    return NextResponse.json({ mode: "week", days })
+    // Produce weekly validation report
+    const validation = validateWeek(days, dayTemplates)
+
+    return NextResponse.json({ mode: "week", days, validation })
   } catch (error) {
     console.error("[v0] Failed to generate workout:", error)
     return NextResponse.json({ message: "Failed to generate workout", detail: String(error) }, { status: 500 })

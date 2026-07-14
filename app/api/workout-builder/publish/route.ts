@@ -24,8 +24,21 @@ async function publishDay(date: string, rounds: GeneratedRound[], replace: boole
   const created = []
   for (const r of filled) {
     affectedRoomIds.add(r.roomId)
+    const mainExercises = r.exercises.filter((ex) => !ex.isAlternative)
+    const alternativeExercises = r.exercises.filter((ex) => ex.isAlternative)
+
+    const exercisesToPublish = mainExercises.length ? mainExercises : r.exercises
+    const displayTitleForPrimary =
+      alternativeExercises.length > 0
+        ? `${exercisesToPublish[0].video.title} (Alt: ${alternativeExercises.map((ex) => ex.video.title).join(" / ")})`
+        : null
+    const displayEquipmentForPrimary =
+      alternativeExercises.length > 0
+        ? `${exercisesToPublish[0].video.equipment}${alternativeExercises.length ? ` | Alt: ${alternativeExercises.map((ex) => ex.video.equipment).join(" / ")}` : ""}`
+        : null
+
     let position = 1
-    for (const ex of r.exercises) {
+    for (const [exerciseIndex, ex] of exercisesToPublish.entries()) {
       // Dropset rounds always publish "Dropset" regardless of exercise-level reps.
       // For all other rounds use the engine-assigned reps string, falling back to "0".
       const repsValue = r.dropset ? "Dropset" : String(ex.reps ?? "0")
@@ -35,7 +48,9 @@ async function publishDay(date: string, rounds: GeneratedRound[], replace: boole
            zoom_level, vertical_position, sets, rest_time, is_active, heart_rate_zone)
         VALUES
           (${r.roomId}, ${ex.videoId}, ${date}, ${repsValue}, ${position},
-           ${null}, ${null}, ${"1"}, ${"0"}, ${1}, ${0}, ${true}, ${ex.heartRate ?? null})
+           ${exerciseIndex === 0 ? displayTitleForPrimary : null},
+           ${exerciseIndex === 0 ? displayEquipmentForPrimary : null},
+           ${"1"}, ${"0"}, ${1}, ${0}, ${true}, ${ex.heartRate ?? null})
         RETURNING *
       `
       created.push(mapSchedule(rows[0]))

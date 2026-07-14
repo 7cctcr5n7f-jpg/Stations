@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
-import { Slider } from "@/components/ui/slider";
+
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
   Select,
@@ -62,9 +62,6 @@ import {
   Hand,
   ThumbsDown,
   ChevronDown,
-  Dumbbell,
-  Zap,
-  BarChart3,
   ArrowUp,
   ArrowDown,
 } from "lucide-react";
@@ -75,7 +72,6 @@ import { formatLocalDate } from "@/lib/local-date";
 import type { Video } from "@/lib/shared/schema";
 import type {
   BuilderParams,
-  GenerationMode,
   WorkoutFocus,
 } from "@/lib/workout-builder/types";
 
@@ -84,6 +80,12 @@ import type {
 // ---------------------------------------------------------------------------
 
 type HeartRate = "green" | "orange" | "red";
+
+type StationRole = "Warm-up" | "Strength" | "Hybrid" | "Boxing" | "HIIT Spike" | "Core" | "Recovery" | "Conditioning";
+
+type MovementPatternCategory =
+  | "horizontal_push" | "vertical_push" | "horizontal_pull" | "vertical_pull"
+  | "hinge" | "squat" | "bilateral" | "unilateral" | "plyo" | "boxing" | "core" | "other";
 
 interface RoundExercise {
   videoId: number;
@@ -95,6 +97,8 @@ interface RoundExercise {
   warnings: string[];
   isBoxing: boolean;
   gloveCompatible: boolean;
+  movementPatterns: MovementPatternCategory[];
+  isAlternative?: boolean;
 }
 
 interface GeneratedRound {
@@ -109,12 +113,35 @@ interface GeneratedRound {
   score: number;
   reasons: string[];
   warnings: string[];
+  assignedRole: StationRole;
+  estimatedCalories: number;
+  movementPatterns: MovementPatternCategory[];
 }
 
 interface MuscleBreakdown {
   pushCount: number;
   pullCount: number;
   muscles: string[];
+}
+
+interface WeeklyValidationCategory {
+  score: number;
+  label: string;
+  notes: string[];
+}
+
+interface WeeklyValidationReport {
+  muscleAccuracy: WeeklyValidationCategory;
+  equipmentBalance: WeeklyValidationCategory;
+  stationCompatibility: WeeklyValidationCategory;
+  exerciseVariety: WeeklyValidationCategory;
+  heartRateDistribution: WeeklyValidationCategory;
+  boxingExperience: WeeklyValidationCategory;
+  movementPatternBalance: WeeklyValidationCategory;
+  recoveryBalance: WeeklyValidationCategory;
+  overall: number;
+  recommendations: string[];
+  passesThreshold: boolean;
 }
 
 interface WorkoutDraft {
@@ -126,6 +153,8 @@ interface WorkoutDraft {
   summary: string[];
   muscleBreakdown?: MuscleBreakdown;
   warnings: string[];
+  hrCurve: HeartRate[];
+  estimatedCalories: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -136,6 +165,17 @@ const HR_STYLE: Record<HeartRate, { label: string; dot: string; text: string }> 
   green:  { label: "Low",    dot: "bg-green-500",  text: "text-green-700"  },
   orange: { label: "Medium", dot: "bg-orange-500", text: "text-orange-700" },
   red:    { label: "High",   dot: "bg-red-500",    text: "text-red-700"    },
+};
+
+const ROLE_STYLE: Record<StationRole, { bg: string; text: string }> = {
+  "Warm-up":      { bg: "bg-yellow-50",  text: "text-yellow-700" },
+  "Strength":     { bg: "bg-blue-50",    text: "text-blue-700" },
+  "Hybrid":       { bg: "bg-purple-50",  text: "text-purple-700" },
+  "Boxing":       { bg: "bg-red-50",     text: "text-red-700" },
+  "HIIT Spike":   { bg: "bg-orange-50",  text: "text-orange-700" },
+  "Core":         { bg: "bg-green-50",   text: "text-green-700" },
+  "Recovery":     { bg: "bg-teal-50",    text: "text-teal-700" },
+  "Conditioning": { bg: "bg-pink-50",    text: "text-pink-700" },
 };
 
 const WEEKDAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -375,6 +415,7 @@ export function WorkoutBuilder() {
   const [selectedPublishDays, setSelectedPublishDays] = useState<Set<number>>(new Set());
   const [polishingIdx, setPolishingIdx] = useState<number | null>(null);
   const [rejectTarget, setRejectTarget] = useState<RejectTarget | null>(null);
+  const [validationReport, setValidationReport] = useState<WeeklyValidationReport | null>(null);
 
   const isWeekMode = params.mode === "week";
   const hasDrafts = weekDrafts.length > 0;
@@ -385,12 +426,13 @@ export function WorkoutBuilder() {
     mutationFn: async () => {
       const lockedRounds = isWeekMode ? [] : (weekDrafts[0]?.rounds.filter((r) => r.locked) ?? []);
       const res = await apiRequest("POST", "/api/workout-builder/generate", { params, lockedRounds });
-      return await res.json() as { mode: string; day?: WorkoutDraft; days?: WorkoutDraft[] };
+      return await res.json() as { mode: string; day?: WorkoutDraft; days?: WorkoutDraft[]; validation?: WeeklyValidationReport };
     },
     onSuccess: async (result) => {
       if (result.mode === "week" && result.days) {
         setWeekDrafts(result.days);
         setActiveDayIdx(0);
+        setValidationReport(result.validation ?? null);
         // Polish each day sequentially in background
         for (let i = 0; i < result.days.length; i++) {
           setPolishingIdx(i);
@@ -479,7 +521,7 @@ export function WorkoutBuilder() {
     });
   }
 
-  function makeManualExercise(video: Video): RoundExercise {
+  function makeManualExercise(video: Video, options?: { isAlternative?: boolean }): RoundExercise {
     return {
       videoId: video.id,
       video,
@@ -492,6 +534,7 @@ export function WorkoutBuilder() {
       warnings: [],
       isBoxing: false,
       gloveCompatible: true,
+      isAlternative: options?.isAlternative ?? false,
     };
   }
 
@@ -508,7 +551,9 @@ export function WorkoutBuilder() {
       rounds: d.rounds.map((r) => {
         if (r.roomId !== roomId) return r;
         const exercises = [...r.exercises];
-        const ex = makeManualExercise(video);
+        const ex = makeManualExercise(video, {
+          isAlternative: index < exercises.length ? Boolean(exercises[index]?.isAlternative) : false,
+        });
         if (index < exercises.length) exercises[index] = ex;
         else exercises.push(ex);
         return { ...r, exercises, score: Math.round(exercises.reduce((s, e) => s + e.score, 0) / exercises.length) };
@@ -582,226 +627,117 @@ export function WorkoutBuilder() {
       {/* ================================================================
           BUILDER CONTROLS CARD
       ================================================================ */}
-      <Card>
-        <CardHeader className="pb-4">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <CardTitle className="text-base">Generation Settings</CardTitle>
-              <CardDescription className="mt-0.5">Equipment rules and round constraints come from Builder Config.</CardDescription>
-            </div>
-            {/* Mode toggle pill */}
-            <div className="flex rounded-lg border bg-muted p-0.5 shrink-0">
-              {(["week", "single"] as GenerationMode[]).map((mode) => (
-                <button
-                  key={mode}
-                  type="button"
-                  onClick={() => patchParams({ mode, startDate: mode === "week" ? toIso(getMondayOf(new Date())) : formatLocalDate(new Date()) })}
-                  className={cn(
-                    "rounded-md px-3 py-1 text-xs font-medium transition-colors",
-                    params.mode === mode
-                      ? "bg-background text-foreground shadow-sm"
-                      : "text-muted-foreground hover:text-foreground"
-                  )}
-                >
-                  {mode === "week" ? "Training Week" : "Single Day"}
-                </button>
-              ))}
-            </div>
+      <div className="rounded-lg border bg-card p-4 space-y-3">
+        {/* Row 1: All controls inline */}
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          <div className="flex items-center gap-2">
+            <Label className="text-xs text-muted-foreground whitespace-nowrap">Week</Label>
+            <Input
+              type="date"
+              value={params.startDate}
+              onChange={(e) => patchParams({ startDate: e.target.value })}
+              className="h-8 w-[140px] text-sm"
+            />
           </div>
-        </CardHeader>
-        <CardContent className="space-y-5">
-          <div className="flex items-center justify-between rounded-lg border border-gray-200 bg-white px-3 py-2">
-            <div>
-              <Label htmlFor="dropset-week" className="text-sm font-medium cursor-pointer">
-                Dropset Week
-              </Label>
-              <p className="text-xs text-muted-foreground">
-                {params.dropsetWeek ? "Generate 1 exercise per room." : "Generate 2 exercises per room."}
-              </p>
-            </div>
+          <div className="flex items-center gap-2">
+            <Label className="text-xs text-muted-foreground whitespace-nowrap">Focus</Label>
+            <Select value={params.focus} onValueChange={(v) => patchParams({ focus: v as WorkoutFocus })}>
+              <SelectTrigger className="h-8 w-[140px] text-sm">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {WORKOUT_FOCUSES.map((f) => (
+                  <SelectItem key={f} value={f}>{f}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex items-center gap-1.5">
             <Switch
               id="dropset-week"
               checked={params.dropsetWeek}
               onCheckedChange={(value) => patchParams({ dropsetWeek: value })}
+              className="scale-90"
             />
+            <Label htmlFor="dropset-week" className="text-xs cursor-pointer whitespace-nowrap">Dropset</Label>
           </div>
-
-          {/* Row 1: Date + Focus side by side */}
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                {isWeekMode ? "Week Starting (Monday)" : "Workout Date"}
-              </Label>
-              <Input
-                type="date"
-                value={params.startDate}
-                onChange={(e) => patchParams({ startDate: e.target.value })}
-              />
-              {isWeekMode && params.startDate && (
-                <p className="text-xs text-muted-foreground">
-                  {params.startDate} — {toIso(new Date(new Date(params.startDate + "T12:00:00").setDate(new Date(params.startDate + "T12:00:00").getDate() + 5)))}
-                </p>
-              )}
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Workout Focus</Label>
-              <Select value={params.focus} onValueChange={(v) => patchParams({ focus: v as WorkoutFocus })}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {WORKOUT_FOCUSES.map((f) => (
-                    <SelectItem key={f} value={f}>{f}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+          <div className="flex items-center gap-1.5">
+            <Switch
+              id="weekly-challenge"
+              checked={params.includeWeeklyChallenge}
+              onCheckedChange={(v) => patchParams({ includeWeeklyChallenge: v })}
+              className="scale-90"
+            />
+            <Label htmlFor="weekly-challenge" className="text-xs cursor-pointer whitespace-nowrap">CHOW</Label>
           </div>
+          {params.startDate && (
+            <span className="text-[11px] text-muted-foreground ml-auto">
+              {params.startDate} — {toIso(new Date(new Date(params.startDate + "T12:00:00").setDate(new Date(params.startDate + "T12:00:00").getDate() + 5)))}
+            </span>
+          )}
+        </div>
 
-          {/* Row 2: Sliders stacked cleanly */}
-          <div className="space-y-4 rounded-lg bg-muted/40 px-4 py-3">
-            {/* Strength vs HIIT */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-medium flex items-center gap-1.5">
-                  <Dumbbell className="h-3.5 w-3.5 text-muted-foreground" />
-                  Strength vs HIIT
-                </span>
-                <span className="text-xs tabular-nums text-muted-foreground">
-                  {100 - params.hiitStrengthRatio}% Strength · {params.hiitStrengthRatio}% HIIT
-                </span>
-              </div>
-              <Slider
-                value={[params.hiitStrengthRatio]}
-                min={0} max={100} step={5}
-                onValueChange={([v]) => patchParams({ hiitStrengthRatio: v })}
-              />
-            </div>
-
-            {/* Boxing Volume */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-medium flex items-center gap-1.5">
-                  <Zap className="h-3.5 w-3.5 text-muted-foreground" />
-                  Boxing Volume
-                </span>
-                <span className="text-xs text-muted-foreground">
-                  {params.boxingVolume < 34 ? "Low" : params.boxingVolume < 67 ? "Medium" : "High"}
-                </span>
-              </div>
-              <Slider
-                value={[params.boxingVolume]}
-                min={0} max={100} step={10}
-                onValueChange={([v]) => patchParams({ boxingVolume: v })}
-              />
-            </div>
-
-            {/* Functional Training */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-medium flex items-center gap-1.5">
-                  <BarChart3 className="h-3.5 w-3.5 text-muted-foreground" />
-                  Functional Training
-                </span>
-                <span className="text-xs text-muted-foreground">
-                  {params.functionalTraining < 34 ? "Low" : params.functionalTraining < 67 ? "Medium" : "High"}
-                </span>
-              </div>
-              <Slider
-                value={[params.functionalTraining]}
-                min={0} max={100} step={10}
-                onValueChange={([v]) => patchParams({ functionalTraining: v })}
-              />
-            </div>
-          </div>
-
-          {/* Row 3: Target Score + Weekly Challenge inline */}
-          <div className="flex items-center gap-6">
-            <div className="flex-1 space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Min Score</span>
-                <span className="text-sm font-bold">{params.minScore}</span>
-              </div>
-              <Slider
-                value={[params.minScore]}
-                min={60} max={100} step={5}
-                onValueChange={([v]) => patchParams({ minScore: v })}
-              />
-            </div>
-            <div className="flex items-center gap-2 shrink-0">
-              <Switch
-                id="weekly-challenge"
-                checked={params.includeWeeklyChallenge}
-                onCheckedChange={(v) => patchParams({ includeWeeklyChallenge: v })}
-              />
-              <Label htmlFor="weekly-challenge" className="text-xs font-medium cursor-pointer whitespace-nowrap">
-                Weekly Challenge
-              </Label>
-            </div>
-          </div>
-
-          {/* Generate + action buttons */}
-          <div className="flex flex-wrap items-center gap-2 pt-1 border-t">
-            <Button
-              onClick={() => generate.mutate()}
-              disabled={generate.isPending}
-              className="bg-blue-600 hover:bg-blue-700"
-            >
-              {generate.isPending ? (
-                <Loader2 data-icon="inline-start" className="animate-spin" />
-              ) : (
-                <Sparkles data-icon="inline-start" />
-              )}
-              {isWeekMode ? "Generate Training Week" : "Generate Workout"}
-            </Button>
-
-            {hasDrafts && (
-              <>
-                <Button variant="outline" onClick={moveToCompare}>
-                  <GitCompare data-icon="inline-start" /> Set as comparison
-                </Button>
-                <Button variant="outline" onClick={() => saveDraft.mutate()} disabled={saveDraft.isPending}>
-                  <Save data-icon="inline-start" /> Save draft
-                </Button>
-
-                {/* Publish dropdown */}
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button className="ml-auto bg-green-600 hover:bg-green-700">
-                      <Upload data-icon="inline-start" />
-                      Publish
-                      <ChevronDown data-icon="inline-end" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    {isWeekMode && weekDrafts.length > 1 && (
-                      <>
-                        <DropdownMenuItem onSelect={() => setConfirmPublish("week")}>
-                          Publish Entire Week
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onSelect={() => {
-                          setSelectedPublishDays(new Set(weekDrafts.map((_, i) => i)));
-                          setConfirmPublish("selected");
-                        }}>
-                          Publish Selected Days...
-                        </DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                      </>
-                    )}
-                    <DropdownMenuItem onSelect={() => setConfirmPublish("day")}>
-                      Publish Current Day
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem onSelect={() => saveDraft.mutate()}>
-                      Save Draft
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </>
+        {/* Row 2: Action buttons */}
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            onClick={() => generate.mutate()}
+            disabled={generate.isPending}
+            size="sm"
+            className="bg-blue-600 hover:bg-blue-700"
+          >
+            {generate.isPending ? (
+              <Loader2 data-icon="inline-start" className="animate-spin" />
+            ) : (
+              <Sparkles data-icon="inline-start" />
             )}
-          </div>
-        </CardContent>
-      </Card>
+            Generate Training Week
+          </Button>
+
+          {hasDrafts && (
+            <>
+              <Button variant="outline" size="sm" onClick={moveToCompare}>
+                <GitCompare data-icon="inline-start" /> Compare
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => saveDraft.mutate()} disabled={saveDraft.isPending}>
+                <Save data-icon="inline-start" /> Save draft
+              </Button>
+
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button size="sm" className="ml-auto bg-green-600 hover:bg-green-700">
+                    <Upload data-icon="inline-start" />
+                    Publish
+                    <ChevronDown data-icon="inline-end" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  {isWeekMode && weekDrafts.length > 1 && (
+                    <>
+                      <DropdownMenuItem onSelect={() => setConfirmPublish("week")}>
+                        Publish Entire Week
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onSelect={() => {
+                        setSelectedPublishDays(new Set(weekDrafts.map((_, i) => i)));
+                        setConfirmPublish("selected");
+                      }}>
+                        Publish Selected Days...
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                    </>
+                  )}
+                  <DropdownMenuItem onSelect={() => setConfirmPublish("day")}>
+                    Publish Current Day
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onSelect={() => saveDraft.mutate()}>
+                    Save Draft
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </>
+          )}
+        </div>
+      </div>
 
       {/* ================================================================
           EMPTY STATE
@@ -809,14 +745,14 @@ export function WorkoutBuilder() {
       {!hasDrafts && !generate.isPending && (
         <div className="rounded-lg border-2 border-dashed border-border py-20 text-center text-muted-foreground">
           <Sparkles className="mx-auto mb-3 size-8 text-muted-foreground/50" />
-          <p className="text-sm">Configure your settings above and generate a{isWeekMode ? " training week" : " workout"} to get started.</p>
+          <p className="text-sm">Configure your settings above and generate a training week to get started.</p>
         </div>
       )}
 
       {generate.isPending && (
         <div className="rounded-lg border border-border py-16 text-center text-muted-foreground">
           <Loader2 className="mx-auto mb-3 size-8 animate-spin text-blue-500" />
-          <p className="text-sm">{isWeekMode ? "Generating 6-day training week..." : "Generating workout..."}</p>
+          <p className="text-sm">Generating 6-day training week...</p>
         </div>
       )}
 
@@ -878,6 +814,56 @@ export function WorkoutBuilder() {
             )
           )}
         </>
+      )}
+
+      {/* Weekly Validation Report */}
+      {validationReport && isWeekMode && hasDrafts && (
+        <Card className="mt-4">
+          <CardHeader className="pb-3">
+           <div className="flex items-center justify-between">
+             <CardTitle className="text-base">Week Quality Report</CardTitle>
+             <div className="flex items-center gap-2">
+               <span className={cn("text-2xl font-bold", scoreColor(validationReport.overall))}>
+                 {validationReport.overall}%
+               </span>
+               {validationReport.passesThreshold ? (
+                 <Badge className="bg-green-100 text-green-700 border-green-200">Ready</Badge>
+               ) : (
+                 <Badge className="bg-orange-100 text-orange-700 border-orange-200">Needs Work</Badge>
+               )}
+             </div>
+           </div>
+          </CardHeader>
+          <CardContent className="space-y-3">
+           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+             {([
+               validationReport.muscleAccuracy,
+               validationReport.equipmentBalance,
+               validationReport.stationCompatibility,
+               validationReport.exerciseVariety,
+               validationReport.heartRateDistribution,
+               validationReport.boxingExperience,
+               validationReport.movementPatternBalance,
+               validationReport.recoveryBalance,
+             ] as WeeklyValidationCategory[]).map((cat) => (
+               <div key={cat.label} className="rounded-md border p-2 text-center">
+                 <p className={cn("text-lg font-bold", scoreColor(cat.score))}>{cat.score}%</p>
+                 <p className="text-[10px] text-muted-foreground leading-tight">{cat.label}</p>
+               </div>
+             ))}
+           </div>
+           {validationReport.recommendations.length > 0 && (
+             <div className="rounded-md bg-muted/50 p-3">
+               <p className="text-xs font-medium text-muted-foreground mb-1">Recommendations</p>
+               <ul className="space-y-1 text-xs text-foreground">
+                 {validationReport.recommendations.map((r, i) => (
+                   <li key={i}>• {r}</li>
+                 ))}
+               </ul>
+             </div>
+           )}
+          </CardContent>
+        </Card>
       )}
 
       {/* ================================================================
@@ -1063,6 +1049,35 @@ function DayWorkout({
             </div>
           )}
 
+          {/* HR Curve + Calories row */}
+          {draft.hrCurve && draft.hrCurve.length > 0 && (
+            <div className="space-y-2 rounded-md border p-3">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Heart Rate Curve</p>
+                <span className="text-xs font-semibold text-muted-foreground">
+                  ~{draft.estimatedCalories ?? 0} kcal
+                </span>
+              </div>
+              <div className="flex items-end gap-1">
+                {draft.hrCurve.map((hr, i) => {
+                  const height = hr === "red" ? "h-8" : hr === "orange" ? "h-5" : "h-3";
+                  const bg = hr === "red" ? "bg-red-400" : hr === "orange" ? "bg-orange-400" : "bg-green-400";
+                  return (
+                    <div key={i} className="flex flex-1 flex-col items-center gap-0.5">
+                      <div className={cn("w-full rounded-sm", height, bg)} />
+                      <span className="text-[9px] text-muted-foreground">{i + 1}</span>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="flex items-center gap-3 text-[10px] text-muted-foreground">
+                <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-red-400" />HIIT Spike</span>
+                <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-orange-400" />Medium</span>
+                <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-green-400" />Recovery</span>
+              </div>
+            </div>
+          )}
+
           {/* Push / Pull / Muscles row */}
           {draft.muscleBreakdown && (
             <div className="space-y-3">
@@ -1155,7 +1170,12 @@ function DayWorkout({
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="font-medium">{r.roomName}</span>
-                    {r.isBoxingRound && (
+                    {r.assignedRole && (
+                      <Badge variant="secondary" className={cn("gap-1", ROLE_STYLE[r.assignedRole]?.bg ?? "", ROLE_STYLE[r.assignedRole]?.text ?? "")}>
+                        {r.assignedRole}
+                      </Badge>
+                    )}
+                    {r.isBoxingRound && !r.assignedRole?.includes("Boxing") && (
                       <Badge variant="secondary" className="gap-1 bg-red-50 text-red-700">
                         <Hand className="h-3 w-3" />
                         Boxing{r.glovesOn ? " · gloves on" : ""}
@@ -1169,6 +1189,9 @@ function DayWorkout({
                     <Badge variant="outline">
                       {r.exercises.length === 1 ? "1 exercise" : "2 exercises"}
                     </Badge>
+                    {r.estimatedCalories > 0 && (
+                      <span className="text-[10px] text-muted-foreground">~{r.estimatedCalories}kcal</span>
+                    )}
                   </div>
                   {r.reasons.length > 0 && (
                     <p className="mt-1 text-xs text-muted-foreground">{r.reasons[0]}</p>
@@ -1217,11 +1240,23 @@ function DayWorkout({
                       e.dataTransfer.setData('exerciseMove', JSON.stringify({ sourceRoomId: r.roomId, exerciseIndex: idx }));
                     }}
                   >
-                    <span className="mt-1 text-xs font-medium text-muted-foreground">{idx + 1}</span>
+                    <span className="mt-1 text-xs font-medium text-muted-foreground">
+                      {ex.isAlternative ? "ALT" : idx + 1}
+                    </span>
                     <ImageThumbnail video={ex.video} size="small" showPlayButton={false} />
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
                         <p className="truncate text-sm font-medium">{ex.video.title}</p>
+                        {ex.isAlternative && (
+                          <Badge variant="secondary" className="h-5 bg-blue-50 text-blue-700 border border-blue-200">
+                            Optional alternative
+                          </Badge>
+                        )}
+                        {!ex.isAlternative && r.exercises.some((row) => row.isAlternative) && (
+                          <Badge variant="outline" className="h-5 text-xs">
+                            Main
+                          </Badge>
+                        )}
                         {ex.heartRate && (
                           <span className={cn("inline-flex items-center gap-1 text-xs", HR_STYLE[ex.heartRate].text)}>
                             <span className={cn("h-2 w-2 rounded-full", HR_STYLE[ex.heartRate].dot)} />
@@ -1236,6 +1271,9 @@ function DayWorkout({
                         <span>
                           {ex.video.bodyPart} &middot; {ex.video.equipment}
                         </span>
+                        {ex.isAlternative && (
+                          <span className="text-blue-700">Use only when a member needs an optional variation.</span>
+                        )}
                         {ex.reps && (
                           <Badge variant="outline" className="h-4 px-1.5 text-xs font-semibold">
                             {ex.reps}

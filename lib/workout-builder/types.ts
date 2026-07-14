@@ -5,6 +5,55 @@ import type { Video } from "@/lib/shared/schema"
 export type HeartRate = "green" | "orange" | "red"
 export type Intensity = "Low" | "Medium" | "High"
 
+// Dynamic role assigned to each station per workout by the engine.
+// Roles drive exercise selection and hybrid pairing logic.
+export type StationRole =
+  | "Warm-up"
+  | "Strength"
+  | "Hybrid"
+  | "Boxing"
+  | "HIIT Spike"
+  | "Core"
+  | "Recovery"
+  | "Conditioning"
+
+// Movement patterns used to enforce variation between mirror days (Mon/Thu, Tue/Fri, Wed/Sat).
+export type MovementPatternCategory =
+  | "horizontal_push"
+  | "vertical_push"
+  | "horizontal_pull"
+  | "vertical_pull"
+  | "hinge"
+  | "squat"
+  | "bilateral"
+  | "unilateral"
+  | "plyo"
+  | "boxing"
+  | "core"
+  | "other"
+
+// Per-category scoring used in the weekly quality validation report.
+export interface WeeklyValidationCategory {
+  score: number   // 0-100
+  label: string
+  notes: string[]
+}
+
+// Full weekly quality report produced after week generation.
+export interface WeeklyValidationReport {
+  muscleAccuracy: WeeklyValidationCategory
+  equipmentBalance: WeeklyValidationCategory
+  stationCompatibility: WeeklyValidationCategory
+  exerciseVariety: WeeklyValidationCategory
+  heartRateDistribution: WeeklyValidationCategory
+  boxingExperience: WeeklyValidationCategory
+  movementPatternBalance: WeeklyValidationCategory
+  recoveryBalance: WeeklyValidationCategory
+  overall: number          // 0-100 weighted average
+  recommendations: string[]
+  passesThreshold: boolean // true if every category >= 90
+}
+
 export interface WeeklyTemplate {
   weekday: number // 0 = Sunday ... 6 = Saturday
   label: string | null
@@ -18,6 +67,7 @@ export interface RoundConfig {
   roomId: number
   roomNumber?: number
   stationName: string | null
+  /** Static config label. Engine ignores this for role assignment — it derives roles dynamically. */
   stationRole: string | null
   preferredEquipment: string[]
   allowedEquipment: string[]
@@ -39,6 +89,7 @@ export interface BuilderSettings {
   minScore: number
   autoRegen: boolean
   weeklyChallenge: Record<string, unknown>
+  alternativeExercises: AlternativeExercisesConfig
 }
 
 // A single exercise within a round. A round normally has two exercises,
@@ -54,6 +105,9 @@ export interface RoundExercise {
   warnings: string[]
   isBoxing: boolean
   gloveCompatible: boolean
+  movementPatterns: MovementPatternCategory[]  // patterns this exercise uses
+  // Optional coaching variation shown as a secondary alternative to the main move.
+  isAlternative?: boolean
 }
 
 // A single generated round in a workout draft.
@@ -73,6 +127,12 @@ export interface GeneratedRound {
   score: number // 0-100 round average
   reasons: string[] // round-level explanation bullets
   warnings: string[]
+  // Dynamically assigned station role for this round.
+  assignedRole: StationRole
+  // Estimated kcal burned in this 2.5-min round based on HR zone.
+  estimatedCalories: number
+  // All movement pattern categories used in this round.
+  movementPatterns: MovementPatternCategory[]
 }
 
 /** Structured muscle breakdown computed from all exercises in the workout. */
@@ -94,6 +154,10 @@ export interface WorkoutDraft {
   summary: string[] // overall explanation bullets
   muscleBreakdown: MuscleBreakdown
   warnings: string[]
+  /** Heart-rate zone for each round in order (one per round). Used for the HR curve visualization. */
+  hrCurve: HeartRate[]
+  /** Estimated total kcal burned in the full 30-minute workout. */
+  estimatedCalories: number
 }
 
 // ---- Builder session parameters (chosen in the UI per-generation) ----------
@@ -126,6 +190,29 @@ export interface BuilderParams {
   minScore: number
 }
 
+export type AlternativeMode = "Intelligent"
+
+export type AlternativeFocus =
+  | "Lower Body"
+  | "Core"
+  | "Functional Conditioning"
+  | "Mobility"
+  | "Low-Impact Options"
+
+export interface AlternativeExercisesConfig {
+  enabled: boolean
+  mode: AlternativeMode
+  maximumPerWorkout: number
+  preferredFocus: AlternativeFocus[]
+}
+
+export const DEFAULT_ALTERNATIVE_EXERCISES_CONFIG: AlternativeExercisesConfig = {
+  enabled: true,
+  mode: "Intelligent",
+  maximumPerWorkout: 2,
+  preferredFocus: ["Lower Body", "Core"],
+}
+
 export const DEFAULT_BUILDER_PARAMS: BuilderParams = {
   mode: "week",
   startDate: "",
@@ -153,4 +240,8 @@ export interface EngineInput {
   lockedByRoomId?: Record<number, GeneratedRound>
   // Optional session parameters from the builder UI
   params?: BuilderParams
+  // Movement patterns used by the mirror day (Mon→Thu, Tue→Fri, Wed→Sat) to enforce variation.
+  mirrorDayMovementPatterns?: MovementPatternCategory[]
+  // Pre-planned HR spike room numbers (from week-level planning). Engine plans its own if absent.
+  plannedSpikeRoomNumbers?: number[]
 }

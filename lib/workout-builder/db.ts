@@ -1,6 +1,8 @@
 import { sql, mapVideo } from "@/lib/db"
 import type { Video } from "@/lib/shared/schema"
+import { DEFAULT_ALTERNATIVE_EXERCISES_CONFIG } from "./types"
 import type {
+  AlternativeExercisesConfig,
   BuilderSettings,
   EquipmentLimit,
   RoundConfig,
@@ -41,11 +43,31 @@ export function mapEquipmentLimit(row: any): EquipmentLimit {
 }
 
 export function mapSettings(row: any): BuilderSettings {
+  const weeklyChallenge = row.weekly_challenge ?? {}
+  const alternativeFromSettings = (weeklyChallenge as Record<string, unknown>)?.alternativeExercises as
+    | Partial<AlternativeExercisesConfig>
+    | undefined
+
   return {
     reuseWeeks: row.reuse_weeks ?? 6,
     minScore: row.min_score ?? 90,
     autoRegen: row.auto_regen ?? true,
-    weeklyChallenge: row.weekly_challenge ?? {},
+    weeklyChallenge,
+    alternativeExercises: {
+      ...DEFAULT_ALTERNATIVE_EXERCISES_CONFIG,
+      ...(alternativeFromSettings ?? {}),
+      preferredFocus: Array.isArray(alternativeFromSettings?.preferredFocus)
+        ? alternativeFromSettings.preferredFocus.filter((v): v is AlternativeExercisesConfig["preferredFocus"][number] => typeof v === "string")
+        : DEFAULT_ALTERNATIVE_EXERCISES_CONFIG.preferredFocus,
+      maximumPerWorkout: Number.isFinite(Number(alternativeFromSettings?.maximumPerWorkout))
+        ? Math.max(0, Math.min(5, Number(alternativeFromSettings?.maximumPerWorkout)))
+        : DEFAULT_ALTERNATIVE_EXERCISES_CONFIG.maximumPerWorkout,
+      mode: "Intelligent",
+      enabled:
+        typeof alternativeFromSettings?.enabled === "boolean"
+          ? alternativeFromSettings.enabled
+          : DEFAULT_ALTERNATIVE_EXERCISES_CONFIG.enabled,
+    },
   }
 }
 
@@ -73,7 +95,15 @@ export async function getEquipmentLimits(): Promise<EquipmentLimit[]> {
 
 export async function getSettings(): Promise<BuilderSettings> {
   const rows = await sql`SELECT * FROM wb_settings WHERE id = 1`
-  return rows.length ? mapSettings(rows[0]) : { reuseWeeks: 6, minScore: 90, autoRegen: true, weeklyChallenge: {} }
+  return rows.length
+    ? mapSettings(rows[0])
+    : {
+        reuseWeeks: 6,
+        minScore: 90,
+        autoRegen: true,
+        weeklyChallenge: {},
+        alternativeExercises: { ...DEFAULT_ALTERNATIVE_EXERCISES_CONFIG },
+      }
 }
 
 // All videos with their most-recent scheduled date (for rotation freshness).
