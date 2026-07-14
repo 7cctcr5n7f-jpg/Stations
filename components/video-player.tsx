@@ -60,12 +60,13 @@ export default function VideoPlayer({ assignment, displayMode = 'single', videoC
     setVideoError(false);
     setRetryAttempted(false);
     setIsCached(false);
-  }, [assignment.video.id, assignment.video.url]);
+   }, [assignment.video.id, assignment.video.url]);
 
   useEffect(() => {
     if (!videoRef.current || videoLoaded || videoError) return;
 
     // Self-heal stalled loads: retry exactly once, then fail gracefully.
+    // 20s timeout accommodates slower gym WiFi and tablet connections.
     const loadTimeout = setTimeout(() => {
       if (videoLoaded || videoError) return;
 
@@ -77,12 +78,32 @@ export default function VideoPlayer({ assignment, displayMode = 'single', videoC
       } else {
         setVideoError(true);
       }
-    }, 15000);
+    }, 20000);
 
     return () => {
       clearTimeout(loadTimeout);
     }
   }, [videoLoaded, videoError, retryAttempted, sourceVersion]);
+
+  // On first user interaction anywhere in the document, attempt to play
+  // all paused videos. Required for TV boxes and iOS that block autoplay
+  // until a user gesture occurs.
+  useEffect(() => {
+    const handler = () => {
+      const video = videoRef.current;
+      if (video && video.paused && videoLoaded && !videoError) {
+        video.play().then(() => setAutoplayBlocked(false)).catch(() => {});
+      }
+    };
+    document.addEventListener("click", handler, { once: true });
+    document.addEventListener("touchstart", handler, { once: true });
+    return () => {
+      document.removeEventListener("click", handler);
+      document.removeEventListener("touchstart", handler);
+    };
+  }, [videoLoaded, videoError]);
+
+  const [autoplayBlocked, setAutoplayBlocked] = useState(false);
 
   const handlePlayable = () => {
     if (videoError) return;
@@ -94,8 +115,17 @@ export default function VideoPlayer({ assignment, displayMode = 'single', videoC
     // Immediate play for cached videos, small delay for multi-video to prevent CPU spikes
     const playDelay = isCached ? 0 : (videoCount >= 3 ? Math.random() * 200 : 0);
     setTimeout(() => {
-      video.play().catch(console.error);
+      video.play().catch(() => {
+        // Autoplay blocked (common on some TV box browsers and iOS without interaction)
+        setAutoplayBlocked(true);
+      });
     }, playDelay);
+  };
+
+  const handleTapToPlay = () => {
+    const video = videoRef.current;
+    if (!video) return;
+    video.play().then(() => setAutoplayBlocked(false)).catch(console.error);
   };
 
   const handleVideoError = () => {
@@ -164,6 +194,8 @@ export default function VideoPlayer({ assignment, displayMode = 'single', videoC
         loop
         muted
         playsInline
+        // @ts-expect-error webkit-playsinline needed for older WebKit TV box browsers
+        webkit-playsinline=""
         autoPlay
         preload="auto"
         controls={false}
@@ -272,6 +304,19 @@ export default function VideoPlayer({ assignment, displayMode = 'single', videoC
             </button>
           </div>
         </div>
+      )}
+
+      {/* Tap-to-play fallback when autoplay is blocked (TV boxes, iOS without interaction) */}
+      {autoplayBlocked && !videoError && (
+        <button
+          type="button"
+          onClick={handleTapToPlay}
+          className="absolute inset-0 z-30 flex items-center justify-center bg-black/40"
+        >
+          <div className="bg-white/90 rounded-full p-4">
+            <Play className="h-12 w-12 text-black" />
+          </div>
+        </button>
       )}
     </div>
   );
