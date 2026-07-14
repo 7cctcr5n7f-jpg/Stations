@@ -8,33 +8,36 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Separator } from "@/components/ui/separator";
-import { Loader2, Plus, Save, Trash2, ThumbsDown, CheckCircle2 } from "lucide-react";
+import { Loader2, Save, Trash2, Plus, ThumbsDown, CheckCircle2 } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import type { AlternativeExercisesConfig, AlternativeFocus } from "@/lib/workout-builder/types";
 
 const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const ACTIVE_DAYS = [1, 2, 3, 4, 5, 6]; // Mon-Sat
 const HR_OPTIONS = [
   { value: "green", label: "Low (green)" },
   { value: "orange", label: "Medium (orange)" },
   { value: "red", label: "High (red)" },
 ];
+const SPACE_OPTIONS = [
+  { value: "none", label: "Not set" },
+  { value: "large", label: "Large" },
+  { value: "small", label: "Small" },
+  { value: "stationary", label: "Stationary" },
+];
 const ALTERNATIVE_FOCUS_OPTIONS: AlternativeFocus[] = [
-  "Lower Body",
-  "Core",
-  "Functional Conditioning",
-  "Mobility",
-  "Low-Impact Options",
+  "Lower Body", "Core", "Functional Conditioning", "Mobility", "Low-Impact Options",
 ];
 
-// Small comma-separated list editor
 function TokenList({ value, onChange, placeholder }: { value: string[]; onChange: (v: string[]) => void; placeholder?: string }) {
   const [text, setText] = useState(value.join(", "));
   useEffect(() => { setText(value.join(", ")); }, [value]);
   return (
     <Input
+      className="h-8 text-xs"
       value={text}
       placeholder={placeholder}
       onChange={(e) => setText(e.target.value)}
@@ -63,8 +66,8 @@ export function BuilderConfig() {
   const { data, isLoading } = useQuery<ConfigData>({ queryKey: ["/api/workout-builder/config"] });
 
   const save = useMutation({
-    mutationFn: async ({ section, data }: { section: string; data: any }) =>
-      apiRequest("PUT", "/api/workout-builder/config", { section, data }),
+    mutationFn: async ({ section, data: payload }: { section: string; data: any }) =>
+      apiRequest("PUT", "/api/workout-builder/config", { section, data: payload }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/workout-builder/config"] });
       toast({ title: "Saved" });
@@ -81,121 +84,56 @@ export function BuilderConfig() {
   }
 
   return (
-    <div className="space-y-6">
-      <SettingsCard settings={data.settings} onSave={(d) => save.mutate({ section: "settings", data: d })} />
-      <WeeklyTemplatesCard templates={data.templates} onSave={(d) => save.mutate({ section: "template", data: d })} />
-      <RoundConfigCard rooms={data.rooms} roundConfigs={data.roundConfigs} onSave={(d) => save.mutate({ section: "roundConfig", data: d })} />
-      <EquipmentLimitsCard limits={data.equipmentLimits} onSave={(d) => save.mutate({ section: "equipmentLimits", data: d })} />
-      <RejectionFeedbackCard />
-    </div>
+    <Tabs defaultValue="week" className="space-y-4">
+      <TabsList className="grid w-full grid-cols-5">
+        <TabsTrigger value="week">Weekly Programme</TabsTrigger>
+        <TabsTrigger value="stations">Stations</TabsTrigger>
+        <TabsTrigger value="equipment">Equipment</TabsTrigger>
+        <TabsTrigger value="engine">Engine</TabsTrigger>
+        <TabsTrigger value="feedback">Feedback</TabsTrigger>
+      </TabsList>
+
+      <TabsContent value="week">
+        <WeeklyProgrammeTab
+          templates={data.templates}
+          onSave={(d) => save.mutate({ section: "template", data: d })}
+        />
+      </TabsContent>
+
+      <TabsContent value="stations">
+        <StationsTab
+          rooms={data.rooms}
+          roundConfigs={data.roundConfigs}
+          onSave={(d) => save.mutate({ section: "roundConfig", data: d })}
+        />
+      </TabsContent>
+
+      <TabsContent value="equipment">
+        <EquipmentTab
+          limits={data.equipmentLimits}
+          onSave={(d) => save.mutate({ section: "equipmentLimits", data: d })}
+        />
+      </TabsContent>
+
+      <TabsContent value="engine">
+        <EngineTab
+          settings={data.settings}
+          onSave={(d) => save.mutate({ section: "settings", data: d })}
+        />
+      </TabsContent>
+
+      <TabsContent value="feedback">
+        <FeedbackTab />
+      </TabsContent>
+    </Tabs>
   );
 }
 
-function SettingsCard({ settings, onSave }: { settings: ConfigData["settings"]; onSave: (d: any) => void }) {
-  const [reuseWeeks, setReuseWeeks] = useState(settings.reuseWeeks);
-  const [minScore, setMinScore] = useState(settings.minScore);
-  const [autoRegen, setAutoRegen] = useState(settings.autoRegen);
-  const [alternativeEnabled, setAlternativeEnabled] = useState(settings.alternativeExercises?.enabled ?? true);
-  const [alternativeMode, setAlternativeMode] = useState(settings.alternativeExercises?.mode ?? "Intelligent");
-  const [alternativeMaximum, setAlternativeMaximum] = useState(settings.alternativeExercises?.maximumPerWorkout ?? 2);
-  const [alternativeFocus, setAlternativeFocus] = useState<AlternativeFocus[]>(
-    settings.alternativeExercises?.preferredFocus?.length
-      ? settings.alternativeExercises.preferredFocus
-      : ["Lower Body", "Core"],
-  );
+// ============================================================================
+// Weekly Programme Tab — defines daily focus and muscle groups
+// ============================================================================
 
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-lg">Global Settings</CardTitle>
-        <CardDescription>Rotation window and generation thresholds used by the rule engine.</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="grid gap-4 sm:grid-cols-3">
-          <div className="space-y-2">
-            <Label>Reuse window (weeks)</Label>
-            <Input type="number" min={1} max={52} value={reuseWeeks} onChange={(e) => setReuseWeeks(Number(e.target.value))} />
-          </div>
-          <div className="space-y-2">
-            <Label>Minimum score to publish</Label>
-            <Input type="number" min={0} max={100} value={minScore} onChange={(e) => setMinScore(Number(e.target.value))} />
-          </div>
-          <div className="flex items-center gap-2 pt-7">
-            <Switch checked={autoRegen} onCheckedChange={setAutoRegen} id="auto-regen" />
-            <Label htmlFor="auto-regen">Auto-regenerate below min score</Label>
-          </div>
-        </div>
-        <Separator />
-        <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <div>
-              <Label className="text-sm font-medium">Optional Alternative Exercises</Label>
-              <p className="text-xs text-gray-500">Add optional alternatives only when they improve workout balance.</p>
-            </div>
-            <Switch checked={alternativeEnabled} onCheckedChange={setAlternativeEnabled} id="alt-enabled" />
-          </div>
-          <div className="grid gap-4 sm:grid-cols-3">
-            <div className="space-y-2">
-              <Label>Mode</Label>
-              <Select value={alternativeMode} onValueChange={(value) => setAlternativeMode(value as "Intelligent")}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Intelligent">Intelligent</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>Maximum per workout</Label>
-              <Input
-                type="number"
-                min={0}
-                max={5}
-                value={alternativeMaximum}
-                onChange={(e) => setAlternativeMaximum(Math.max(0, Math.min(5, Number(e.target.value) || 0)))}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Preferred focus</Label>
-              <TokenList
-                value={alternativeFocus}
-                onChange={(items) =>
-                  setAlternativeFocus(
-                    items.filter((v): v is AlternativeFocus =>
-                      ALTERNATIVE_FOCUS_OPTIONS.includes(v as AlternativeFocus),
-                    ),
-                  )
-                }
-                placeholder={ALTERNATIVE_FOCUS_OPTIONS.join(", ")}
-              />
-            </div>
-          </div>
-        </div>
-        <Button
-          onClick={() =>
-            onSave({
-              reuseWeeks,
-              minScore,
-              autoRegen,
-              weeklyChallenge: {
-                ...(settings.weeklyChallenge ?? {}),
-                alternativeExercises: {
-                  enabled: alternativeEnabled,
-                  mode: alternativeMode,
-                  maximumPerWorkout: alternativeMaximum,
-                  preferredFocus: alternativeFocus,
-                },
-              },
-            })
-          }
-        >
-          <Save className="mr-2 h-4 w-4" /> Save settings
-        </Button>
-      </CardContent>
-    </Card>
-  );
-}
-
-function WeeklyTemplatesCard({ templates, onSave }: { templates: any[]; onSave: (d: any) => void }) {
+function WeeklyProgrammeTab({ templates, onSave }: { templates: any[]; onSave: (d: any) => void }) {
   const [weekday, setWeekday] = useState(1);
   const current = templates.find((t) => t.weekday === weekday);
   const [label, setLabel] = useState(current?.label ?? "");
@@ -213,49 +151,116 @@ function WeeklyTemplatesCard({ templates, onSave }: { templates: any[]; onSave: 
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle className="text-lg">Weekly Templates</CardTitle>
-        <CardDescription>Define the muscle focus and style for each day of the week.</CardDescription>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base">Weekly Programme</CardTitle>
+        <CardDescription className="text-xs">
+          Define the focus, muscle groups, and style for each training day. The engine uses these to select exercises.
+        </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="flex flex-wrap gap-2">
-          {WEEKDAYS.map((d, i) => (
-            <Button key={i} size="sm" variant={weekday === i ? "default" : "outline"} onClick={() => setWeekday(i)}>
-              {d.slice(0, 3)}
-              {templates.find((t) => t.weekday === i)?.primaryMuscles?.length ? (
-                <span className="ml-1 h-1.5 w-1.5 rounded-full bg-green-500 inline-block" />
-              ) : null}
-            </Button>
-          ))}
+        {/* Day selector */}
+        <div className="flex gap-1">
+          {ACTIVE_DAYS.map((i) => {
+            const t = templates.find((x) => x.weekday === i);
+            const hasConfig = t?.label || (t?.primaryMuscles?.length > 0);
+            return (
+              <button
+                key={i}
+                type="button"
+                onClick={() => setWeekday(i)}
+                className={`flex-1 rounded-md py-2 text-center text-xs font-medium transition-colors ${
+                  weekday === i
+                    ? "bg-foreground text-background"
+                    : "bg-muted text-muted-foreground hover:bg-muted/80"
+                }`}
+              >
+                {WEEKDAYS[i].slice(0, 3)}
+                {hasConfig && <span className="ml-1 inline-block h-1.5 w-1.5 rounded-full bg-green-500" />}
+              </button>
+            );
+          })}
         </div>
-        <Separator />
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="space-y-2">
-            <Label>Label (e.g. Chest &amp; Triceps)</Label>
-            <Input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Day label" />
+
+        {/* Config fields */}
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="space-y-1">
+            <Label className="text-xs">Focus Label</Label>
+            <Input className="h-8 text-sm" value={label} onChange={(e) => setLabel(e.target.value)} placeholder="e.g. Upper Push" />
           </div>
-          <div className="space-y-2">
-            <Label>Workout style</Label>
-            <Input value={style} onChange={(e) => setStyle(e.target.value)} placeholder="e.g. Strength, HIIT, Mixed" />
+          <div className="space-y-1">
+            <Label className="text-xs">Workout Style</Label>
+            <Select value={style || "none"} onValueChange={(v) => setStyle(v === "none" ? "" : v)}>
+              <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Select style" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">Not set</SelectItem>
+                <SelectItem value="Strength">Strength</SelectItem>
+                <SelectItem value="HIIT">HIIT</SelectItem>
+                <SelectItem value="Power">Power</SelectItem>
+                <SelectItem value="Endurance">Endurance</SelectItem>
+                <SelectItem value="Mixed">Mixed</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
-          <div className="space-y-2">
-            <Label>Primary muscles</Label>
-            <TokenList value={primary} onChange={setPrimary} placeholder="Chest, Triceps" />
+          <div className="space-y-1">
+            <Label className="text-xs">Primary Muscles</Label>
+            <TokenList value={primary} onChange={setPrimary} placeholder="Chest, Shoulders, Triceps" />
           </div>
-          <div className="space-y-2">
-            <Label>Secondary muscles</Label>
-            <TokenList value={secondary} onChange={setSecondary} placeholder="Shoulders, Core" />
+          <div className="space-y-1">
+            <Label className="text-xs">Secondary Muscles</Label>
+            <TokenList value={secondary} onChange={setSecondary} placeholder="Core, Forearms" />
           </div>
         </div>
-        <Button onClick={() => onSave({ weekday, label, primaryMuscles: primary, secondaryMuscles: secondary, workoutStyle: style, goals: {} })}>
-          <Save className="mr-2 h-4 w-4" /> Save {WEEKDAYS[weekday]}
-        </Button>
+
+        {/* Summary row */}
+        <div className="flex items-center justify-between rounded-md bg-muted/50 px-3 py-2">
+          <div className="text-xs text-muted-foreground">
+            {label ? (
+              <span><strong>{WEEKDAYS[weekday]}</strong>: {label} — {primary.join(", ") || "No muscles set"}</span>
+            ) : (
+              <span className="text-orange-600"><strong>{WEEKDAYS[weekday]}</strong>: Not configured — engine will use balanced selection</span>
+            )}
+          </div>
+          <Button size="sm" className="h-7 text-xs" onClick={() => onSave({ weekday, label, primaryMuscles: primary, secondaryMuscles: secondary, workoutStyle: style, goals: {} })}>
+            <Save className="mr-1 h-3 w-3" /> Save
+          </Button>
+        </div>
+
+        {/* Quick overview of all days */}
+        <div className="rounded-md border">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b bg-muted/30">
+                <th className="px-2 py-1.5 text-left font-medium">Day</th>
+                <th className="px-2 py-1.5 text-left font-medium">Focus</th>
+                <th className="px-2 py-1.5 text-left font-medium">Muscles</th>
+                <th className="px-2 py-1.5 text-left font-medium">Style</th>
+              </tr>
+            </thead>
+            <tbody>
+              {ACTIVE_DAYS.map((d) => {
+                const t = templates.find((x) => x.weekday === d);
+                return (
+                  <tr key={d} className={`border-b last:border-0 ${weekday === d ? "bg-blue-50" : ""}`}>
+                    <td className="px-2 py-1.5 font-medium">{WEEKDAYS[d].slice(0, 3)}</td>
+                    <td className="px-2 py-1.5">{t?.label || <span className="text-muted-foreground">—</span>}</td>
+                    <td className="px-2 py-1.5">{t?.primaryMuscles?.join(", ") || <span className="text-muted-foreground">—</span>}</td>
+                    <td className="px-2 py-1.5">{t?.workoutStyle || <span className="text-muted-foreground">—</span>}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       </CardContent>
     </Card>
   );
 }
 
-function RoundConfigCard({ rooms, roundConfigs, onSave }: { rooms: ConfigData["rooms"]; roundConfigs: any[]; onSave: (d: any) => void }) {
+// ============================================================================
+// Stations Tab — per-station equipment and configuration
+// ============================================================================
+
+function StationsTab({ rooms, roundConfigs, onSave }: { rooms: ConfigData["rooms"]; roundConfigs: any[]; onSave: (d: any) => void }) {
   const [roomId, setRoomId] = useState(rooms[0]?.id ?? 0);
   const current = roundConfigs.find((c) => c.roomId === roomId);
   const room = rooms.find((r) => r.id === roomId);
@@ -267,6 +272,7 @@ function RoundConfigCard({ rooms, roundConfigs, onSave }: { rooms: ConfigData["r
   const [avoid, setAvoid] = useState<string[]>(current?.avoidEquipment ?? []);
   const [cats, setCats] = useState<string[]>(current?.preferredCategories ?? []);
   const [hr, setHr] = useState<string>(current?.preferredHeartRate ?? "none");
+  const [space, setSpace] = useState<string>(current?.availableSpace ?? "none");
   const [coreOnly, setCoreOnly] = useState<boolean>(current?.coreOnly ?? false);
 
   useEffect(() => {
@@ -278,93 +284,145 @@ function RoundConfigCard({ rooms, roundConfigs, onSave }: { rooms: ConfigData["r
     setAvoid(c?.avoidEquipment ?? []);
     setCats(c?.preferredCategories ?? []);
     setHr(c?.preferredHeartRate ?? "none");
+    setSpace(c?.availableSpace ?? "none");
     setCoreOnly(c?.coreOnly ?? false);
   }, [roomId, roundConfigs]);
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle className="text-lg">Round / Station Config</CardTitle>
-        <CardDescription>Per-round equipment rules, categories, and heart-rate targets.</CardDescription>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base">Station Configuration</CardTitle>
+        <CardDescription className="text-xs">
+          Equipment capabilities, categories, and constraints per station. The engine assigns roles dynamically but respects these constraints.
+        </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="flex flex-wrap gap-2">
-          {rooms.map((r) => (
-            <Button key={r.id} size="sm" variant={roomId === r.id ? "default" : "outline"} onClick={() => setRoomId(r.id)}>
-              {r.number}
-              {roundConfigs.find((c) => c.roomId === r.id) ? (
-                <span className="ml-1 h-1.5 w-1.5 rounded-full bg-green-500 inline-block" />
-              ) : null}
-            </Button>
-          ))}
+        {/* Station selector — numbered circles */}
+        <div className="flex gap-1.5">
+          {rooms.map((r) => {
+            const hasConfig = roundConfigs.find((c) => c.roomId === r.id);
+            return (
+              <button
+                key={r.id}
+                type="button"
+                onClick={() => setRoomId(r.id)}
+                className={`flex h-9 w-9 items-center justify-center rounded-full text-xs font-bold transition-colors ${
+                  roomId === r.id
+                    ? "bg-foreground text-background"
+                    : hasConfig
+                      ? "bg-green-100 text-green-700 hover:bg-green-200"
+                      : "bg-muted text-muted-foreground hover:bg-muted/80"
+                }`}
+              >
+                {r.number}
+              </button>
+            );
+          })}
         </div>
-        {room && <p className="text-sm text-gray-500">Room {room.number}: {room.name}</p>}
-        <Separator />
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="space-y-2">
-            <Label>Station name</Label>
-            <Input value={stationName} onChange={(e) => setStationName(e.target.value)} placeholder={room?.name ?? "Station"} />
+
+        {room && (
+          <p className="text-xs font-medium text-muted-foreground">
+            Room {room.number}: {room.name}{room.description ? ` — ${room.description}` : ""}
+          </p>
+        )}
+
+        {/* Compact 2-column grid */}
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="space-y-1">
+            <Label className="text-xs">Station Name</Label>
+            <Input className="h-8 text-sm" value={stationName} onChange={(e) => setStationName(e.target.value)} placeholder={room?.name ?? "Station"} />
           </div>
-          <div className="space-y-2">
-            <Label>Station role</Label>
-            <Input value={role} onChange={(e) => setRole(e.target.value)} placeholder="e.g. Power, Conditioning, Core" />
+          <div className="space-y-1">
+            <Label className="text-xs">Default Role Hint</Label>
+            <Select value={role || "none"} onValueChange={(v) => setRole(v === "none" ? "" : v)}>
+              <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">Auto (engine decides)</SelectItem>
+                <SelectItem value="Warm-up">Warm-up</SelectItem>
+                <SelectItem value="Strength">Strength</SelectItem>
+                <SelectItem value="Hybrid">Hybrid</SelectItem>
+                <SelectItem value="Boxing">Boxing</SelectItem>
+                <SelectItem value="HIIT Spike">HIIT Spike</SelectItem>
+                <SelectItem value="Core">Core</SelectItem>
+                <SelectItem value="Recovery">Recovery</SelectItem>
+                <SelectItem value="Conditioning">Conditioning</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
-          <div className="space-y-2">
-            <Label>Preferred equipment</Label>
-            <TokenList value={preferred} onChange={setPreferred} placeholder="DB, KB" />
+          <div className="space-y-1">
+            <Label className="text-xs">Preferred Equipment</Label>
+            <TokenList value={preferred} onChange={setPreferred} placeholder="DB, Bench, KB" />
           </div>
-          <div className="space-y-2">
-            <Label>Allowed equipment (whitelist)</Label>
-            <TokenList value={allowed} onChange={setAllowed} placeholder="leave empty for any" />
+          <div className="space-y-1">
+            <Label className="text-xs">Allowed Equipment (whitelist)</Label>
+            <TokenList value={allowed} onChange={setAllowed} placeholder="Leave empty for any" />
           </div>
-          <div className="space-y-2">
-            <Label>Avoid equipment</Label>
-            <TokenList value={avoid} onChange={setAvoid} placeholder="BB, BENCH" />
+          <div className="space-y-1">
+            <Label className="text-xs">Avoid Equipment</Label>
+            <TokenList value={avoid} onChange={setAvoid} placeholder="BB, Cable" />
           </div>
-          <div className="space-y-2">
-            <Label>Preferred categories</Label>
-            <TokenList value={cats} onChange={setCats} placeholder="Strength, Cardio" />
+          <div className="space-y-1">
+            <Label className="text-xs">Preferred Categories</Label>
+            <TokenList value={cats} onChange={setCats} placeholder="Strength, Boxing, HIIT" />
           </div>
-          <div className="space-y-2">
-            <Label>Target heart-rate zone</Label>
+          <div className="space-y-1">
+            <Label className="text-xs">Target HR Zone</Label>
             <Select value={hr} onValueChange={setHr}>
-              <SelectTrigger><SelectValue placeholder="Any" /></SelectTrigger>
+              <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="none">Any</SelectItem>
                 {HR_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
               </SelectContent>
             </Select>
           </div>
-          <div className="flex items-center gap-2 pt-7">
-            <Switch id="core-only" checked={coreOnly} onCheckedChange={setCoreOnly} />
-            <Label htmlFor="core-only">Core-only station</Label>
+          <div className="space-y-1">
+            <Label className="text-xs">Available Space</Label>
+            <Select value={space} onValueChange={setSpace}>
+              <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {SPACE_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+              </SelectContent>
+            </Select>
           </div>
         </div>
-        <Button
-          onClick={() =>
-            onSave({
-              roomId,
-              stationName,
-              stationRole: role,
-              preferredEquipment: preferred,
-              allowedEquipment: allowed,
-              avoidEquipment: avoid,
-              preferredCategories: cats,
-              preferredHeartRate: hr === "none" ? null : hr,
-              preferredIntensity: null,
-              availableSpace: null,
-              coreOnly,
-            })
-          }
-        >
-          <Save className="mr-2 h-4 w-4" /> Save round {room?.number}
-        </Button>
+
+        <div className="flex items-center justify-between pt-1">
+          <div className="flex items-center gap-2">
+            <Switch id="core-only" checked={coreOnly} onCheckedChange={setCoreOnly} />
+            <Label htmlFor="core-only" className="text-xs cursor-pointer">Core-only station</Label>
+          </div>
+          <Button
+            size="sm"
+            className="h-7 text-xs"
+            onClick={() =>
+              onSave({
+                roomId,
+                stationName,
+                stationRole: role,
+                preferredEquipment: preferred,
+                allowedEquipment: allowed,
+                avoidEquipment: avoid,
+                preferredCategories: cats,
+                preferredHeartRate: hr === "none" ? null : hr,
+                preferredIntensity: null,
+                availableSpace: space === "none" ? null : space,
+                coreOnly,
+              })
+            }
+          >
+            <Save className="mr-1 h-3 w-3" /> Save Room {room?.number}
+          </Button>
+        </div>
       </CardContent>
     </Card>
   );
 }
 
-function EquipmentLimitsCard({ limits, onSave }: { limits: { equipment: string; maxStations: number }[]; onSave: (d: any) => void }) {
+// ============================================================================
+// Equipment Tab — global equipment limits
+// ============================================================================
+
+function EquipmentTab({ limits, onSave }: { limits: { equipment: string; maxStations: number }[]; onSave: (d: any) => void }) {
   const [rows, setRows] = useState(limits.length ? limits : [{ equipment: "", maxStations: 1 }]);
 
   const update = (i: number, patch: Partial<{ equipment: string; maxStations: number }>) =>
@@ -372,26 +430,35 @@ function EquipmentLimitsCard({ limits, onSave }: { limits: { equipment: string; 
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle className="text-lg">Equipment Limits</CardTitle>
-        <CardDescription>Maximum number of stations that can use a given piece of equipment in one workout.</CardDescription>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base">Equipment Limits</CardTitle>
+        <CardDescription className="text-xs">
+          Maximum stations that can use a piece of equipment in one workout. Prevents over-reliance on a single piece.
+        </CardDescription>
       </CardHeader>
-      <CardContent className="space-y-3">
-        {rows.map((r, i) => (
-          <div key={i} className="flex items-center gap-2">
-            <Input className="flex-1" placeholder="Equipment (e.g. BB)" value={r.equipment} onChange={(e) => update(i, { equipment: e.target.value })} />
-            <Input className="w-28" type="number" min={1} max={10} value={r.maxStations} onChange={(e) => update(i, { maxStations: Number(e.target.value) })} />
-            <Button variant="ghost" size="icon" onClick={() => setRows((prev) => prev.filter((_, idx) => idx !== i))}>
-              <Trash2 className="h-4 w-4" />
-            </Button>
+      <CardContent className="space-y-2">
+        <div className="rounded-md border">
+          <div className="grid grid-cols-[1fr_80px_40px] gap-2 border-b bg-muted/30 px-3 py-1.5 text-xs font-medium">
+            <span>Equipment</span>
+            <span>Max</span>
+            <span></span>
           </div>
-        ))}
+          {rows.map((r, i) => (
+            <div key={i} className="grid grid-cols-[1fr_80px_40px] items-center gap-2 border-b last:border-0 px-3 py-1.5">
+              <Input className="h-7 text-xs" placeholder="e.g. BB, DB, KB" value={r.equipment} onChange={(e) => update(i, { equipment: e.target.value })} />
+              <Input className="h-7 text-xs text-center" type="number" min={1} max={10} value={r.maxStations} onChange={(e) => update(i, { maxStations: Number(e.target.value) })} />
+              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setRows((prev) => prev.filter((_, idx) => idx !== i))}>
+                <Trash2 className="h-3 w-3" />
+              </Button>
+            </div>
+          ))}
+        </div>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={() => setRows((prev) => [...prev, { equipment: "", maxStations: 1 }])}>
-            <Plus className="mr-2 h-4 w-4" /> Add limit
+          <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setRows((prev) => [...prev, { equipment: "", maxStations: 1 }])}>
+            <Plus className="mr-1 h-3 w-3" /> Add
           </Button>
-          <Button size="sm" onClick={() => onSave(rows.filter((r) => r.equipment.trim()))}>
-            <Save className="mr-2 h-4 w-4" /> Save limits
+          <Button size="sm" className="h-7 text-xs" onClick={() => onSave(rows.filter((r) => r.equipment.trim()))}>
+            <Save className="mr-1 h-3 w-3" /> Save Limits
           </Button>
         </div>
       </CardContent>
@@ -399,9 +466,133 @@ function EquipmentLimitsCard({ limits, onSave }: { limits: { equipment: string; 
   );
 }
 
-// ---------------------------------------------------------------------------
-// Rejection Feedback — shows the log of trainer rejections and their status
-// ---------------------------------------------------------------------------
+// ============================================================================
+// Engine Tab — global settings, rotation, alternatives
+// ============================================================================
+
+function EngineTab({ settings, onSave }: { settings: ConfigData["settings"]; onSave: (d: any) => void }) {
+  const [reuseWeeks, setReuseWeeks] = useState(settings.reuseWeeks);
+  const [minScore, setMinScore] = useState(settings.minScore);
+  const [autoRegen, setAutoRegen] = useState(settings.autoRegen);
+  const [alternativeEnabled, setAlternativeEnabled] = useState(settings.alternativeExercises?.enabled ?? true);
+  const [alternativeMaximum, setAlternativeMaximum] = useState(settings.alternativeExercises?.maximumPerWorkout ?? 2);
+  const [alternativeFocus, setAlternativeFocus] = useState<AlternativeFocus[]>(
+    settings.alternativeExercises?.preferredFocus?.length
+      ? settings.alternativeExercises.preferredFocus
+      : ["Lower Body", "Core"],
+  );
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base">Engine Settings</CardTitle>
+        <CardDescription className="text-xs">
+          Global parameters controlling exercise rotation, quality thresholds, and alternative exercises.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {/* Core settings in a compact row */}
+        <div className="grid gap-3 sm:grid-cols-3">
+          <div className="space-y-1">
+            <Label className="text-xs">Rotation Window (weeks)</Label>
+            <Input className="h-8 text-sm" type="number" min={1} max={52} value={reuseWeeks} onChange={(e) => setReuseWeeks(Number(e.target.value))} />
+            <p className="text-[10px] text-muted-foreground">Avoid repeating exercises within this many weeks</p>
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">Min Score to Publish</Label>
+            <Input className="h-8 text-sm" type="number" min={0} max={100} value={minScore} onChange={(e) => setMinScore(Number(e.target.value))} />
+            <p className="text-[10px] text-muted-foreground">Workouts below this score show a warning</p>
+          </div>
+          <div className="space-y-1 pt-4">
+            <div className="flex items-center gap-2">
+              <Switch checked={autoRegen} onCheckedChange={setAutoRegen} id="auto-regen" />
+              <Label htmlFor="auto-regen" className="text-xs cursor-pointer">Auto-regenerate below min</Label>
+            </div>
+          </div>
+        </div>
+
+        {/* Alternative exercises section */}
+        <div className="rounded-md border p-3 space-y-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs font-medium">Optional Alternative Exercises</p>
+              <p className="text-[10px] text-muted-foreground">Add alternatives on push-heavy days to balance workout loading</p>
+            </div>
+            <Switch checked={alternativeEnabled} onCheckedChange={setAlternativeEnabled} id="alt-enabled" />
+          </div>
+          {alternativeEnabled && (
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-1">
+                <Label className="text-xs">Max per Workout</Label>
+                <Input
+                  className="h-8 text-sm"
+                  type="number"
+                  min={0}
+                  max={5}
+                  value={alternativeMaximum}
+                  onChange={(e) => setAlternativeMaximum(Math.max(0, Math.min(5, Number(e.target.value) || 0)))}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Preferred Focus</Label>
+                <div className="flex flex-wrap gap-1">
+                  {ALTERNATIVE_FOCUS_OPTIONS.map((focus) => {
+                    const active = alternativeFocus.includes(focus);
+                    return (
+                      <button
+                        key={focus}
+                        type="button"
+                        onClick={() =>
+                          setAlternativeFocus((prev) =>
+                            active ? prev.filter((f) => f !== focus) : [...prev, focus],
+                          )
+                        }
+                        className={`rounded-full px-2 py-0.5 text-[10px] font-medium border transition-colors ${
+                          active
+                            ? "bg-blue-100 text-blue-700 border-blue-200"
+                            : "bg-muted text-muted-foreground border-transparent hover:bg-muted/80"
+                        }`}
+                      >
+                        {focus}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <Button
+          size="sm"
+          className="h-7 text-xs"
+          onClick={() =>
+            onSave({
+              reuseWeeks,
+              minScore,
+              autoRegen,
+              weeklyChallenge: {
+                ...(settings.weeklyChallenge ?? {}),
+                alternativeExercises: {
+                  enabled: alternativeEnabled,
+                  mode: "Intelligent",
+                  maximumPerWorkout: alternativeMaximum,
+                  preferredFocus: alternativeFocus,
+                },
+              },
+            })
+          }
+        >
+          <Save className="mr-1 h-3 w-3" /> Save Engine Settings
+        </Button>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ============================================================================
+// Feedback Tab — rejection log
+// ============================================================================
 
 interface FeedbackRow {
   id: number;
@@ -414,10 +605,9 @@ interface FeedbackRow {
   applied: boolean;
 }
 
-function RejectionFeedbackCard() {
+function FeedbackTab() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
-
   const { data: feedbackList = [], isLoading } = useQuery<FeedbackRow[]>({
     queryKey: ["/api/workout-builder/reject"],
   });
@@ -435,86 +625,66 @@ function RejectionFeedbackCard() {
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-lg">
+      <CardHeader className="pb-3">
+        <CardTitle className="flex items-center gap-2 text-base">
           <ThumbsDown className="h-4 w-4 text-red-500" />
           Rejection Feedback
         </CardTitle>
-        <CardDescription>
-          Trainer rejections logged from the Workout Builder. Items marked &quot;Applied&quot; have
-          already updated the round&apos;s Avoid Equipment list.
+        <CardDescription className="text-xs">
+          Trainer rejections from the Builder. Applied items update station Avoid Equipment lists.
         </CardDescription>
       </CardHeader>
       <CardContent>
         {isLoading && (
           <div className="flex items-center gap-2 text-sm text-gray-500 py-4">
-            <Loader2 className="h-4 w-4 animate-spin" /> Loading feedback...
+            <Loader2 className="h-4 w-4 animate-spin" /> Loading...
           </div>
         )}
         {!isLoading && feedbackList.length === 0 && (
-          <p className="text-sm text-gray-400 py-4 text-center">
-            No rejection feedback yet. Use the <strong>flag</strong> button on any exercise in a generated workout to log feedback.
+          <p className="text-xs text-muted-foreground py-6 text-center">
+            No rejection feedback yet. Flag exercises in generated workouts to log feedback.
           </p>
         )}
         {feedbackList.length > 0 && (
           <div className="space-y-2">
             {feedbackList.map((fb) => (
-              <div
-                key={fb.id}
-                className="flex items-start gap-3 rounded-md border border-gray-100 bg-gray-50 p-3"
-              >
-                {/* Round badge */}
-                <div className="shrink-0 flex h-8 w-8 items-center justify-center rounded-full bg-red-100 text-xs font-bold text-red-700">
+              <div key={fb.id} className="flex items-start gap-2 rounded-md border p-2">
+                <div className="shrink-0 flex h-7 w-7 items-center justify-center rounded-full bg-red-100 text-[10px] font-bold text-red-700">
                   {fb.room_number ?? "?"}
                 </div>
-
-                {/* Content */}
-                <div className="flex-1 min-w-0 space-y-1">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-sm font-medium text-gray-900">
-                      Round {fb.room_number} — {fb.room_name}
-                    </span>
+                <div className="flex-1 min-w-0 space-y-0.5">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="text-xs font-medium">Room {fb.room_number}</span>
                     {fb.applied ? (
-                      <Badge className="gap-1 bg-green-100 text-green-700 border-green-200 text-xs">
-                        <CheckCircle2 className="h-3 w-3" /> Applied to config
+                      <Badge className="h-4 gap-0.5 bg-green-100 text-green-700 border-green-200 text-[10px]">
+                        <CheckCircle2 className="h-2.5 w-2.5" /> Applied
                       </Badge>
                     ) : (
-                      <Badge variant="outline" className="text-xs text-gray-500">Log only</Badge>
+                      <Badge variant="outline" className="h-4 text-[10px]">Log</Badge>
                     )}
-                    <span className="text-xs text-gray-400 ml-auto">
-                      {new Date(fb.created_at).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
+                    <span className="text-[10px] text-muted-foreground ml-auto">
+                      {new Date(fb.created_at).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
                     </span>
                   </div>
-
-                  <p className="text-sm text-gray-700">{fb.reason}</p>
-
+                  <p className="text-xs text-muted-foreground truncate">{fb.reason}</p>
                   {fb.equipment.length > 0 && (
                     <div className="flex flex-wrap gap-1">
                       {fb.equipment.map((e) => (
-                        <span key={e} className="rounded-full bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700 border border-red-200">
+                        <span key={e} className="rounded-full bg-red-50 px-1.5 py-0.5 text-[10px] text-red-700 border border-red-200">
                           {e}
                         </span>
                       ))}
                     </div>
                   )}
-
-                  {fb.video_titles.length > 0 && (
-                    <p className="text-xs font-medium text-gray-600">
-                      {fb.video_titles[0]}
-                    </p>
-                  )}
                 </div>
-
-                {/* Delete */}
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="shrink-0 text-gray-400 hover:text-red-600"
-                  title="Remove this feedback"
+                  className="shrink-0 h-6 w-6 text-muted-foreground hover:text-red-600"
                   onClick={() => deleteFeedback.mutate({ id: fb.id, revertConfig: fb.applied })}
                   disabled={deleteFeedback.isPending}
                 >
-                  <Trash2 className="h-4 w-4" />
+                  <Trash2 className="h-3 w-3" />
                 </Button>
               </div>
             ))}
