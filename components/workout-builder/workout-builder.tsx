@@ -627,138 +627,117 @@ export function WorkoutBuilder() {
       {/* ================================================================
           BUILDER CONTROLS CARD
       ================================================================ */}
-      <Card>
-        <CardHeader className="pb-4">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <CardTitle className="text-base">Generation Settings</CardTitle>
-              <CardDescription className="mt-0.5">Equipment rules and round constraints come from Builder Config.</CardDescription>
-            </div>
+      <div className="rounded-lg border bg-card p-4 space-y-3">
+        {/* Row 1: All controls inline */}
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          <div className="flex items-center gap-2">
+            <Label className="text-xs text-muted-foreground whitespace-nowrap">Week</Label>
+            <Input
+              type="date"
+              value={params.startDate}
+              onChange={(e) => patchParams({ startDate: e.target.value })}
+              className="h-8 w-[140px] text-sm"
+            />
           </div>
-        </CardHeader>
-        <CardContent className="space-y-5">
-          <div className="flex items-center justify-between rounded-lg border border-gray-200 bg-white px-3 py-2">
-            <div>
-              <Label htmlFor="dropset-week" className="text-sm font-medium cursor-pointer">
-                Dropset Week
-              </Label>
-              <p className="text-xs text-muted-foreground">
-                {params.dropsetWeek ? "Generate 1 exercise per room." : "Generate 2 exercises per room."}
-              </p>
-            </div>
+          <div className="flex items-center gap-2">
+            <Label className="text-xs text-muted-foreground whitespace-nowrap">Focus</Label>
+            <Select value={params.focus} onValueChange={(v) => patchParams({ focus: v as WorkoutFocus })}>
+              <SelectTrigger className="h-8 w-[140px] text-sm">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {WORKOUT_FOCUSES.map((f) => (
+                  <SelectItem key={f} value={f}>{f}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex items-center gap-1.5">
             <Switch
               id="dropset-week"
               checked={params.dropsetWeek}
               onCheckedChange={(value) => patchParams({ dropsetWeek: value })}
+              className="scale-90"
             />
+            <Label htmlFor="dropset-week" className="text-xs cursor-pointer whitespace-nowrap">Dropset</Label>
           </div>
-
-          {/* Row 1: Date + Focus side by side */}
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                Week Starting (Monday)
-              </Label>
-              <Input
-                type="date"
-                value={params.startDate}
-                onChange={(e) => patchParams({ startDate: e.target.value })}
-              />
-              {params.startDate && (
-                <p className="text-xs text-muted-foreground">
-                  {params.startDate} — {toIso(new Date(new Date(params.startDate + "T12:00:00").setDate(new Date(params.startDate + "T12:00:00").getDate() + 5)))}
-                </p>
-              )}
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Workout Focus</Label>
-              <Select value={params.focus} onValueChange={(v) => patchParams({ focus: v as WorkoutFocus })}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {WORKOUT_FOCUSES.map((f) => (
-                    <SelectItem key={f} value={f}>{f}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
-          {/* Weekly Challenge toggle */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
             <Switch
               id="weekly-challenge"
               checked={params.includeWeeklyChallenge}
               onCheckedChange={(v) => patchParams({ includeWeeklyChallenge: v })}
+              className="scale-90"
             />
-            <Label htmlFor="weekly-challenge" className="text-xs font-medium cursor-pointer whitespace-nowrap">
-              Weekly Challenge
-            </Label>
+            <Label htmlFor="weekly-challenge" className="text-xs cursor-pointer whitespace-nowrap">CHOW</Label>
           </div>
+          {params.startDate && (
+            <span className="text-[11px] text-muted-foreground ml-auto">
+              {params.startDate} — {toIso(new Date(new Date(params.startDate + "T12:00:00").setDate(new Date(params.startDate + "T12:00:00").getDate() + 5)))}
+            </span>
+          )}
+        </div>
 
-          {/* Generate + action buttons */}
-          <div className="flex flex-wrap items-center gap-2 pt-1 border-t">
-            <Button
-              onClick={() => generate.mutate()}
-              disabled={generate.isPending}
-              className="bg-blue-600 hover:bg-blue-700"
-            >
-              {generate.isPending ? (
-                <Loader2 data-icon="inline-start" className="animate-spin" />
-              ) : (
-                <Sparkles data-icon="inline-start" />
-              )}
-              Generate Training Week
-            </Button>
-
-            {hasDrafts && (
-              <>
-                <Button variant="outline" onClick={moveToCompare}>
-                  <GitCompare data-icon="inline-start" /> Set as comparison
-                </Button>
-                <Button variant="outline" onClick={() => saveDraft.mutate()} disabled={saveDraft.isPending}>
-                  <Save data-icon="inline-start" /> Save draft
-                </Button>
-
-                {/* Publish dropdown */}
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button className="ml-auto bg-green-600 hover:bg-green-700">
-                      <Upload data-icon="inline-start" />
-                      Publish
-                      <ChevronDown data-icon="inline-end" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    {isWeekMode && weekDrafts.length > 1 && (
-                      <>
-                        <DropdownMenuItem onSelect={() => setConfirmPublish("week")}>
-                          Publish Entire Week
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onSelect={() => {
-                          setSelectedPublishDays(new Set(weekDrafts.map((_, i) => i)));
-                          setConfirmPublish("selected");
-                        }}>
-                          Publish Selected Days...
-                        </DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                      </>
-                    )}
-                    <DropdownMenuItem onSelect={() => setConfirmPublish("day")}>
-                      Publish Current Day
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem onSelect={() => saveDraft.mutate()}>
-                      Save Draft
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </>
+        {/* Row 2: Action buttons */}
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            onClick={() => generate.mutate()}
+            disabled={generate.isPending}
+            size="sm"
+            className="bg-blue-600 hover:bg-blue-700"
+          >
+            {generate.isPending ? (
+              <Loader2 data-icon="inline-start" className="animate-spin" />
+            ) : (
+              <Sparkles data-icon="inline-start" />
             )}
-          </div>
-        </CardContent>
-      </Card>
+            Generate Training Week
+          </Button>
+
+          {hasDrafts && (
+            <>
+              <Button variant="outline" size="sm" onClick={moveToCompare}>
+                <GitCompare data-icon="inline-start" /> Compare
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => saveDraft.mutate()} disabled={saveDraft.isPending}>
+                <Save data-icon="inline-start" /> Save draft
+              </Button>
+
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button size="sm" className="ml-auto bg-green-600 hover:bg-green-700">
+                    <Upload data-icon="inline-start" />
+                    Publish
+                    <ChevronDown data-icon="inline-end" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  {isWeekMode && weekDrafts.length > 1 && (
+                    <>
+                      <DropdownMenuItem onSelect={() => setConfirmPublish("week")}>
+                        Publish Entire Week
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onSelect={() => {
+                        setSelectedPublishDays(new Set(weekDrafts.map((_, i) => i)));
+                        setConfirmPublish("selected");
+                      }}>
+                        Publish Selected Days...
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                    </>
+                  )}
+                  <DropdownMenuItem onSelect={() => setConfirmPublish("day")}>
+                    Publish Current Day
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onSelect={() => saveDraft.mutate()}>
+                    Save Draft
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </>
+          )}
+        </div>
+      </div>
 
       {/* ================================================================
           EMPTY STATE
