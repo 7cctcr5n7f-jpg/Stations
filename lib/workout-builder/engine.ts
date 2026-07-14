@@ -1416,8 +1416,22 @@ export function generateWorkout(input: EngineInput): WorkoutDraft {
       if (leadPool.length) roundWarnings.push("Relaxed equipment limits to fill this round")
     }
     if (leadPool.length === 0) {
-      leadPool = videos.filter(unused)
+      // Last resort: any unused video, but still respect avoidEquipment
+      const avoid = cfg.avoidEquipment.map(norm)
+      leadPool = videos.filter((video) => {
+        if (!unused(video)) return false
+        if (avoid.length) {
+          const tokens = equipmentTokens(video)
+          if (tokens.some((t) => avoid.includes(t))) return false
+        }
+        return true
+      })
       if (leadPool.length) roundWarnings.push("No ideal exercise available — used best remaining video")
+    }
+    if (leadPool.length === 0) {
+      // Absolute last resort: truly any unused video (avoid list exhausted the pool)
+      leadPool = videos.filter(unused)
+      if (leadPool.length) roundWarnings.push("All filters exhausted — assigned remaining video regardless of constraints")
     }
     if (leadPool.length === 0) {
       rounds.push(buildEmptyRound(cfg, role, targetHr, "No available videos to fill this round"))
