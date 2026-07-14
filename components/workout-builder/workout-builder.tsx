@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
-import { Slider } from "@/components/ui/slider";
+
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
   Select,
@@ -62,9 +62,6 @@ import {
   Hand,
   ThumbsDown,
   ChevronDown,
-  Dumbbell,
-  Zap,
-  BarChart3,
   ArrowUp,
   ArrowDown,
 } from "lucide-react";
@@ -75,7 +72,6 @@ import { formatLocalDate } from "@/lib/local-date";
 import type { Video } from "@/lib/shared/schema";
 import type {
   BuilderParams,
-  GenerationMode,
   WorkoutFocus,
 } from "@/lib/workout-builder/types";
 
@@ -638,24 +634,6 @@ export function WorkoutBuilder() {
               <CardTitle className="text-base">Generation Settings</CardTitle>
               <CardDescription className="mt-0.5">Equipment rules and round constraints come from Builder Config.</CardDescription>
             </div>
-            {/* Mode toggle pill */}
-            <div className="flex rounded-lg border bg-muted p-0.5 shrink-0">
-              {(["week", "single"] as GenerationMode[]).map((mode) => (
-                <button
-                  key={mode}
-                  type="button"
-                  onClick={() => patchParams({ mode, startDate: mode === "week" ? toIso(getMondayOf(new Date())) : formatLocalDate(new Date()) })}
-                  className={cn(
-                    "rounded-md px-3 py-1 text-xs font-medium transition-colors",
-                    params.mode === mode
-                      ? "bg-background text-foreground shadow-sm"
-                      : "text-muted-foreground hover:text-foreground"
-                  )}
-                >
-                  {mode === "week" ? "Training Week" : "Single Day"}
-                </button>
-              ))}
-            </div>
           </div>
         </CardHeader>
         <CardContent className="space-y-5">
@@ -679,14 +657,14 @@ export function WorkoutBuilder() {
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                {isWeekMode ? "Week Starting (Monday)" : "Workout Date"}
+                Week Starting (Monday)
               </Label>
               <Input
                 type="date"
                 value={params.startDate}
                 onChange={(e) => patchParams({ startDate: e.target.value })}
               />
-              {isWeekMode && params.startDate && (
+              {params.startDate && (
                 <p className="text-xs text-muted-foreground">
                   {params.startDate} — {toIso(new Date(new Date(params.startDate + "T12:00:00").setDate(new Date(params.startDate + "T12:00:00").getDate() + 5)))}
                 </p>
@@ -707,86 +685,16 @@ export function WorkoutBuilder() {
             </div>
           </div>
 
-          {/* Row 2: Sliders stacked cleanly */}
-          <div className="space-y-4 rounded-lg bg-muted/40 px-4 py-3">
-            {/* Strength vs HIIT */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-medium flex items-center gap-1.5">
-                  <Dumbbell className="h-3.5 w-3.5 text-muted-foreground" />
-                  Strength vs HIIT
-                </span>
-                <span className="text-xs tabular-nums text-muted-foreground">
-                  {100 - params.hiitStrengthRatio}% Strength · {params.hiitStrengthRatio}% HIIT
-                </span>
-              </div>
-              <Slider
-                value={[params.hiitStrengthRatio]}
-                min={0} max={100} step={5}
-                onValueChange={([v]) => patchParams({ hiitStrengthRatio: v })}
-              />
-            </div>
-
-            {/* Boxing Volume */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-medium flex items-center gap-1.5">
-                  <Zap className="h-3.5 w-3.5 text-muted-foreground" />
-                  Boxing Volume
-                </span>
-                <span className="text-xs text-muted-foreground">
-                  {params.boxingVolume < 34 ? "Low" : params.boxingVolume < 67 ? "Medium" : "High"}
-                </span>
-              </div>
-              <Slider
-                value={[params.boxingVolume]}
-                min={0} max={100} step={10}
-                onValueChange={([v]) => patchParams({ boxingVolume: v })}
-              />
-            </div>
-
-            {/* Functional Training */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-medium flex items-center gap-1.5">
-                  <BarChart3 className="h-3.5 w-3.5 text-muted-foreground" />
-                  Functional Training
-                </span>
-                <span className="text-xs text-muted-foreground">
-                  {params.functionalTraining < 34 ? "Low" : params.functionalTraining < 67 ? "Medium" : "High"}
-                </span>
-              </div>
-              <Slider
-                value={[params.functionalTraining]}
-                min={0} max={100} step={10}
-                onValueChange={([v]) => patchParams({ functionalTraining: v })}
-              />
-            </div>
-          </div>
-
-          {/* Row 3: Target Score + Weekly Challenge inline */}
-          <div className="flex items-center gap-6">
-            <div className="flex-1 space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Min Score</span>
-                <span className="text-sm font-bold">{params.minScore}</span>
-              </div>
-              <Slider
-                value={[params.minScore]}
-                min={60} max={100} step={5}
-                onValueChange={([v]) => patchParams({ minScore: v })}
-              />
-            </div>
-            <div className="flex items-center gap-2 shrink-0">
-              <Switch
-                id="weekly-challenge"
-                checked={params.includeWeeklyChallenge}
-                onCheckedChange={(v) => patchParams({ includeWeeklyChallenge: v })}
-              />
-              <Label htmlFor="weekly-challenge" className="text-xs font-medium cursor-pointer whitespace-nowrap">
-                Weekly Challenge
-              </Label>
-            </div>
+          {/* Weekly Challenge toggle */}
+          <div className="flex items-center gap-2">
+            <Switch
+              id="weekly-challenge"
+              checked={params.includeWeeklyChallenge}
+              onCheckedChange={(v) => patchParams({ includeWeeklyChallenge: v })}
+            />
+            <Label htmlFor="weekly-challenge" className="text-xs font-medium cursor-pointer whitespace-nowrap">
+              Weekly Challenge
+            </Label>
           </div>
 
           {/* Generate + action buttons */}
@@ -801,7 +709,7 @@ export function WorkoutBuilder() {
               ) : (
                 <Sparkles data-icon="inline-start" />
               )}
-              {isWeekMode ? "Generate Training Week" : "Generate Workout"}
+              Generate Training Week
             </Button>
 
             {hasDrafts && (
@@ -858,14 +766,14 @@ export function WorkoutBuilder() {
       {!hasDrafts && !generate.isPending && (
         <div className="rounded-lg border-2 border-dashed border-border py-20 text-center text-muted-foreground">
           <Sparkles className="mx-auto mb-3 size-8 text-muted-foreground/50" />
-          <p className="text-sm">Configure your settings above and generate a{isWeekMode ? " training week" : " workout"} to get started.</p>
+          <p className="text-sm">Configure your settings above and generate a training week to get started.</p>
         </div>
       )}
 
       {generate.isPending && (
         <div className="rounded-lg border border-border py-16 text-center text-muted-foreground">
           <Loader2 className="mx-auto mb-3 size-8 animate-spin text-blue-500" />
-          <p className="text-sm">{isWeekMode ? "Generating 6-day training week..." : "Generating workout..."}</p>
+          <p className="text-sm">Generating 6-day training week...</p>
         </div>
       )}
 
