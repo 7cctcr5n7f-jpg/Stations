@@ -13,12 +13,20 @@ import { Separator } from "@/components/ui/separator";
 import { Loader2, Plus, Save, Trash2, ThumbsDown, CheckCircle2 } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import type { AlternativeExercisesConfig, AlternativeFocus } from "@/lib/workout-builder/types";
 
 const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 const HR_OPTIONS = [
   { value: "green", label: "Low (green)" },
   { value: "orange", label: "Medium (orange)" },
   { value: "red", label: "High (red)" },
+];
+const ALTERNATIVE_FOCUS_OPTIONS: AlternativeFocus[] = [
+  "Lower Body",
+  "Core",
+  "Functional Conditioning",
+  "Mobility",
+  "Low-Impact Options",
 ];
 
 // Small comma-separated list editor
@@ -39,7 +47,13 @@ interface ConfigData {
   templates: any[];
   roundConfigs: any[];
   equipmentLimits: { equipment: string; maxStations: number }[];
-  settings: { reuseWeeks: number; minScore: number; autoRegen: boolean; weeklyChallenge: any };
+  settings: {
+    reuseWeeks: number;
+    minScore: number;
+    autoRegen: boolean;
+    weeklyChallenge: Record<string, unknown>;
+    alternativeExercises: AlternativeExercisesConfig;
+  };
   rooms: { id: number; number: number; name: string; description: string | null }[];
 }
 
@@ -81,6 +95,14 @@ function SettingsCard({ settings, onSave }: { settings: ConfigData["settings"]; 
   const [reuseWeeks, setReuseWeeks] = useState(settings.reuseWeeks);
   const [minScore, setMinScore] = useState(settings.minScore);
   const [autoRegen, setAutoRegen] = useState(settings.autoRegen);
+  const [alternativeEnabled, setAlternativeEnabled] = useState(settings.alternativeExercises?.enabled ?? true);
+  const [alternativeMode, setAlternativeMode] = useState(settings.alternativeExercises?.mode ?? "Intelligent");
+  const [alternativeMaximum, setAlternativeMaximum] = useState(settings.alternativeExercises?.maximumPerWorkout ?? 2);
+  const [alternativeFocus, setAlternativeFocus] = useState<AlternativeFocus[]>(
+    settings.alternativeExercises?.preferredFocus?.length
+      ? settings.alternativeExercises.preferredFocus
+      : ["Lower Body", "Core"],
+  );
 
   return (
     <Card>
@@ -103,7 +125,69 @@ function SettingsCard({ settings, onSave }: { settings: ConfigData["settings"]; 
             <Label htmlFor="auto-regen">Auto-regenerate below min score</Label>
           </div>
         </div>
-        <Button onClick={() => onSave({ reuseWeeks, minScore, autoRegen, weeklyChallenge: settings.weeklyChallenge ?? {} })}>
+        <Separator />
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <Label className="text-sm font-medium">Optional Alternative Exercises</Label>
+              <p className="text-xs text-gray-500">Add optional alternatives only when they improve workout balance.</p>
+            </div>
+            <Switch checked={alternativeEnabled} onCheckedChange={setAlternativeEnabled} id="alt-enabled" />
+          </div>
+          <div className="grid gap-4 sm:grid-cols-3">
+            <div className="space-y-2">
+              <Label>Mode</Label>
+              <Select value={alternativeMode} onValueChange={(value) => setAlternativeMode(value as "Intelligent")}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Intelligent">Intelligent</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Maximum per workout</Label>
+              <Input
+                type="number"
+                min={0}
+                max={5}
+                value={alternativeMaximum}
+                onChange={(e) => setAlternativeMaximum(Math.max(0, Math.min(5, Number(e.target.value) || 0)))}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Preferred focus</Label>
+              <TokenList
+                value={alternativeFocus}
+                onChange={(items) =>
+                  setAlternativeFocus(
+                    items.filter((v): v is AlternativeFocus =>
+                      ALTERNATIVE_FOCUS_OPTIONS.includes(v as AlternativeFocus),
+                    ),
+                  )
+                }
+                placeholder={ALTERNATIVE_FOCUS_OPTIONS.join(", ")}
+              />
+            </div>
+          </div>
+        </div>
+        <Button
+          onClick={() =>
+            onSave({
+              reuseWeeks,
+              minScore,
+              autoRegen,
+              weeklyChallenge: {
+                ...(settings.weeklyChallenge ?? {}),
+                alternativeExercises: {
+                  enabled: alternativeEnabled,
+                  mode: alternativeMode,
+                  maximumPerWorkout: alternativeMaximum,
+                  preferredFocus: alternativeFocus,
+                },
+              },
+            })
+          }
+        >
           <Save className="mr-2 h-4 w-4" /> Save settings
         </Button>
       </CardContent>

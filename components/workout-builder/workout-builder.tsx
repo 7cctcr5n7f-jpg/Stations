@@ -85,6 +85,12 @@ import type {
 
 type HeartRate = "green" | "orange" | "red";
 
+type StationRole = "Warm-up" | "Strength" | "Hybrid" | "Boxing" | "HIIT Spike" | "Core" | "Recovery" | "Conditioning";
+
+type MovementPatternCategory =
+  | "horizontal_push" | "vertical_push" | "horizontal_pull" | "vertical_pull"
+  | "hinge" | "squat" | "bilateral" | "unilateral" | "plyo" | "boxing" | "core" | "other";
+
 interface RoundExercise {
   videoId: number;
   video: Video;
@@ -95,6 +101,8 @@ interface RoundExercise {
   warnings: string[];
   isBoxing: boolean;
   gloveCompatible: boolean;
+  movementPatterns: MovementPatternCategory[];
+  isAlternative?: boolean;
 }
 
 interface GeneratedRound {
@@ -109,12 +117,35 @@ interface GeneratedRound {
   score: number;
   reasons: string[];
   warnings: string[];
+  assignedRole: StationRole;
+  estimatedCalories: number;
+  movementPatterns: MovementPatternCategory[];
 }
 
 interface MuscleBreakdown {
   pushCount: number;
   pullCount: number;
   muscles: string[];
+}
+
+interface WeeklyValidationCategory {
+  score: number;
+  label: string;
+  notes: string[];
+}
+
+interface WeeklyValidationReport {
+  muscleAccuracy: WeeklyValidationCategory;
+  equipmentBalance: WeeklyValidationCategory;
+  stationCompatibility: WeeklyValidationCategory;
+  exerciseVariety: WeeklyValidationCategory;
+  heartRateDistribution: WeeklyValidationCategory;
+  boxingExperience: WeeklyValidationCategory;
+  movementPatternBalance: WeeklyValidationCategory;
+  recoveryBalance: WeeklyValidationCategory;
+  overall: number;
+  recommendations: string[];
+  passesThreshold: boolean;
 }
 
 interface WorkoutDraft {
@@ -126,6 +157,8 @@ interface WorkoutDraft {
   summary: string[];
   muscleBreakdown?: MuscleBreakdown;
   warnings: string[];
+  hrCurve: HeartRate[];
+  estimatedCalories: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -136,6 +169,17 @@ const HR_STYLE: Record<HeartRate, { label: string; dot: string; text: string }> 
   green:  { label: "Low",    dot: "bg-green-500",  text: "text-green-700"  },
   orange: { label: "Medium", dot: "bg-orange-500", text: "text-orange-700" },
   red:    { label: "High",   dot: "bg-red-500",    text: "text-red-700"    },
+};
+
+const ROLE_STYLE: Record<StationRole, { bg: string; text: string }> = {
+  "Warm-up":      { bg: "bg-yellow-50",  text: "text-yellow-700" },
+  "Strength":     { bg: "bg-blue-50",    text: "text-blue-700" },
+  "Hybrid":       { bg: "bg-purple-50",  text: "text-purple-700" },
+  "Boxing":       { bg: "bg-red-50",     text: "text-red-700" },
+  "HIIT Spike":   { bg: "bg-orange-50",  text: "text-orange-700" },
+  "Core":         { bg: "bg-green-50",   text: "text-green-700" },
+  "Recovery":     { bg: "bg-teal-50",    text: "text-teal-700" },
+  "Conditioning": { bg: "bg-pink-50",    text: "text-pink-700" },
 };
 
 const WEEKDAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -375,6 +419,7 @@ export function WorkoutBuilder() {
   const [selectedPublishDays, setSelectedPublishDays] = useState<Set<number>>(new Set());
   const [polishingIdx, setPolishingIdx] = useState<number | null>(null);
   const [rejectTarget, setRejectTarget] = useState<RejectTarget | null>(null);
+  const [validationReport, setValidationReport] = useState<WeeklyValidationReport | null>(null);
 
   const isWeekMode = params.mode === "week";
   const hasDrafts = weekDrafts.length > 0;
@@ -385,12 +430,13 @@ export function WorkoutBuilder() {
     mutationFn: async () => {
       const lockedRounds = isWeekMode ? [] : (weekDrafts[0]?.rounds.filter((r) => r.locked) ?? []);
       const res = await apiRequest("POST", "/api/workout-builder/generate", { params, lockedRounds });
-      return await res.json() as { mode: string; day?: WorkoutDraft; days?: WorkoutDraft[] };
+      return await res.json() as { mode: string; day?: WorkoutDraft; days?: WorkoutDraft[]; validation?: WeeklyValidationReport };
     },
     onSuccess: async (result) => {
       if (result.mode === "week" && result.days) {
         setWeekDrafts(result.days);
         setActiveDayIdx(0);
+        setValidationReport(result.validation ?? null);
         // Polish each day sequentially in background
         for (let i = 0; i < result.days.length; i++) {
           setPolishingIdx(i);
@@ -479,7 +525,7 @@ export function WorkoutBuilder() {
     });
   }
 
-  function makeManualExercise(video: Video): RoundExercise {
+  function makeManualExercise(video: Video, options?: { isAlternative?: boolean }): RoundExercise {
     return {
       videoId: video.id,
       video,
@@ -492,6 +538,7 @@ export function WorkoutBuilder() {
       warnings: [],
       isBoxing: false,
       gloveCompatible: true,
+      isAlternative: options?.isAlternative ?? false,
     };
   }
 
@@ -508,7 +555,9 @@ export function WorkoutBuilder() {
       rounds: d.rounds.map((r) => {
         if (r.roomId !== roomId) return r;
         const exercises = [...r.exercises];
-        const ex = makeManualExercise(video);
+        const ex = makeManualExercise(video, {
+          isAlternative: index < exercises.length ? Boolean(exercises[index]?.isAlternative) : false,
+        });
         if (index < exercises.length) exercises[index] = ex;
         else exercises.push(ex);
         return { ...r, exercises, score: Math.round(exercises.reduce((s, e) => s + e.score, 0) / exercises.length) };
@@ -880,6 +929,56 @@ export function WorkoutBuilder() {
         </>
       )}
 
+      {/* Weekly Validation Report */}
+      {validationReport && isWeekMode && hasDrafts && (
+        <Card className="mt-4">
+          <CardHeader className="pb-3">
+           <div className="flex items-center justify-between">
+             <CardTitle className="text-base">Week Quality Report</CardTitle>
+             <div className="flex items-center gap-2">
+               <span className={cn("text-2xl font-bold", scoreColor(validationReport.overall))}>
+                 {validationReport.overall}%
+               </span>
+               {validationReport.passesThreshold ? (
+                 <Badge className="bg-green-100 text-green-700 border-green-200">Ready</Badge>
+               ) : (
+                 <Badge className="bg-orange-100 text-orange-700 border-orange-200">Needs Work</Badge>
+               )}
+             </div>
+           </div>
+          </CardHeader>
+          <CardContent className="space-y-3">
+           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+             {([
+               validationReport.muscleAccuracy,
+               validationReport.equipmentBalance,
+               validationReport.stationCompatibility,
+               validationReport.exerciseVariety,
+               validationReport.heartRateDistribution,
+               validationReport.boxingExperience,
+               validationReport.movementPatternBalance,
+               validationReport.recoveryBalance,
+             ] as WeeklyValidationCategory[]).map((cat) => (
+               <div key={cat.label} className="rounded-md border p-2 text-center">
+                 <p className={cn("text-lg font-bold", scoreColor(cat.score))}>{cat.score}%</p>
+                 <p className="text-[10px] text-muted-foreground leading-tight">{cat.label}</p>
+               </div>
+             ))}
+           </div>
+           {validationReport.recommendations.length > 0 && (
+             <div className="rounded-md bg-muted/50 p-3">
+               <p className="text-xs font-medium text-muted-foreground mb-1">Recommendations</p>
+               <ul className="space-y-1 text-xs text-foreground">
+                 {validationReport.recommendations.map((r, i) => (
+                   <li key={i}>• {r}</li>
+                 ))}
+               </ul>
+             </div>
+           )}
+          </CardContent>
+        </Card>
+      )}
+
       {/* ================================================================
           DIALOGS
       ================================================================ */}
@@ -1063,6 +1162,35 @@ function DayWorkout({
             </div>
           )}
 
+          {/* HR Curve + Calories row */}
+          {draft.hrCurve && draft.hrCurve.length > 0 && (
+            <div className="space-y-2 rounded-md border p-3">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Heart Rate Curve</p>
+                <span className="text-xs font-semibold text-muted-foreground">
+                  ~{draft.estimatedCalories ?? 0} kcal
+                </span>
+              </div>
+              <div className="flex items-end gap-1">
+                {draft.hrCurve.map((hr, i) => {
+                  const height = hr === "red" ? "h-8" : hr === "orange" ? "h-5" : "h-3";
+                  const bg = hr === "red" ? "bg-red-400" : hr === "orange" ? "bg-orange-400" : "bg-green-400";
+                  return (
+                    <div key={i} className="flex flex-1 flex-col items-center gap-0.5">
+                      <div className={cn("w-full rounded-sm", height, bg)} />
+                      <span className="text-[9px] text-muted-foreground">{i + 1}</span>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="flex items-center gap-3 text-[10px] text-muted-foreground">
+                <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-red-400" />HIIT Spike</span>
+                <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-orange-400" />Medium</span>
+                <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-green-400" />Recovery</span>
+              </div>
+            </div>
+          )}
+
           {/* Push / Pull / Muscles row */}
           {draft.muscleBreakdown && (
             <div className="space-y-3">
@@ -1155,7 +1283,12 @@ function DayWorkout({
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="font-medium">{r.roomName}</span>
-                    {r.isBoxingRound && (
+                    {r.assignedRole && (
+                      <Badge variant="secondary" className={cn("gap-1", ROLE_STYLE[r.assignedRole]?.bg ?? "", ROLE_STYLE[r.assignedRole]?.text ?? "")}>
+                        {r.assignedRole}
+                      </Badge>
+                    )}
+                    {r.isBoxingRound && !r.assignedRole?.includes("Boxing") && (
                       <Badge variant="secondary" className="gap-1 bg-red-50 text-red-700">
                         <Hand className="h-3 w-3" />
                         Boxing{r.glovesOn ? " · gloves on" : ""}
@@ -1169,6 +1302,9 @@ function DayWorkout({
                     <Badge variant="outline">
                       {r.exercises.length === 1 ? "1 exercise" : "2 exercises"}
                     </Badge>
+                    {r.estimatedCalories > 0 && (
+                      <span className="text-[10px] text-muted-foreground">~{r.estimatedCalories}kcal</span>
+                    )}
                   </div>
                   {r.reasons.length > 0 && (
                     <p className="mt-1 text-xs text-muted-foreground">{r.reasons[0]}</p>
@@ -1217,11 +1353,23 @@ function DayWorkout({
                       e.dataTransfer.setData('exerciseMove', JSON.stringify({ sourceRoomId: r.roomId, exerciseIndex: idx }));
                     }}
                   >
-                    <span className="mt-1 text-xs font-medium text-muted-foreground">{idx + 1}</span>
+                    <span className="mt-1 text-xs font-medium text-muted-foreground">
+                      {ex.isAlternative ? "ALT" : idx + 1}
+                    </span>
                     <ImageThumbnail video={ex.video} size="small" showPlayButton={false} />
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
                         <p className="truncate text-sm font-medium">{ex.video.title}</p>
+                        {ex.isAlternative && (
+                          <Badge variant="secondary" className="h-5 bg-blue-50 text-blue-700 border border-blue-200">
+                            Optional alternative
+                          </Badge>
+                        )}
+                        {!ex.isAlternative && r.exercises.some((row) => row.isAlternative) && (
+                          <Badge variant="outline" className="h-5 text-xs">
+                            Main
+                          </Badge>
+                        )}
                         {ex.heartRate && (
                           <span className={cn("inline-flex items-center gap-1 text-xs", HR_STYLE[ex.heartRate].text)}>
                             <span className={cn("h-2 w-2 rounded-full", HR_STYLE[ex.heartRate].dot)} />
@@ -1236,6 +1384,9 @@ function DayWorkout({
                         <span>
                           {ex.video.bodyPart} &middot; {ex.video.equipment}
                         </span>
+                        {ex.isAlternative && (
+                          <span className="text-blue-700">Use only when a member needs an optional variation.</span>
+                        )}
                         {ex.reps && (
                           <Badge variant="outline" className="h-4 px-1.5 text-xs font-semibold">
                             {ex.reps}

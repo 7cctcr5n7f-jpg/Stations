@@ -90,6 +90,7 @@ export async function POST(request: NextRequest) {
             warnings: [],
             isBoxing: false,
             gloveCompatible: true,
+            movementPatterns: [],
           } as RoundExercise
         })
         .filter(Boolean) as RoundExercise[]
@@ -106,6 +107,9 @@ export async function POST(request: NextRequest) {
         score: 100,
         reasons: [],
         warnings: [],
+        assignedRole: "Conditioning",
+        estimatedCalories: 0,
+        movementPatterns: [],
       }
     }
 
@@ -128,15 +132,28 @@ export async function POST(request: NextRequest) {
     for (const r of draft.rounds) {
       if (lockedByRoomId[r.roomId]) continue // preserve existing
       if (!r.exercises || r.exercises.length === 0) continue
+      const mainExercises = r.exercises.filter((ex) => !ex.isAlternative)
+      const alternativeExercises = r.exercises.filter((ex) => ex.isAlternative)
+      const exercisesToPublish = mainExercises.length ? mainExercises : r.exercises
+      const displayTitleForPrimary =
+        alternativeExercises.length > 0
+          ? `${exercisesToPublish[0].video.title} (Alt: ${alternativeExercises.map((ex) => ex.video.title).join(" / ")})`
+          : null
+      const displayEquipmentForPrimary =
+        alternativeExercises.length > 0
+          ? `${exercisesToPublish[0].video.equipment}${alternativeExercises.length ? ` | Alt: ${alternativeExercises.map((ex) => ex.video.equipment).join(" / ")}` : ""}`
+          : null
       let position = 1
-      for (const ex of r.exercises) {
+      for (const [exerciseIndex, ex] of exercisesToPublish.entries()) {
         await sql`
           INSERT INTO schedules
             (room_id, video_id, schedule_date, reps, position, display_title, display_equipment,
              zoom_level, vertical_position, sets, rest_time, is_active, heart_rate_zone)
           VALUES
             (${r.roomId}, ${ex.videoId}, ${date}, ${String(ex.reps ?? "0")}, ${position},
-             ${null}, ${null}, ${"1"}, ${"0"}, ${1}, ${0}, ${true}, ${ex.heartRate ?? null})
+             ${exerciseIndex === 0 ? displayTitleForPrimary : null},
+             ${exerciseIndex === 0 ? displayEquipmentForPrimary : null},
+             ${"1"}, ${"0"}, ${1}, ${0}, ${true}, ${ex.heartRate ?? null})
         `
         created.push(ex.videoId)
         position++
