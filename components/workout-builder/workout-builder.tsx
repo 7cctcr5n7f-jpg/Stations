@@ -391,6 +391,7 @@ export function WorkoutBuilder() {
   const [params, setParams] = useState<BuilderParams>({
     mode: "week",
     startDate: monday,
+    selectedDays: [0, 1, 2, 3, 4, 5],
     dropsetWeek: false,
     focus: "Balanced",
     hiitStrengthRatio: 60,
@@ -417,7 +418,7 @@ export function WorkoutBuilder() {
   const [rejectTarget, setRejectTarget] = useState<RejectTarget | null>(null);
   const [validationReport, setValidationReport] = useState<WeeklyValidationReport | null>(null);
 
-  const isWeekMode = params.mode === "week";
+  const isWeekMode = params.mode === "week" || params.mode === "custom";
   const hasDrafts = weekDrafts.length > 0;
 
   // ---- mutations ----
@@ -425,11 +426,22 @@ export function WorkoutBuilder() {
   const generate = useMutation({
     mutationFn: async () => {
       const lockedRounds = isWeekMode ? [] : (weekDrafts[0]?.rounds.filter((r) => r.locked) ?? []);
-      const res = await apiRequest("POST", "/api/workout-builder/generate", { params, lockedRounds });
+      const effectiveParams = { ...params };
+      // If all 6 days selected, use "week" mode for full mirror-pair logic
+      if (params.selectedDays.length === 6) effectiveParams.mode = "week";
+      else if (params.selectedDays.length > 1) effectiveParams.mode = "custom";
+      else if (params.selectedDays.length === 1) {
+        // Single day: compute the actual date from startDate + offset
+        const base = new Date(params.startDate + "T12:00:00");
+        base.setDate(base.getDate() + params.selectedDays[0]);
+        effectiveParams.mode = "single";
+        effectiveParams.startDate = base.toISOString().split("T")[0];
+      }
+      const res = await apiRequest("POST", "/api/workout-builder/generate", { params: effectiveParams, lockedRounds });
       return await res.json() as { mode: string; day?: WorkoutDraft; days?: WorkoutDraft[]; validation?: WeeklyValidationReport };
     },
     onSuccess: async (result) => {
-      if (result.mode === "week" && result.days) {
+      if ((result.mode === "week" || result.mode === "custom") && result.days) {
         setWeekDrafts(result.days);
         setActiveDayIdx(0);
         setValidationReport(result.validation ?? null);
@@ -628,14 +640,18 @@ export function WorkoutBuilder() {
           BUILDER CONTROLS CARD
       ================================================================ */}
       <div className="rounded-lg border bg-card p-4 space-y-3">
-        {/* Row 1: All controls inline */}
+        {/* Row 1: Week selector + Focus + toggles */}
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
           <div className="flex items-center gap-2">
-            <Label className="text-xs text-muted-foreground whitespace-nowrap">Week</Label>
+            <Label className="text-xs text-muted-foreground whitespace-nowrap">Week of</Label>
             <Input
               type="date"
               value={params.startDate}
-              onChange={(e) => patchParams({ startDate: e.target.value })}
+              onChange={(e) => {
+                const d = new Date(e.target.value + "T12:00:00");
+                const mon = getMondayOf(d);
+                patchParams({ startDate: toIso(mon) });
+              }}
               className="h-8 w-[140px] text-sm"
             />
           </div>
@@ -670,18 +686,50 @@ export function WorkoutBuilder() {
             />
             <Label htmlFor="weekly-challenge" className="text-xs cursor-pointer whitespace-nowrap">CHOW</Label>
           </div>
-          {params.startDate && (
-            <span className="text-[11px] text-muted-foreground ml-auto">
-              {params.startDate} — {toIso(new Date(new Date(params.startDate + "T12:00:00").setDate(new Date(params.startDate + "T12:00:00").getDate() + 5)))}
-            </span>
-          )}
         </div>
+
+        {/* Row 2: Day selection chips */}
+        {params.startDate && (
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-muted-foreground">Days:</span>
+            {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((label, idx) => {
+              const isSelected = params.selectedDays.includes(idx);
+              const dayDate = new Date(new Date(params.startDate + "T12:00:00").getTime() + idx * 86400000);
+              const dateStr = dayDate.toISOString().split("T")[0];
+              return (
+                <button
+                  key={idx}
+                  onClick={() => {
+                    const next = isSelected
+                      ? params.selectedDays.filter((d) => d !== idx)
+                      : [...params.selectedDays, idx].sort((a, b) => a - b);
+                    patchParams({ selectedDays: next.length > 0 ? next : [idx] });
+                  }}
+                  className={`inline-flex flex-col items-center rounded-md border px-2.5 py-1 text-xs font-medium transition-colors ${
+                    isSelected
+                      ? "bg-blue-600 text-white border-blue-600"
+                      : "bg-muted/40 text-muted-foreground border-border hover:bg-muted"
+                  }`}
+                >
+                  <span>{label}</span>
+                  <span className="text-[10px] opacity-75">{dateStr.slice(5)}</span>
+                </button>
+              );
+            })}
+            <button
+              onClick={() => patchParams({ selectedDays: [0, 1, 2, 3, 4, 5] })}
+              className="text-[11px] text-blue-500 hover:text-blue-600 ml-1"
+            >
+              All
+            </button>
+          </div>
+        )}
 
         {/* Row 2: Action buttons */}
         <div className="flex flex-wrap items-center gap-2">
           <Button
             onClick={() => generate.mutate()}
-            disabled={generate.isPending}
+            disabled={generate.isPending || params.selectedDays.length === 0}
             size="sm"
             className="bg-blue-600 hover:bg-blue-700"
           >
@@ -690,7 +738,11 @@ export function WorkoutBuilder() {
             ) : (
               <Sparkles data-icon="inline-start" />
             )}
-            Generate Training Week
+            {params.selectedDays.length === 6
+              ? "Generate Full Week"
+              : params.selectedDays.length === 1
+              ? `Generate ${["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][params.selectedDays[0]]}`
+              : `Generate ${params.selectedDays.length} Days`}
           </Button>
 
           {hasDrafts && (
@@ -745,14 +797,14 @@ export function WorkoutBuilder() {
       {!hasDrafts && !generate.isPending && (
         <div className="rounded-lg border-2 border-dashed border-border py-20 text-center text-muted-foreground">
           <Sparkles className="mx-auto mb-3 size-8 text-muted-foreground/50" />
-          <p className="text-sm">Configure your settings above and generate a training week to get started.</p>
+          <p className="text-sm">Select the days you want and click Generate to build your programme.</p>
         </div>
       )}
 
       {generate.isPending && (
         <div className="rounded-lg border border-border py-16 text-center text-muted-foreground">
           <Loader2 className="mx-auto mb-3 size-8 animate-spin text-blue-500" />
-          <p className="text-sm">Generating 6-day training week...</p>
+          <p className="text-sm">Generating {params.selectedDays.length === 1 ? "workout" : `${params.selectedDays.length}-day programme`}...</p>
         </div>
       )}
 
