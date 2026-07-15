@@ -24,16 +24,18 @@ interface VideoPlayerProps {
   displayMode?: 'single' | 'split';
   videoCount?: number;
   isFullscreen?: boolean;
+  /** Milliseconds to wait before starting the video load (stagger concurrent loads) */
+  loadDelay?: number;
 }
 
-export default function VideoPlayer({ assignment, displayMode = 'single', videoCount = 1, isFullscreen = false }: VideoPlayerProps) {
+export default function VideoPlayer({ assignment, displayMode = 'single', videoCount = 1, isFullscreen = false, loadDelay = 0 }: VideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [videoLoaded, setVideoLoaded] = useState(false);
   const [videoError, setVideoError] = useState(false);
   const [retryAttempted, setRetryAttempted] = useState(false);
   const zoom = Math.max(parseFloat(assignment.zoomLevel || "1"), 1.02); // min 1.02 clips video edge codec artifacts
   const verticalPos = parseFloat(assignment.verticalPosition || "0");
-  const [videoSrc, setVideoSrc] = useState(assignment.video.url);
+  const [videoSrc, setVideoSrc] = useState("");
   const [sourceVersion, setSourceVersion] = useState(0);
   const [isCached, setIsCached] = useState(false);
 
@@ -42,25 +44,29 @@ export default function VideoPlayer({ assignment, displayMode = 'single', videoC
     return `${url}${separator}retry=${Date.now()}`;
   };
 
-  // Initialize video with direct URL loading (no caching for stability)
+  // Initialize video with optional stagger delay to avoid thundering herd
   useEffect(() => {
-    // Validate URL exists and is not empty
     const videoUrl = assignment.video.url?.trim();
     if (!videoUrl) {
       console.warn(`[v0] Video ${assignment.video.id} has no URL - marking as error`);
       setVideoError(true);
       return;
     }
-    
-    // Use the R2 public URL directly. Cloudflare's CDN serves range requests
-    // natively; no Vercel proxy hop needed.
-    setVideoSrc(videoUrl);
+
     setSourceVersion(0);
     setVideoLoaded(false);
     setVideoError(false);
     setRetryAttempted(false);
     setIsCached(false);
-   }, [assignment.video.id, assignment.video.url]);
+
+    if (loadDelay > 0) {
+      // Stagger: wait before setting src so the browser doesn't open all connections at once
+      const timer = setTimeout(() => setVideoSrc(videoUrl), loadDelay);
+      return () => clearTimeout(timer);
+    }
+
+    setVideoSrc(videoUrl);
+  }, [assignment.video.id, assignment.video.url, loadDelay]);
 
   useEffect(() => {
     if (!videoRef.current || videoLoaded || videoError) return;
@@ -200,37 +206,39 @@ export default function VideoPlayer({ assignment, displayMode = 'single', videoC
   
   return (
     <div className="relative bg-white w-full h-full overflow-hidden">
-      <video
-        key={`${assignment.id}-${sourceVersion}`}
-        ref={videoRef}
-        src={sourceVersion === 0 ? videoSrc : withRetryBuster(videoSrc)}
-        className="w-full"
-        tabIndex={-1}
-        style={{
-          height: containerHeight,
-          objectFit: 'contain',
-          objectPosition: 'center',
-          transform: `scale(${zoom}) translateY(${verticalPos}px)`,
-          transformOrigin: 'center',
-          backgroundColor: 'white',
-          outline: 'none',
-          border: 'none',
-          display: videoLoaded ? 'block' : 'none',
-        }}
-        loop
-        muted
-        playsInline
-        // @ts-expect-error webkit-playsinline needed for older WebKit TV box browsers
-        webkit-playsinline=""
-        autoPlay
-        preload="auto"
-        controls={false}
-        disablePictureInPicture
-        crossOrigin={undefined}
-        onCanPlay={handlePlayable}
-        onLoadedData={handlePlayable}
-        onError={handleVideoError}
-      />
+      {videoSrc && (
+        <video
+          key={`${assignment.id}-${sourceVersion}`}
+          ref={videoRef}
+          src={sourceVersion === 0 ? videoSrc : withRetryBuster(videoSrc)}
+          className="w-full"
+          tabIndex={-1}
+          style={{
+            height: containerHeight,
+            objectFit: 'contain',
+            objectPosition: 'center',
+            transform: `scale(${zoom}) translateY(${verticalPos}px)`,
+            transformOrigin: 'center',
+            backgroundColor: 'white',
+            outline: 'none',
+            border: 'none',
+            display: videoLoaded ? 'block' : 'none',
+          }}
+          loop
+          muted
+          playsInline
+          // @ts-expect-error webkit-playsinline needed for older WebKit TV box browsers
+          webkit-playsinline=""
+          autoPlay
+          preload="auto"
+          controls={false}
+          disablePictureInPicture
+          crossOrigin={undefined}
+          onCanPlay={handlePlayable}
+          onLoadedData={handlePlayable}
+          onError={handleVideoError}
+        />
+      )}
       
       {/* Intensity Badge - Top Left */}
       {intensityStyles && (

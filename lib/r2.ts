@@ -12,7 +12,7 @@
  *   R2_PUBLIC_URL        — Public bucket URL (e.g. "https://pub-xxx.r2.dev" or custom domain)
  */
 
-import { DeleteObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3"
+import { CopyObjectCommand, DeleteObjectCommand, GetObjectCommand, ListObjectsV2Command, PutObjectCommand, S3Client } from "@aws-sdk/client-s3"
 
 function getR2Client(): S3Client {
   const accountId = process.env.R2_ACCOUNT_ID
@@ -43,7 +43,8 @@ function getR2Client(): S3Client {
 export async function uploadToR2(
   key: string,
   body: Buffer | Uint8Array | ReadableStream | Blob,
-  contentType: string
+  contentType: string,
+  options?: { cacheControl?: string }
 ): Promise<string> {
   const bucket = process.env.R2_BUCKET_NAME
   const publicUrl = process.env.R2_PUBLIC_URL?.replace(/\/$/, "")
@@ -59,6 +60,7 @@ export async function uploadToR2(
       Key: key,
       Body: body as any,
       ContentType: contentType,
+      CacheControl: options?.cacheControl ?? "public, max-age=31536000, immutable",
     })
   )
 
@@ -95,4 +97,67 @@ export async function deleteFromR2ByPublicUrl(url: string | null | undefined): P
       Key: key,
     })
   )
+}
+
+/**
+ * Download an object from R2 and return its content as a Buffer.
+ */
+export async function downloadFromR2(key: string): Promise<Buffer> {
+  const { bucket } = getBucketAndPublicUrl()
+  const client = getR2Client()
+  const resp = await client.send(new GetObjectCommand({ Bucket: bucket, Key: key }))
+  const chunks: Uint8Array[] = []
+  // @ts-expect-error Body is a readable stream
+  for await (const chunk of resp.Body) chunks.push(chunk)
+  return Buffer.concat(chunks)
+}
+
+/**
+ * Re-upload an existing key with updated metadata (CacheControl, ContentType)
+ * by using copy-object with MetadataDirective: REPLACE.
+ */
+export async function updateR2Metadata(
+  key: string,
+  contentType: string,
+  cacheControl: string,
+): Promise<void> {
+  const { bucket } = getBucketAndPublicUrl()
+  const client = getR2Client()
+  await client.send(
+    new CopyObjectCommand({
+      Bucket: bucket,
+      Key: key,
+      CopySource: `${bucket}/${key}`,
+      ContentType: contentType,
+      CacheControl: cacheControl,
+      MetadataDirective: "REPLACE",
+    })
+  )
+}
+
+/**
+ * List all object keys in the bucket with an optional prefix.
+ */
+export async function listR2Keys(prefix?: string): Promise<string[]> {
+  const { bucket } = getBucketAndPublicUrl()
+  const client = getR2Client()
+  const keys: string[] = []
+  let continuationToken: string | undefined
+
+  do {
+    const resp = await client.send(
+      new ListObjectsV2Command({
+        Bucket: bucket,
+        Prefix: prefix,
+        ContinuationToken: continuationToken,
+        MaxKeys: 1000,
+      })
+    )
+    for (const obj of resp.Contents ?? []) {
+      if (obj.Key) keys.push(obj.Key)
+    }
+    continuationToken = resp.IsTruncated ? resp.NextContinuationToken : undefined
+  } while (continuationToken)
+
+  return keys
 }
