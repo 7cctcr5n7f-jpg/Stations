@@ -65,8 +65,16 @@ export default function VideoPlayer({ assignment, displayMode = 'single', videoC
   useEffect(() => {
     if (!videoRef.current || videoLoaded || videoError) return;
 
-    // Self-heal stalled loads: retry exactly once, then fail gracefully.
-    // 20s timeout accommodates slower gym WiFi and tablet connections.
+    // When many videos load simultaneously (Live View: 20+), the browser
+    // queues them (≈6 concurrent per hostname). Use a generous timeout
+    // that scales with the number of sibling video elements so later ones
+    // don't time out while waiting in the queue.
+    const peerCount = document.querySelectorAll("video").length;
+    const baseTimeout = 25000;
+    // Add 3s per concurrent video beyond the first 4 (browser's connection limit)
+    const extraMs = Math.max(0, peerCount - 4) * 3000;
+    const timeout = baseTimeout + Math.min(extraMs, 60000); // cap at 85s total
+
     const loadTimeout = setTimeout(() => {
       if (videoLoaded || videoError) return;
 
@@ -76,9 +84,17 @@ export default function VideoPlayer({ assignment, displayMode = 'single', videoC
         setVideoError(false);
         setSourceVersion((v) => v + 1);
       } else {
-        setVideoError(true);
+        // Before giving up, check if the video actually has data
+        const v = videoRef.current;
+        if (v && v.readyState >= 2) {
+          // Video has enough data — the canplay event might have been missed
+          setVideoLoaded(true);
+          v.play().catch(() => setAutoplayBlocked(true));
+        } else {
+          setVideoError(true);
+        }
       }
-    }, 20000);
+    }, timeout);
 
     return () => {
       clearTimeout(loadTimeout);
@@ -129,11 +145,20 @@ export default function VideoPlayer({ assignment, displayMode = 'single', videoC
   };
 
   const handleVideoError = () => {
+    // Network errors can be transient; give more retries before failing
     if (!retryAttempted) {
       setRetryAttempted(true);
       setVideoLoaded(false);
       setVideoError(false);
       setSourceVersion((v) => v + 1);
+      return;
+    }
+
+    // Second failure — check if the video actually has usable data despite the error
+    const v = videoRef.current;
+    if (v && v.readyState >= 2) {
+      setVideoLoaded(true);
+      v.play().catch(() => setAutoplayBlocked(true));
       return;
     }
 
@@ -145,6 +170,7 @@ export default function VideoPlayer({ assignment, displayMode = 'single', videoC
     setVideoLoaded(false);
     setVideoError(false);
     setRetryAttempted(false);
+    setAutoplayBlocked(false);
     setSourceVersion((v) => v + 1);
   };
 
