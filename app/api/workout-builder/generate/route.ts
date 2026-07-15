@@ -121,23 +121,56 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ mode: "single", day: draft })
     }
 
-    // ---- TRAINING WEEK (Mon–Sat) -------------------------------------------
-    const dates = weekDates(params.startDate)
+    // ---- TRAINING WEEK or CUSTOM DAYS -------------------------------------------
+    const allDates = weekDates(params.startDate)
+    // Determine which day indices to generate (0=Mon, 1=Tue ... 5=Sat)
+    const selectedIndices = (params.mode === "custom" && Array.isArray(params.selectedDays) && params.selectedDays.length > 0)
+      ? params.selectedDays.filter((i) => i >= 0 && i <= 5).sort((a, b) => a - b)
+      : [0, 1, 2, 3, 4, 5] // default: full week
+
     const allTemplates = await getAllWeeklyTemplates()
     const templateByWeekday = new Map(allTemplates.map((t) => [t.weekday, t]))
+
+    // Load existing published schedules for this week (to consider in exercise history)
+    const existingWeekSchedules = await sql`
+      SELECT s.video_id, s.schedule_date
+      FROM schedules s
+      WHERE s.schedule_date >= ${params.startDate}
+        AND s.schedule_date < ${allDates[5] ? allDates[5] + "T23:59:59" : params.startDate}
+        AND s.video_id IS NOT NULL
+    `
+    // Build map of existing scheduled video IDs per day index
+    const existingVideosByDayIdx: Map<number, Set<number>> = new Map()
+    for (const row of existingWeekSchedules) {
+      const dateStr = typeof row.schedule_date === "string" ? row.schedule_date.split("T")[0] : new Date(row.schedule_date).toISOString().split("T")[0]
+      const idx = allDates.indexOf(dateStr)
+      if (idx >= 0 && !selectedIndices.includes(idx)) {
+        if (!existingVideosByDayIdx.has(idx)) existingVideosByDayIdx.set(idx, new Set())
+        existingVideosByDayIdx.get(idx)!.add(row.video_id)
+      }
+    }
 
     const days = []
     const dayTemplates: (WeeklyTemplate | null)[] = []
     // Track used video IDs across the whole week for better rotation
     const weekUsedVideoIds = new Set<number>()
+    // Pre-populate with existing (non-selected) days' videos
+    for (const [, vids] of existingVideosByDayIdx) {
+      for (const id of vids) weekUsedVideoIds.add(id)
+    }
 
     // Mirror pairs: Mon(idx 0) ↔ Thu(idx 3), Tue(idx 1) ↔ Fri(idx 4), Wed(idx 2) ↔ Sat(idx 5)
     // We store video IDs and movement patterns used on each day so the mirror day can differentiate.
-    const videosByDayIndex: number[][] = []
-    const patternsByDayIndex: MovementPatternCategory[][] = []
+    const videosByDayIndex: (number[] | undefined)[] = new Array(6).fill(undefined)
+    const patternsByDayIndex: (MovementPatternCategory[] | undefined)[] = new Array(6).fill(undefined)
 
-    for (let dayIndex = 0; dayIndex < dates.length; dayIndex++) {
-      const date = dates[dayIndex]
+    // Pre-fill existing days for mirror pair awareness
+    for (const [idx, vids] of existingVideosByDayIdx) {
+      videosByDayIndex[idx] = [...vids]
+    }
+
+    for (const dayIndex of selectedIndices) {
+      const date = allDates[dayIndex]
       const weekday = new Date(date + "T12:00:00").getDay()
       const template = templateByWeekday.get(weekday) ?? null
       dayTemplates.push(template)
@@ -151,14 +184,14 @@ export async function POST(request: NextRequest) {
       }
 
       // Mirror day exclusion: mark the counterpart day's videos as "used today"
-      const mirrorIdx = dayIndex - 3 // Thu→Mon, Fri→Tue, Sat→Wed
-      const mirrorVideos = mirrorIdx >= 0 ? (videosByDayIndex[mirrorIdx] ?? []) : []
+      const mirrorIdx = dayIndex >= 3 ? dayIndex - 3 : dayIndex + 3
+      const mirrorVideos = videosByDayIndex[mirrorIdx] ?? []
       for (const id of mirrorVideos) {
         lastScheduledWithWeek[id] = date
       }
 
       // Pass mirror day movement patterns for variation enforcement
-      const mirrorDayMovementPatterns = mirrorIdx >= 0 ? (patternsByDayIndex[mirrorIdx] ?? []) : undefined
+      const mirrorDayMovementPatterns = videosByDayIndex[mirrorIdx] ? (patternsByDayIndex[mirrorIdx] ?? undefined) : undefined
 
       const dayDraft = generateWorkout({
         date,
@@ -197,7 +230,7 @@ export async function POST(request: NextRequest) {
     // Produce weekly validation report
     const validation = validateWeek(days, dayTemplates)
 
-    return NextResponse.json({ mode: "week", days, validation })
+    return NextResponse.json({ mode: params.mode === "custom" ? "custom" : "week", days, validation, selectedIndices })
   } catch (error) {
     console.error("[v0] Failed to generate workout:", error)
     return NextResponse.json({ message: "Failed to generate workout", detail: String(error) }, { status: 500 })

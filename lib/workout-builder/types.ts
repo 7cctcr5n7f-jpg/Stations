@@ -162,7 +162,7 @@ export interface WorkoutDraft {
 
 // ---- Builder session parameters (chosen in the UI per-generation) ----------
 
-export type GenerationMode = "single" | "week"
+export type GenerationMode = "single" | "week" | "custom"
 
 export type WorkoutFocus =
   | "Balanced"
@@ -174,8 +174,10 @@ export type WorkoutFocus =
  *  These layer on top of (and never replace) the permanent BuilderConfig rules. */
 export interface BuilderParams {
   mode: GenerationMode
-  /** Start date: yyyy-mm-dd. For single = target day; for week = Monday of the week. */
+  /** Start date: yyyy-mm-dd. For single = target day; for week/custom = Monday of the week. */
   startDate: string
+  /** Which days to generate (0=Mon through 5=Sat). Used by "custom" mode. */
+  selectedDays: number[]
   /** When true, generate a single exercise per room for a dropset week. */
   dropsetWeek: boolean
   focus: WorkoutFocus
@@ -216,6 +218,7 @@ export const DEFAULT_ALTERNATIVE_EXERCISES_CONFIG: AlternativeExercisesConfig = 
 export const DEFAULT_BUILDER_PARAMS: BuilderParams = {
   mode: "week",
   startDate: "",
+  selectedDays: [0, 1, 2, 3, 4, 5],
   dropsetWeek: false,
   focus: "Balanced" as WorkoutFocus,
   hiitStrengthRatio: 60,

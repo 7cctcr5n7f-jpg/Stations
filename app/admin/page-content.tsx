@@ -71,10 +71,11 @@ function getMondayIso(date: string): string {
 }
 
 // Mobile-only canvas: measures its own width and scales the 1920×1080 canvas to fit exactly.
-const MobileRoomCanvas = ({ videoCount, previewAssignments, getGridClasses }: {
+const MobileRoomCanvas = ({ videoCount, previewAssignments, getGridClasses, loadDelay = 0 }: {
   videoCount: number;
   previewAssignments: any[];
   getGridClasses: (n: number) => string;
+  loadDelay?: number;
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(0.25); // Start with reasonable default to prevent layout shift
@@ -100,10 +101,10 @@ const MobileRoomCanvas = ({ videoCount, previewAssignments, getGridClasses }: {
   const videoElements = useMemo(() => 
     previewAssignments.map((assignment: any) => (
       <div key={assignment.id} className={`overflow-hidden ${videoCount === 1 ? 'max-w-[50%] h-full' : videoCount === 2 ? 'h-full w-full' : 'w-full'}`}>
-        <VideoPlayer assignment={assignment} displayMode={videoCount > 1 ? 'split' : 'single'} videoCount={videoCount} isFullscreen={false} />
+        <VideoPlayer assignment={assignment} displayMode={videoCount > 1 ? 'split' : 'single'} videoCount={videoCount} isFullscreen={false} loadDelay={loadDelay} />
       </div>
     )),
-    [previewAssignments, videoCount]
+    [previewAssignments, videoCount, loadDelay]
   );
 
   // Memoize dividers to prevent recreation
@@ -2561,8 +2562,10 @@ function TrainerDashboardInner() {
                       console.warn(`[v0] Videos not loaded yet. Loaded ${videos?.length ?? 0} videos, ${schedules?.length ?? 0} schedules`);
                       return null;
                     }
-                    return rooms?.slice(0, 10).map((room: Room) => {
+                    return rooms?.slice(0, 10).map((room: Room, roomIndex: number) => {
                       const { colorClass } = getRoomColorClasses(room.number);
+                      // Stagger video loading: rooms load in batches of 3 (2s apart)
+                      const roomLoadDelay = Math.floor(roomIndex / 3) * 2000;
                       const roomSchedules = schedules
                       .filter((s: any) => s.roomId === room.id && s.scheduleDate === currentDate)
                       .sort((a: any, b: any) => a.position - b.position); // Sort by position to maintain consistent order
@@ -2626,7 +2629,7 @@ function TrainerDashboardInner() {
                                 >
                                   {previewAssignments.map((assignment: any) => (
                                     <div key={assignment.id} className={`overflow-hidden ${videoCount === 1 ? 'max-w-[50%] h-full' : videoCount === 2 ? 'h-full w-full' : 'w-full'}`}>
-                                      <VideoPlayer assignment={assignment} displayMode={videoCount > 1 ? 'split' : 'single'} videoCount={videoCount} isFullscreen={false} />
+                                      <VideoPlayer assignment={assignment} displayMode={videoCount > 1 ? 'split' : 'single'} videoCount={videoCount} isFullscreen={false} loadDelay={roomLoadDelay} />
                                     </div>
                                   ))}
                                   {videoCount === 2 && <div className="absolute top-0 left-1/2 h-full w-0.5 bg-black -translate-x-px z-10" />}
@@ -2702,6 +2705,7 @@ function TrainerDashboardInner() {
                                   videoCount={videoCount}
                                   previewAssignments={previewAssignments}
                                   getGridClasses={getGridClasses}
+                                  loadDelay={roomLoadDelay}
                                 />
                               );
                             })() : (

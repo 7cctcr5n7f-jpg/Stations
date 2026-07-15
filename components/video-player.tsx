@@ -24,16 +24,18 @@ interface VideoPlayerProps {
   displayMode?: 'single' | 'split';
   videoCount?: number;
   isFullscreen?: boolean;
+  /** Milliseconds to wait before starting the video load (stagger concurrent loads) */
+  loadDelay?: number;
 }
 
-export default function VideoPlayer({ assignment, displayMode = 'single', videoCount = 1, isFullscreen = false }: VideoPlayerProps) {
+export default function VideoPlayer({ assignment, displayMode = 'single', videoCount = 1, isFullscreen = false, loadDelay = 0 }: VideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [videoLoaded, setVideoLoaded] = useState(false);
   const [videoError, setVideoError] = useState(false);
   const [retryAttempted, setRetryAttempted] = useState(false);
   const zoom = Math.max(parseFloat(assignment.zoomLevel || "1"), 1.02); // min 1.02 clips video edge codec artifacts
   const verticalPos = parseFloat(assignment.verticalPosition || "0");
-  const [videoSrc, setVideoSrc] = useState(assignment.video.url);
+  const [videoSrc, setVideoSrc] = useState("");
   const [sourceVersion, setSourceVersion] = useState(0);
   const [isCached, setIsCached] = useState(false);
 
@@ -42,30 +44,43 @@ export default function VideoPlayer({ assignment, displayMode = 'single', videoC
     return `${url}${separator}retry=${Date.now()}`;
   };
 
-  // Initialize video with direct URL loading (no caching for stability)
+  // Initialize video with optional stagger delay to avoid thundering herd
   useEffect(() => {
-    // Validate URL exists and is not empty
     const videoUrl = assignment.video.url?.trim();
     if (!videoUrl) {
       console.warn(`[v0] Video ${assignment.video.id} has no URL - marking as error`);
       setVideoError(true);
       return;
     }
-    
-    // Use the R2 public URL directly. Cloudflare's CDN serves range requests
-    // natively; no Vercel proxy hop needed.
-    setVideoSrc(videoUrl);
+
     setSourceVersion(0);
     setVideoLoaded(false);
     setVideoError(false);
     setRetryAttempted(false);
     setIsCached(false);
-  }, [assignment.video.id, assignment.video.url]);
+
+    if (loadDelay > 0) {
+      // Stagger: wait before setting src so the browser doesn't open all connections at once
+      const timer = setTimeout(() => setVideoSrc(videoUrl), loadDelay);
+      return () => clearTimeout(timer);
+    }
+
+    setVideoSrc(videoUrl);
+  }, [assignment.video.id, assignment.video.url, loadDelay]);
 
   useEffect(() => {
     if (!videoRef.current || videoLoaded || videoError) return;
 
-    // Self-heal stalled loads: retry exactly once, then fail gracefully.
+    // When many videos load simultaneously (Live View: 20+), the browser
+    // queues them (≈6 concurrent per hostname). Use a generous timeout
+    // that scales with the number of sibling video elements so later ones
+    // don't time out while waiting in the queue.
+    const peerCount = document.querySelectorAll("video").length;
+    const baseTimeout = 25000;
+    // Add 3s per concurrent video beyond the first 4 (browser's connection limit)
+    const extraMs = Math.max(0, peerCount - 4) * 3000;
+    const timeout = baseTimeout + Math.min(extraMs, 60000); // cap at 85s total
+
     const loadTimeout = setTimeout(() => {
       if (videoLoaded || videoError) return;
 
@@ -75,14 +90,42 @@ export default function VideoPlayer({ assignment, displayMode = 'single', videoC
         setVideoError(false);
         setSourceVersion((v) => v + 1);
       } else {
-        setVideoError(true);
+        // Before giving up, check if the video actually has data
+        const v = videoRef.current;
+        if (v && v.readyState >= 2) {
+          // Video has enough data — the canplay event might have been missed
+          setVideoLoaded(true);
+          v.play().catch(() => setAutoplayBlocked(true));
+        } else {
+          setVideoError(true);
+        }
       }
-    }, 15000);
+    }, timeout);
 
     return () => {
       clearTimeout(loadTimeout);
     }
   }, [videoLoaded, videoError, retryAttempted, sourceVersion]);
+
+  // On first user interaction anywhere in the document, attempt to play
+  // all paused videos. Required for TV boxes and iOS that block autoplay
+  // until a user gesture occurs.
+  useEffect(() => {
+    const handler = () => {
+      const video = videoRef.current;
+      if (video && video.paused && videoLoaded && !videoError) {
+        video.play().then(() => setAutoplayBlocked(false)).catch(() => {});
+      }
+    };
+    document.addEventListener("click", handler, { once: true });
+    document.addEventListener("touchstart", handler, { once: true });
+    return () => {
+      document.removeEventListener("click", handler);
+      document.removeEventListener("touchstart", handler);
+    };
+  }, [videoLoaded, videoError]);
+
+  const [autoplayBlocked, setAutoplayBlocked] = useState(false);
 
   const handlePlayable = () => {
     if (videoError) return;
@@ -94,16 +137,34 @@ export default function VideoPlayer({ assignment, displayMode = 'single', videoC
     // Immediate play for cached videos, small delay for multi-video to prevent CPU spikes
     const playDelay = isCached ? 0 : (videoCount >= 3 ? Math.random() * 200 : 0);
     setTimeout(() => {
-      video.play().catch(console.error);
+      video.play().catch(() => {
+        // Autoplay blocked (common on some TV box browsers and iOS without interaction)
+        setAutoplayBlocked(true);
+      });
     }, playDelay);
   };
 
+  const handleTapToPlay = () => {
+    const video = videoRef.current;
+    if (!video) return;
+    video.play().then(() => setAutoplayBlocked(false)).catch(console.error);
+  };
+
   const handleVideoError = () => {
+    // Network errors can be transient; give more retries before failing
     if (!retryAttempted) {
       setRetryAttempted(true);
       setVideoLoaded(false);
       setVideoError(false);
       setSourceVersion((v) => v + 1);
+      return;
+    }
+
+    // Second failure — check if the video actually has usable data despite the error
+    const v = videoRef.current;
+    if (v && v.readyState >= 2) {
+      setVideoLoaded(true);
+      v.play().catch(() => setAutoplayBlocked(true));
       return;
     }
 
@@ -115,6 +176,7 @@ export default function VideoPlayer({ assignment, displayMode = 'single', videoC
     setVideoLoaded(false);
     setVideoError(false);
     setRetryAttempted(false);
+    setAutoplayBlocked(false);
     setSourceVersion((v) => v + 1);
   };
 
@@ -144,35 +206,39 @@ export default function VideoPlayer({ assignment, displayMode = 'single', videoC
   
   return (
     <div className="relative bg-white w-full h-full overflow-hidden">
-      <video
-        key={`${assignment.id}-${sourceVersion}`}
-        ref={videoRef}
-        src={sourceVersion === 0 ? videoSrc : withRetryBuster(videoSrc)}
-        className="w-full"
-        tabIndex={-1}
-        style={{
-          height: containerHeight,
-          objectFit: 'contain',
-          objectPosition: 'center',
-          transform: `scale(${zoom}) translateY(${verticalPos}px)`,
-          transformOrigin: 'center',
-          backgroundColor: 'white',
-          outline: 'none',
-          border: 'none',
-          display: videoLoaded ? 'block' : 'none',
-        }}
-        loop
-        muted
-        playsInline
-        autoPlay
-        preload="auto"
-        controls={false}
-        disablePictureInPicture
-        crossOrigin={undefined}
-        onCanPlay={handlePlayable}
-        onLoadedData={handlePlayable}
-        onError={handleVideoError}
-      />
+      {videoSrc && (
+        <video
+          key={`${assignment.id}-${sourceVersion}`}
+          ref={videoRef}
+          src={sourceVersion === 0 ? videoSrc : withRetryBuster(videoSrc)}
+          className="w-full"
+          tabIndex={-1}
+          style={{
+            height: containerHeight,
+            objectFit: 'contain',
+            objectPosition: 'center',
+            transform: `scale(${zoom}) translateY(${verticalPos}px)`,
+            transformOrigin: 'center',
+            backgroundColor: 'white',
+            outline: 'none',
+            border: 'none',
+            display: videoLoaded ? 'block' : 'none',
+          }}
+          loop
+          muted
+          playsInline
+          // @ts-expect-error webkit-playsinline needed for older WebKit TV box browsers
+          webkit-playsinline=""
+          autoPlay
+          preload="auto"
+          controls={false}
+          disablePictureInPicture
+          crossOrigin={undefined}
+          onCanPlay={handlePlayable}
+          onLoadedData={handlePlayable}
+          onError={handleVideoError}
+        />
+      )}
       
       {/* Intensity Badge - Top Left */}
       {intensityStyles && (
@@ -272,6 +338,19 @@ export default function VideoPlayer({ assignment, displayMode = 'single', videoC
             </button>
           </div>
         </div>
+      )}
+
+      {/* Tap-to-play fallback when autoplay is blocked (TV boxes, iOS without interaction) */}
+      {autoplayBlocked && !videoError && (
+        <button
+          type="button"
+          onClick={handleTapToPlay}
+          className="absolute inset-0 z-30 flex items-center justify-center bg-black/40"
+        >
+          <div className="bg-white/90 rounded-full p-4">
+            <Play className="h-12 w-12 text-black" />
+          </div>
+        </button>
       )}
     </div>
   );

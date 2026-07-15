@@ -1,12 +1,23 @@
 "use client"
 
-import { useState, type ReactNode } from "react"
+import { useState, useEffect, type ReactNode } from "react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { getQueryFn } from "@/lib/queryClient"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { Toaster } from "@/components/ui/toaster"
 
+function useServiceWorker() {
+  useEffect(() => {
+    if (typeof window === "undefined" || !("serviceWorker" in navigator)) return
+    navigator.serviceWorker.register("/sw.js").catch((err) => {
+      console.warn("SW registration failed:", err)
+    })
+  }, [])
+}
+
 export function Providers({ children }: { children: ReactNode }) {
+  useServiceWorker()
+
   const [queryClient] = useState(
     () =>
       new QueryClient({
