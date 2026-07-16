@@ -103,7 +103,7 @@ const MobileRoomCanvas = ({ videoCount, previewAssignments, getGridClasses, thum
     previewAssignments.map((assignment: any) => (
       <div
         key={assignment.id}
-        className={`overflow-hidden ${videoCount === 1 ? 'w-full h-full' : videoCount === 2 ? 'h-full w-full' : 'w-full'} ${onOpen ? 'cursor-pointer' : ''}`}
+        className={`overflow-hidden ${videoCount === 1 ? 'w-1/2 h-full' : videoCount === 2 ? 'h-full w-full' : 'w-full'} ${onOpen ? 'cursor-pointer' : ''}`}
         onClick={onOpen ? () => onOpen(assignment.video) : undefined}
       >
         <VideoPlayer assignment={assignment} displayMode={videoCount > 1 ? 'split' : 'single'} videoCount={videoCount} isFullscreen={false} thumbnailMode={thumbnailMode} />
@@ -2641,7 +2641,7 @@ function TrainerDashboardInner() {
                                   {previewAssignments.map((assignment: any) => (
                                     <div
                                       key={assignment.id}
-                                      className={`overflow-hidden cursor-pointer ${videoCount === 1 ? 'w-full h-full' : videoCount === 2 ? 'h-full w-full' : 'w-full'}`}
+                                      className={`overflow-hidden cursor-pointer ${videoCount === 1 ? 'w-1/2 h-full' : videoCount === 2 ? 'h-full w-full' : 'w-full'}`}
                                       onClick={() => openVideoInModal(assignment.video)}
                                     >
                                       <VideoPlayer assignment={assignment} displayMode={videoCount > 1 ? 'split' : 'single'} videoCount={videoCount} isFullscreen={false} thumbnailMode={true} />
