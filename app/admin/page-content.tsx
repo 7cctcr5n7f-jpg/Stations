@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { QueryClientProvider, useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { queryClient as sharedQueryClient } from "@/lib/queryClient";
@@ -71,11 +71,12 @@ function getMondayIso(date: string): string {
 }
 
 // Mobile-only canvas: measures its own width and scales the 1920×1080 canvas to fit exactly.
-const MobileRoomCanvas = ({ videoCount, previewAssignments, getGridClasses, thumbnailMode = false }: {
+const MobileRoomCanvas = ({ videoCount, previewAssignments, getGridClasses, thumbnailMode = false, onOpen }: {
   videoCount: number;
   previewAssignments: any[];
   getGridClasses: (n: number) => string;
   thumbnailMode?: boolean;
+  onOpen?: (video: any) => void;
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(0.25); // Start with reasonable default to prevent layout shift
@@ -100,11 +101,15 @@ const MobileRoomCanvas = ({ videoCount, previewAssignments, getGridClasses, thum
   // Memoize video renders to prevent unnecessary re-renders on parent updates
   const videoElements = useMemo(() => 
     previewAssignments.map((assignment: any) => (
-      <div key={assignment.id} className={`overflow-hidden ${videoCount === 1 ? 'max-w-[50%] h-full' : videoCount === 2 ? 'h-full w-full' : 'w-full'}`}>
+      <div
+        key={assignment.id}
+        className={`overflow-hidden ${videoCount === 1 ? 'w-full h-full' : videoCount === 2 ? 'h-full w-full' : 'w-full'} ${onOpen ? 'cursor-pointer' : ''}`}
+        onClick={onOpen ? () => onOpen(assignment.video) : undefined}
+      >
         <VideoPlayer assignment={assignment} displayMode={videoCount > 1 ? 'split' : 'single'} videoCount={videoCount} isFullscreen={false} thumbnailMode={thumbnailMode} />
       </div>
     )),
-    [previewAssignments, videoCount, thumbnailMode]
+    [previewAssignments, videoCount, thumbnailMode, onOpen]
   );
 
   // Memoize dividers to prevent recreation
@@ -118,7 +123,7 @@ const MobileRoomCanvas = ({ videoCount, previewAssignments, getGridClasses, thum
   return (
     <div ref={containerRef} style={{ width: '100%', height: `${1080 * scale}px`, position: 'relative', overflow: 'hidden' }}>
       <div
-        style={{ width: 1920, height: 1080, transform: `scale(${scale})`, transformOrigin: 'top left', pointerEvents: 'none' }}
+        style={{ width: 1920, height: 1080, transform: `scale(${scale})`, transformOrigin: 'top left', pointerEvents: onOpen ? 'auto' : 'none' }}
         className={`bg-white ${getGridClasses(videoCount)}`}
       >
         {videoElements}
@@ -737,6 +742,14 @@ function TrainerDashboardInner() {
       key: Date.now()
     });
   };
+
+  // Open a single video in the preview modal. Used by the Live View thumbnail
+  // grid so a trainer can click any station's thumbnail to play that exact
+  // video full-size (a single on-demand load, so no concurrency issues).
+  const openVideoInModal = useCallback((video: { url?: string; title?: string } | null | undefined) => {
+    if (!video?.url?.trim()) return;
+    setVideoPreview({ url: video.url, title: video.title || 'Video Preview', key: Date.now() });
+  }, []);
 
   const closeVideoPreview = () => {
     setVideoPreview(null);
@@ -2581,7 +2594,7 @@ function TrainerDashboardInner() {
                         </CardHeader>
                         <CardContent className="p-1">
                           {/* ── Desktop: exact 480×270 clip box (1920×1080 ÷ 4) ── */}
-                          <div className="hidden sm:block relative overflow-hidden rounded border border-gray-200 mb-1" style={{ width: 480, height: 270 }}>
+                          <div className="group hidden sm:block relative overflow-hidden rounded border border-gray-200 mb-1" style={{ width: 480, height: 270 }}>
                             {roomSchedules.length > 0 ? (() => {
                               const videoCount = Math.min(roomSchedules.length, 4);
                               const previewAssignments = roomSchedules.slice(0, 4).map((schedule: any) => {
@@ -2622,11 +2635,15 @@ function TrainerDashboardInner() {
                               };
                               return (
                                 <div
-                                  style={{ width: 1920, height: 1080, transform: 'scale(0.25)', transformOrigin: 'top left', pointerEvents: 'none' }}
+                                  style={{ width: 1920, height: 1080, transform: 'scale(0.25)', transformOrigin: 'top left', pointerEvents: 'auto' }}
                                   className={`bg-white ${getGridClasses(videoCount)}`}
                                 >
                                   {previewAssignments.map((assignment: any) => (
-                                    <div key={assignment.id} className={`overflow-hidden ${videoCount === 1 ? 'max-w-[50%] h-full' : videoCount === 2 ? 'h-full w-full' : 'w-full'}`}>
+                                    <div
+                                      key={assignment.id}
+                                      className={`overflow-hidden cursor-pointer ${videoCount === 1 ? 'w-full h-full' : videoCount === 2 ? 'h-full w-full' : 'w-full'}`}
+                                      onClick={() => openVideoInModal(assignment.video)}
+                                    >
                                       <VideoPlayer assignment={assignment} displayMode={videoCount > 1 ? 'split' : 'single'} videoCount={videoCount} isFullscreen={false} thumbnailMode={true} />
                                     </div>
                                   ))}
@@ -2654,6 +2671,13 @@ function TrainerDashboardInner() {
                                     </div>
                                   );
                                 })}
+                              </div>
+                            )}
+                            {/* Hover hint: click any thumbnail to play that video full-size */}
+                            {roomSchedules.length > 0 && (
+                              <div className="pointer-events-none absolute top-2 left-2 z-[15] flex items-center gap-1 rounded-full bg-black/70 px-2 py-1 text-white opacity-0 transition-opacity group-hover:opacity-100">
+                                <Play className="h-3 w-3" />
+                                <span className="text-[10px] font-medium">Click to play</span>
                               </div>
                             )}
                           </div>
@@ -2704,6 +2728,7 @@ function TrainerDashboardInner() {
                                   previewAssignments={previewAssignments}
                                   getGridClasses={getGridClasses}
                                   thumbnailMode={true}
+                                  onOpen={openVideoInModal}
                                 />
                               );
                             })() : (
@@ -2734,7 +2759,7 @@ function TrainerDashboardInner() {
                       </Card>
                     );
                     });
-                  }, [rooms, schedules, currentDate, videos, liveViewVideoZoom, liveViewVerticalPosition, liveViewChanges, setLiveViewVideoZoom, setLiveViewVerticalPosition])}
+                  }, [rooms, schedules, currentDate, videos, liveViewVideoZoom, liveViewVerticalPosition, liveViewChanges, setLiveViewVideoZoom, setLiveViewVerticalPosition, openVideoInModal])}
                 </div>
               </CardContent>
             </Card>
