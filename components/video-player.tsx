@@ -19,6 +19,7 @@ interface VideoPlayerProps {
       bodyPart: string;
       equipment: string;
       intensity?: "Low" | "Medium" | "High" | null;
+      thumbnailUrl?: string | null;
     };
   };
   displayMode?: 'single' | 'split';
@@ -26,9 +27,16 @@ interface VideoPlayerProps {
   isFullscreen?: boolean;
   /** Milliseconds to wait before starting the video load (stagger concurrent loads) */
   loadDelay?: number;
+  /**
+   * Render the exercise thumbnail image instead of streaming the video.
+   * Used by the admin Live View planning grid where 20+ tiles render at once —
+   * thumbnails (≈3KB each) load instantly and reliably, avoiding the browser's
+   * ~6-connection-per-host limit that causes concurrent video loads to fail.
+   */
+  thumbnailMode?: boolean;
 }
 
-export default function VideoPlayer({ assignment, displayMode = 'single', videoCount = 1, isFullscreen = false, loadDelay = 0 }: VideoPlayerProps) {
+export default function VideoPlayer({ assignment, displayMode = 'single', videoCount = 1, isFullscreen = false, loadDelay = 0, thumbnailMode = false }: VideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [videoLoaded, setVideoLoaded] = useState(false);
   const [videoError, setVideoError] = useState(false);
@@ -38,6 +46,7 @@ export default function VideoPlayer({ assignment, displayMode = 'single', videoC
   const [videoSrc, setVideoSrc] = useState("");
   const [sourceVersion, setSourceVersion] = useState(0);
   const [isCached, setIsCached] = useState(false);
+  const [thumbError, setThumbError] = useState(false);
 
   const withRetryBuster = (url: string) => {
     const separator = url.includes("?") ? "&" : "?";
@@ -46,6 +55,7 @@ export default function VideoPlayer({ assignment, displayMode = 'single', videoC
 
   // Initialize video with optional stagger delay to avoid thundering herd
   useEffect(() => {
+    if (thumbnailMode) return; // thumbnail mode never loads the video stream
     const videoUrl = assignment.video.url?.trim();
     if (!videoUrl) {
       console.warn(`[v0] Video ${assignment.video.id} has no URL - marking as error`);
@@ -66,9 +76,10 @@ export default function VideoPlayer({ assignment, displayMode = 'single', videoC
     }
 
     setVideoSrc(videoUrl);
-  }, [assignment.video.id, assignment.video.url, loadDelay]);
+  }, [assignment.video.id, assignment.video.url, loadDelay, thumbnailMode]);
 
   useEffect(() => {
+    if (thumbnailMode) return; // no video timeout logic in thumbnail mode
     if (!videoRef.current || videoLoaded || videoError) return;
 
     // When many videos load simultaneously (Live View: 20+), the browser
@@ -105,12 +116,13 @@ export default function VideoPlayer({ assignment, displayMode = 'single', videoC
     return () => {
       clearTimeout(loadTimeout);
     }
-  }, [videoLoaded, videoError, retryAttempted, sourceVersion]);
+  }, [videoLoaded, videoError, retryAttempted, sourceVersion, thumbnailMode]);
 
   // On first user interaction anywhere in the document, attempt to play
   // all paused videos. Required for TV boxes and iOS that block autoplay
   // until a user gesture occurs.
   useEffect(() => {
+    if (thumbnailMode) return; // no autoplay handling needed for a static thumbnail
     const handler = () => {
       const video = videoRef.current;
       if (video && video.paused && videoLoaded && !videoError) {
@@ -123,7 +135,7 @@ export default function VideoPlayer({ assignment, displayMode = 'single', videoC
       document.removeEventListener("click", handler);
       document.removeEventListener("touchstart", handler);
     };
-  }, [videoLoaded, videoError]);
+  }, [videoLoaded, videoError, thumbnailMode]);
 
   const [autoplayBlocked, setAutoplayBlocked] = useState(false);
 
@@ -203,41 +215,70 @@ export default function VideoPlayer({ assignment, displayMode = 'single', videoC
   };
 
   const intensityStyles = getIntensityStyles(assignment.video.intensity);
-  
+  const thumbnailUrl = assignment.video.thumbnailUrl?.trim() || "";
+
   return (
     <div className="relative bg-white w-full h-full overflow-hidden">
-      {videoSrc && (
-        <video
-          key={`${assignment.id}-${sourceVersion}`}
-          ref={videoRef}
-          src={sourceVersion === 0 ? videoSrc : withRetryBuster(videoSrc)}
-          className="w-full"
-          tabIndex={-1}
-          style={{
-            height: containerHeight,
-            objectFit: 'contain',
-            objectPosition: 'center',
-            transform: `scale(${zoom}) translateY(${verticalPos}px)`,
-            transformOrigin: 'center',
-            backgroundColor: 'white',
-            outline: 'none',
-            border: 'none',
-            display: videoLoaded ? 'block' : 'none',
-          }}
-          loop
-          muted
-          playsInline
-          // @ts-expect-error webkit-playsinline needed for older WebKit TV box browsers
-          webkit-playsinline=""
-          autoPlay
-          preload="auto"
-          controls={false}
-          disablePictureInPicture
-          crossOrigin={undefined}
-          onCanPlay={handlePlayable}
-          onLoadedData={handlePlayable}
-          onError={handleVideoError}
-        />
+      {thumbnailMode ? (
+        thumbnailUrl && !thumbError ? (
+          <img
+            src={thumbnailUrl}
+            alt={assignment.video.title}
+            className="w-full"
+            draggable={false}
+            style={{
+              height: containerHeight,
+              objectFit: 'contain',
+              objectPosition: 'center',
+              transform: `scale(${zoom}) translateY(${verticalPos}px)`,
+              transformOrigin: 'center',
+              backgroundColor: 'white',
+            }}
+            onError={() => setThumbError(true)}
+          />
+        ) : (
+          // Thumbnail missing/failed — show a titled placeholder so the trainer
+          // can still identify the station's exercise.
+          <div className="absolute inset-0 flex items-center justify-center bg-gray-100">
+            <span className="text-black font-bold text-center px-3 leading-tight text-2xl">
+              {assignment.video.title}
+            </span>
+          </div>
+        )
+      ) : (
+        videoSrc && (
+          <video
+            key={`${assignment.id}-${sourceVersion}`}
+            ref={videoRef}
+            src={sourceVersion === 0 ? videoSrc : withRetryBuster(videoSrc)}
+            className="w-full"
+            tabIndex={-1}
+            style={{
+              height: containerHeight,
+              objectFit: 'contain',
+              objectPosition: 'center',
+              transform: `scale(${zoom}) translateY(${verticalPos}px)`,
+              transformOrigin: 'center',
+              backgroundColor: 'white',
+              outline: 'none',
+              border: 'none',
+              display: videoLoaded ? 'block' : 'none',
+            }}
+            loop
+            muted
+            playsInline
+            // @ts-expect-error webkit-playsinline needed for older WebKit TV box browsers
+            webkit-playsinline=""
+            autoPlay
+            preload="auto"
+            controls={false}
+            disablePictureInPicture
+            crossOrigin={undefined}
+            onCanPlay={handlePlayable}
+            onLoadedData={handlePlayable}
+            onError={handleVideoError}
+          />
+        )
       )}
       
       {/* Intensity Badge - Top Left */}
@@ -313,7 +354,7 @@ export default function VideoPlayer({ assignment, displayMode = 'single', videoC
       })()}
       
       {/* Loading/Error placeholder */}
-      {(!videoLoaded && !videoError) && (
+      {!thumbnailMode && (!videoLoaded && !videoError) && (
         <div className="absolute inset-0 flex items-center justify-center bg-gray-900 text-white">
           <div className="text-center">
             <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-white mx-auto mb-4"></div>
@@ -323,7 +364,7 @@ export default function VideoPlayer({ assignment, displayMode = 'single', videoC
         </div>
       )}
       
-      {videoError && (
+      {!thumbnailMode && videoError && (
         <div className="absolute inset-0 flex items-center justify-center bg-gray-900 text-white">
           <div className="text-center">
             <Play className="h-16 w-16 mx-auto mb-4 opacity-50" />
@@ -341,7 +382,7 @@ export default function VideoPlayer({ assignment, displayMode = 'single', videoC
       )}
 
       {/* Tap-to-play fallback when autoplay is blocked (TV boxes, iOS without interaction) */}
-      {autoplayBlocked && !videoError && (
+      {!thumbnailMode && autoplayBlocked && !videoError && (
         <button
           type="button"
           onClick={handleTapToPlay}
