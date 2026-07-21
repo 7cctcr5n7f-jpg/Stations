@@ -17,6 +17,7 @@ import VideoEditModal from "@/components/video-edit-modal";
 // Removed VideoPopup import - using simple HTML popup instead
 import { SimpleBulkUploadModal } from "@/components/simple-bulk-upload-modal";
 import CacheManager from "@/components/cache-manager";
+import VideoCompatibilityPanel from "@/components/video-compatibility-panel";
 import VideoHealthDashboard from "@/components/video-health-dashboard";
 import VideoThumbnail from "@/components/video-thumbnail";
 import ImageThumbnail from "@/components/image-thumbnail";
@@ -2451,6 +2452,7 @@ function TrainerDashboardInner() {
 
           {/* Cache Tab */}
           <TabsContent value="cache" className="space-y-6">
+            <VideoCompatibilityPanel />
             <IntegrityAuditPanel />
             <EnhancedCacheDashboard />
             <CacheManager />

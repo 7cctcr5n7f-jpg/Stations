@@ -2,9 +2,10 @@ import { NextRequest, NextResponse } from "next/server"
 import { sql, mapVideo } from "@/lib/db"
 import { deleteFromR2ByPublicUrl, uploadToR2 } from "@/lib/r2"
 import { generateThumbnailForVideoUrl } from "@/lib/video-thumbnail"
+import { ensureTvCompatibleBuffer } from "@/lib/video-compat"
 
 export const runtime = "nodejs"
-export const maxDuration = 120
+export const maxDuration = 300
 
 export async function POST(
   request: NextRequest,
@@ -34,9 +35,27 @@ export async function POST(
     }
 
     const existing = existingRows[0]
-    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_")
-    const key = `videos/${Date.now()}-${safeName}`
-    const replacementUrl = await uploadToR2(key, (await file.arrayBuffer()) as any, file.type || "video/mp4")
+
+    // Make sure the replacement plays on the room-display TV boxes (H.264 8-bit).
+    const originalBuf = Buffer.from(await file.arrayBuffer())
+    let uploadBuf = originalBuf
+    let finalCodec: string | null = null
+    let finalPix: string | null = null
+    let wasConverted = false
+    try {
+      const result = await ensureTvCompatibleBuffer(originalBuf, String(videoId))
+      uploadBuf = result.buffer
+      finalCodec = result.converted ? "h264" : result.codec
+      finalPix = result.converted ? "yuv420p" : result.pixFmt
+      wasConverted = result.converted
+    } catch (e) {
+      console.error("[videos/replace] compatibility check failed, storing original:", e)
+      uploadBuf = originalBuf
+    }
+
+    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_").replace(/\.[^.]+$/, "")
+    const key = `videos/${Date.now()}${wasConverted ? "-h264" : ""}-${safeName}.mp4`
+    const replacementUrl = await uploadToR2(key, uploadBuf as any, "video/mp4")
 
     let replacementThumbnailUrl = existing.thumbnail_url as string | null
     try {
@@ -45,10 +64,17 @@ export async function POST(
       console.warn("[videos/replace] Thumbnail generation failed, keeping existing thumbnail:", error)
     }
 
+    const tvCompatible = finalCodec ? finalCodec === "h264" : null
     const updatedRows = await sql`
       UPDATE videos
       SET url = ${replacementUrl},
-          thumbnail_url = ${replacementThumbnailUrl}
+          storage_key = ${key},
+          thumbnail_url = ${replacementThumbnailUrl},
+          video_codec = ${finalCodec},
+          pixel_format = ${finalPix},
+          tv_compatible = ${tvCompatible},
+          codec_checked_at = ${finalCodec ? new Date().toISOString() : null},
+          converted_at = ${wasConverted ? new Date().toISOString() : null}
       WHERE id = ${videoId}
       RETURNING *
     `
