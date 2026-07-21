@@ -38,7 +38,7 @@ export async function POST(
 
     // Make sure the replacement plays on the room-display TV boxes (H.264 8-bit).
     const originalBuf = Buffer.from(await file.arrayBuffer())
-    let uploadBuf = originalBuf
+    let uploadBuf: Buffer<ArrayBufferLike> = originalBuf
     let finalCodec: string | null = null
     let finalPix: string | null = null
     let wasConverted = false

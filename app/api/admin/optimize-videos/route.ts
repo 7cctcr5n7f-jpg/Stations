@@ -20,7 +20,7 @@ function ffmpegPath(): string {
   } catch {
     _ffmpegPath = "ffmpeg"
   }
-  return _ffmpegPath
+  return _ffmpegPath as string
 }
 
 function runFfmpeg(args: string[]): Promise<string> {

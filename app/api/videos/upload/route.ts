@@ -43,7 +43,7 @@ export async function POST(request: NextRequest) {
     // Those only decode H.264 8-bit; HEVC/H.265 and 10-bit clips (the iPhone
     // "High Efficiency" default) must be transcoded before storage.
     const originalBuf = Buffer.from(await file.arrayBuffer())
-    let uploadBuf = originalBuf
+    let uploadBuf: Buffer<ArrayBufferLike> = originalBuf
     let videoCodec: string | null = null
     let pixelFormat: string | null = null
     let wasConverted = false
