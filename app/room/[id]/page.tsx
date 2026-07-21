@@ -7,6 +7,7 @@ import VideoPlayer from "@/components/video-player"
 import { X, Minimize, RefreshCw } from "lucide-react"
 import { getRoomColorClasses } from "@/lib/utils"
 import { formatLocalDate } from "@/lib/local-date"
+import { pruneStaleVideos } from "@/lib/video-blob-cache"
 
 // ---------------------------------------------------------------------------
 // IndexedDB helpers — store schedule JSON and video blobs locally so the
@@ -146,7 +147,12 @@ export default function RoomDisplayPage() {
   )
 
   useEffect(() => {
-    loadSchedule(currentDate)
+    // Session open: show any cached schedule instantly, then fetch once to pick
+    // up the day's videos. Downloaded clips are cached; unchanged ones replay
+    // from local storage with no download.
+    loadSchedule(currentDate, true)
+    // Drop clips not used in the last week so device storage stays bounded.
+    void pruneStaleVideos()
   }, [currentDate, loadSchedule])
 
   // -- Date change detection (check every 60 s) --
@@ -178,27 +184,11 @@ export default function RoomDisplayPage() {
     return () => clearTimeout(timer)
   }, [])
 
-  // Lightweight schedule-change check: every 30 minutes ask for a cheap
-  // fingerprint, and only refetch full assignments when it changed.
-  useEffect(() => {
-    const interval = setInterval(async () => {
-      try {
-        const date = dateRef.current
-        const response = await fetch(`/api/rooms/${roomId}/schedule?date=${date}&mode=fingerprint`)
-        if (!response.ok) return
-
-        const data = (await response.json()) as { fingerprint?: string }
-        const serverFingerprint = typeof data.fingerprint === "string" ? data.fingerprint : ""
-        if (serverFingerprint !== scheduleFingerprintRef.current) {
-          await loadSchedule(date, true)
-        }
-      } catch {
-        // Non-fatal: keep current schedule on screen
-      }
-    }, 30 * 60 * 1000)
-
-    return () => clearInterval(interval)
-  }, [roomId, loadSchedule])
+  // NOTE: No mid-day server polling. Per the room-display model, the kiosk only
+  // contacts the server when the session opens and at the daily reload (below).
+  // Videos are downloaded once and played from local cache the rest of the day.
+  // A trainer's mid-day schedule edit appears on the next daily reload (or a
+  // manual Refresh).
 
   useEffect(() => {
     const check = () => setIsFullscreen(!!document.fullscreenElement)
