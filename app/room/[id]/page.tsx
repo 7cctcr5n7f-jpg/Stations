@@ -90,7 +90,7 @@ export default function RoomDisplayPage() {
   const params = useParams()
   const roomId = params.id as string
 
-  const [currentDate, setCurrentDate] = useState(() => formatLocalDate(new Date()))
+  const [currentDate] = useState(() => formatLocalDate(new Date()))
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [room, setRoom] = useState<any>(null)
   const [assignments, setAssignments] = useState<any[]>([])
@@ -154,10 +154,28 @@ export default function RoomDisplayPage() {
     const interval = setInterval(() => {
       const newDate = formatLocalDate(new Date())
       if (newDate !== dateRef.current) {
-        setCurrentDate(newDate)
+        // New day: do a full page reload so the kiosk starts from a clean
+        // slate — fresh schedule, fresh video downloads, cleared memory, and a
+        // service-worker update check — instead of mutating React state in
+        // place. This makes "next day = a fresh open" literally true, which is
+        // exactly how a room display is expected to behave.
+        window.location.reload()
       }
     }, 60_000)
     return () => clearInterval(interval)
+  }, [])
+
+  // Safety net: force one clean reload per day during off-hours (04:00). A
+  // room kiosk can stay open for days; this resets accumulated memory and any
+  // stale on-device state even if the midnight date-change reload was missed
+  // (e.g. the device was asleep across midnight).
+  useEffect(() => {
+    const now = new Date()
+    const next = new Date(now)
+    next.setHours(4, 0, 0, 0)
+    if (next <= now) next.setDate(next.getDate() + 1)
+    const timer = setTimeout(() => window.location.reload(), next.getTime() - now.getTime())
+    return () => clearTimeout(timer)
   }, [])
 
   // Lightweight schedule-change check: every 30 minutes ask for a cheap
