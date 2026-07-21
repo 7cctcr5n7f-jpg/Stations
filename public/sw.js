@@ -8,7 +8,7 @@
 // better than a Service Worker can. We only cache-first the tiny (~3KB)
 // thumbnail JPEGs used by the admin Live View planning grid.
 
-const CACHE_NAME = "stations-media-v2";
+const CACHE_NAME = "stations-media-v3";
 const R2_ORIGIN = "https://pub-f7e9428d9fb14d72b5dcc8e91a0fd742.r2.dev";
 
 // Only cache-first small immutable thumbnail images. Everything else

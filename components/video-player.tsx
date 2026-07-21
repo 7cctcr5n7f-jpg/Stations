@@ -42,23 +42,29 @@ interface VideoPlayerProps {
 // a titled placeholder.
 const MAX_THUMB_ATTEMPTS = 4;
 
+// Room videos can transiently fail on a flaky gym network. Retry the SAME url
+// in place (so the browser reuses its immutable HTTP cache — load once, loop
+// from cache) for the first attempts; only the final attempt cache-busts as a
+// last resort to recover from a poisoned cache entry.
+const MAX_VIDEO_ATTEMPTS = 3;
+
 export default function VideoPlayer({ assignment, displayMode = 'single', videoCount = 1, isFullscreen = false, loadDelay = 0, thumbnailMode = false }: VideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [videoLoaded, setVideoLoaded] = useState(false);
   const [videoError, setVideoError] = useState(false);
-  const [retryAttempted, setRetryAttempted] = useState(false);
+  const [loadAttempt, setLoadAttempt] = useState(0);
   const zoom = Math.max(parseFloat(assignment.zoomLevel || "1"), 1.02); // min 1.02 clips video edge codec artifacts
   const verticalPos = parseFloat(assignment.verticalPosition || "0");
   const [videoSrc, setVideoSrc] = useState("");
-  const [sourceVersion, setSourceVersion] = useState(0);
   const [isCached, setIsCached] = useState(false);
+  const [autoplayBlocked, setAutoplayBlocked] = useState(false);
   const [thumbError, setThumbError] = useState(false);
   const [thumbAttempt, setThumbAttempt] = useState(0);
   const thumbRetryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const withRetryBuster = (url: string) => {
+  const withRetryBuster = (url: string, attempt: number) => {
     const separator = url.includes("?") ? "&" : "?";
-    return `${url}${separator}retry=${Date.now()}`;
+    return `${url}${separator}retry=${attempt}`;
   };
 
   // Initialize video with optional stagger delay to avoid thundering herd
@@ -71,10 +77,9 @@ export default function VideoPlayer({ assignment, displayMode = 'single', videoC
       return;
     }
 
-    setSourceVersion(0);
+    setLoadAttempt(0);
     setVideoLoaded(false);
     setVideoError(false);
-    setRetryAttempted(false);
     setIsCached(false);
 
     if (loadDelay > 0) {
@@ -85,6 +90,25 @@ export default function VideoPlayer({ assignment, displayMode = 'single', videoC
 
     setVideoSrc(videoUrl);
   }, [assignment.video.id, assignment.video.url, loadDelay, thumbnailMode]);
+
+  // (Re)load the video element whenever its source changes. Covers the initial
+  // load and same-element video swaps (e.g. an admin edits a station mid-day).
+  useEffect(() => {
+    if (thumbnailMode || !videoSrc) return;
+    videoRef.current?.load();
+  }, [videoSrc, thumbnailMode]);
+
+  // Retry escalation. An error/timeout bumps loadAttempt; we re-attempt the
+  // load IN PLACE on the same url (browser reuses its cache), and only the
+  // final attempt cache-busts. Past the last attempt we hard-fail.
+  useEffect(() => {
+    if (thumbnailMode || loadAttempt === 0) return;
+    if (loadAttempt > MAX_VIDEO_ATTEMPTS) {
+      setVideoError(true);
+      return;
+    }
+    videoRef.current?.load();
+  }, [loadAttempt, thumbnailMode]);
 
   useEffect(() => {
     if (thumbnailMode) return; // no video timeout logic in thumbnail mode
@@ -103,28 +127,25 @@ export default function VideoPlayer({ assignment, displayMode = 'single', videoC
     const loadTimeout = setTimeout(() => {
       if (videoLoaded || videoError) return;
 
-      if (!retryAttempted) {
-        setRetryAttempted(true);
-        setVideoLoaded(false);
-        setVideoError(false);
-        setSourceVersion((v) => v + 1);
-      } else {
-        // Before giving up, check if the video actually has data
-        const v = videoRef.current;
-        if (v && v.readyState >= 2) {
-          // Video has enough data — the canplay event might have been missed
-          setVideoLoaded(true);
-          v.play().catch(() => setAutoplayBlocked(true));
-        } else {
-          setVideoError(true);
-        }
+      const v = videoRef.current;
+      // If the video already has enough data to play, a canplay event was
+      // likely missed while buffering — treat it as loaded rather than failing.
+      if (v && v.readyState >= 3) {
+        setVideoLoaded(true);
+        v.play().catch(() => setAutoplayBlocked(true));
+        return;
       }
+
+      // Still not ready: retry in place (reuses cache). The retry effect
+      // escalates and only hard-fails after the final attempt, so a slow but
+      // healthy load is never falsely marked "failed".
+      setLoadAttempt((a) => a + 1);
     }, timeout);
 
     return () => {
       clearTimeout(loadTimeout);
     }
-  }, [videoLoaded, videoError, retryAttempted, sourceVersion, thumbnailMode]);
+  }, [videoLoaded, videoError, loadAttempt, thumbnailMode]);
 
   // On first user interaction anywhere in the document, attempt to play
   // all paused videos. Required for TV boxes and iOS that block autoplay
@@ -159,8 +180,6 @@ export default function VideoPlayer({ assignment, displayMode = 'single', videoC
     };
   }, [assignment.video.id, thumbnailMode]);
 
-  const [autoplayBlocked, setAutoplayBlocked] = useState(false);
-
   const handlePlayable = () => {
     if (videoError) return;
 
@@ -185,33 +204,29 @@ export default function VideoPlayer({ assignment, displayMode = 'single', videoC
   };
 
   const handleVideoError = () => {
-    // Network errors can be transient; give more retries before failing
-    if (!retryAttempted) {
-      setRetryAttempted(true);
-      setVideoLoaded(false);
-      setVideoError(false);
-      setSourceVersion((v) => v + 1);
-      return;
-    }
-
-    // Second failure — check if the video actually has usable data despite the error
+    if (videoError) return; // already failed — don't loop on repeated error events
     const v = videoRef.current;
-    if (v && v.readyState >= 2) {
+    // If usable data is already available despite the error event, use it.
+    if (v && v.readyState >= 3) {
       setVideoLoaded(true);
       v.play().catch(() => setAutoplayBlocked(true));
       return;
     }
-
-    console.error('Video failed to load after retry:', videoSrc);
-    setVideoError(true);
+    // Retry in place; the retry effect escalates and only hard-fails after the
+    // final attempt (so transient blips don't kill playback).
+    setLoadAttempt((a) => a + 1);
   };
 
   const handleManualReload = () => {
     setVideoLoaded(false);
     setVideoError(false);
-    setRetryAttempted(false);
     setAutoplayBlocked(false);
-    setSourceVersion((v) => v + 1);
+    setLoadAttempt(0);
+    const v = videoRef.current;
+    if (v) {
+      v.src = videoSrc;
+      v.load();
+    }
   };
 
 
@@ -282,9 +297,9 @@ export default function VideoPlayer({ assignment, displayMode = 'single', videoC
       ) : (
         videoSrc && (
           <video
-            key={`${assignment.id}-${sourceVersion}`}
+            key={assignment.id}
             ref={videoRef}
-            src={sourceVersion === 0 ? videoSrc : withRetryBuster(videoSrc)}
+            src={loadAttempt >= MAX_VIDEO_ATTEMPTS ? withRetryBuster(videoSrc, MAX_VIDEO_ATTEMPTS) : videoSrc}
             className="w-full"
             tabIndex={-1}
             style={{
