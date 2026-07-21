@@ -7,6 +7,9 @@ const PUBLIC_API_GET_PATTERNS = [
   /^\/api\/rooms\/\d+\/schedule$/,
   /^\/api\/videos$/,
   /^\/api\/schedules$/,
+  // Room displays stream videos through the same-origin proxy (public R2 has no
+  // CORS), so it must be reachable without admin auth like the schedule API.
+  /^\/api\/video-proxy$/,
 ]
 
 function isPublicApiRequest(request: NextRequest): boolean {

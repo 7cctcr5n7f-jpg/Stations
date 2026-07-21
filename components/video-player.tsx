@@ -2,6 +2,7 @@
 
 import { useRef, useEffect, useState } from "react"
 import { Play } from "lucide-react"
+import { getCachedVideoObjectURL, evictCachedVideo } from "@/lib/video-blob-cache"
 
 interface VideoPlayerProps {
   assignment: {
@@ -61,13 +62,19 @@ export default function VideoPlayer({ assignment, displayMode = 'single', videoC
   const [thumbError, setThumbError] = useState(false);
   const [thumbAttempt, setThumbAttempt] = useState(0);
   const thumbRetryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Holds the current blob object URL (when playing from local cache) so it can
+  // be revoked on cleanup / source change to avoid leaking memory on the kiosk.
+  const objectUrlRef = useRef<string>("");
 
   const withRetryBuster = (url: string, attempt: number) => {
     const separator = url.includes("?") ? "&" : "?";
     return `${url}${separator}retry=${attempt}`;
   };
 
-  // Initialize video with optional stagger delay to avoid thundering herd
+  // Initialize video: download the clip ONCE into local storage (IndexedDB) and
+  // play it from a blob URL, so the room loops entirely offline and re-opening
+  // the next day only downloads clips whose URL changed. Any failure falls back
+  // to streaming the file directly, so playback never regresses to "not loaded".
   useEffect(() => {
     if (thumbnailMode) return; // thumbnail mode never loads the video stream
     const videoUrl = assignment.video.url?.trim();
@@ -82,13 +89,45 @@ export default function VideoPlayer({ assignment, displayMode = 'single', videoC
     setVideoError(false);
     setIsCached(false);
 
-    if (loadDelay > 0) {
-      // Stagger: wait before setting src so the browser doesn't open all connections at once
-      const timer = setTimeout(() => setVideoSrc(videoUrl), loadDelay);
-      return () => clearTimeout(timer);
-    }
+    let cancelled = false;
+    const controller = new AbortController();
+    let localObjectUrl = "";
 
-    setVideoSrc(videoUrl);
+    const start = async () => {
+      // Stagger so many tiles don't open all their downloads at once.
+      if (loadDelay > 0) {
+        await new Promise((r) => setTimeout(r, loadDelay));
+        if (cancelled) return;
+      }
+      try {
+        const { objectUrl, fromCache } = await getCachedVideoObjectURL(videoUrl, {
+          signal: controller.signal,
+        });
+        if (cancelled) {
+          URL.revokeObjectURL(objectUrl);
+          return;
+        }
+        localObjectUrl = objectUrl;
+        objectUrlRef.current = objectUrl;
+        setIsCached(true);
+        setVideoSrc(objectUrl);
+        console.log(`[v0] Video ${assignment.video.id} ${fromCache ? "from cache" : "downloaded + cached"}`);
+      } catch (e) {
+        if (cancelled) return;
+        // Fallback: stream directly from R2 so a cache/proxy issue never stops playback.
+        console.warn(`[v0] Video ${assignment.video.id} cache failed, streaming direct:`, (e as Error)?.message);
+        setIsCached(false);
+        setVideoSrc(videoUrl);
+      }
+    };
+    void start();
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+      if (localObjectUrl) URL.revokeObjectURL(localObjectUrl);
+      objectUrlRef.current = "";
+    };
   }, [assignment.video.id, assignment.video.url, loadDelay, thumbnailMode]);
 
   // (Re)load the video element whenever its source changes. Covers the initial
@@ -104,11 +143,27 @@ export default function VideoPlayer({ assignment, displayMode = 'single', videoC
   useEffect(() => {
     if (thumbnailMode || loadAttempt === 0) return;
     if (loadAttempt > MAX_VIDEO_ATTEMPTS) {
+      // If we were playing a cached blob that turned out to be unusable, drop it
+      // and fall back to streaming directly before giving up entirely.
+      if (isCached) {
+        const direct = assignment.video.url?.trim() || "";
+        void evictCachedVideo(direct);
+        if (objectUrlRef.current) {
+          URL.revokeObjectURL(objectUrlRef.current);
+          objectUrlRef.current = "";
+        }
+        setIsCached(false);
+        setVideoLoaded(false);
+        setVideoError(false);
+        setLoadAttempt(0);
+        if (direct) setVideoSrc(direct);
+        return;
+      }
       setVideoError(true);
       return;
     }
     videoRef.current?.load();
-  }, [loadAttempt, thumbnailMode]);
+  }, [loadAttempt, thumbnailMode, isCached, assignment.video.url]);
 
   useEffect(() => {
     if (thumbnailMode) return; // no video timeout logic in thumbnail mode
@@ -299,7 +354,7 @@ export default function VideoPlayer({ assignment, displayMode = 'single', videoC
           <video
             key={assignment.id}
             ref={videoRef}
-            src={loadAttempt >= MAX_VIDEO_ATTEMPTS ? withRetryBuster(videoSrc, MAX_VIDEO_ATTEMPTS) : videoSrc}
+            src={!isCached && loadAttempt >= MAX_VIDEO_ATTEMPTS ? withRetryBuster(videoSrc, MAX_VIDEO_ATTEMPTS) : videoSrc}
             className="w-full"
             tabIndex={-1}
             style={{
