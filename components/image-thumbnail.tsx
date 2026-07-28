@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Play, Film } from "lucide-react";
+import { proxiedThumbnailUrl } from "@/lib/thumbnail-url";
 
 interface ImageThumbnailProps {
   video: {
@@ -31,11 +32,11 @@ export default function ImageThumbnail({
     large: "w-24 h-18"
   };
 
-  // Use the R2 public URL directly — <img> makes non-CORS requests by default,
-  // so no proxy or crossorigin attribute is needed for display.
+  // Serve thumbnails through our same-origin proxy so a full grid/table of
+  // <img> never bursts Cloudflare's rate-limited r2.dev endpoint (→ 429/blank).
   let thumbnailSrc = null;
   if (video.thumbnailUrl && !thumbError) {
-    thumbnailSrc = video.thumbnailUrl;
+    thumbnailSrc = proxiedThumbnailUrl(video.thumbnailUrl);
   }
 
   return (
@@ -44,7 +45,6 @@ export default function ImageThumbnail({
       onClick={onClick}
     >
       {thumbnailSrc ? (
-        // Keep direct R2 delivery so thumbnails come from Cloudflare, not Vercel.
         <img 
           src={thumbnailSrc}
           alt={video.title}

@@ -21,6 +21,7 @@ import VideoCompatibilityPanel from "@/components/video-compatibility-panel";
 import VideoHealthDashboard from "@/components/video-health-dashboard";
 import VideoThumbnail from "@/components/video-thumbnail";
 import ImageThumbnail from "@/components/image-thumbnail";
+import { proxiedThumbnailUrl } from "@/lib/thumbnail-url";
 import EnhancedCacheDashboard from "@/components/enhanced-cache-dashboard";
 import { IntegrityAuditPanel } from "@/components/integrity-audit-panel";
 import { ExerciseDictionary } from "@/components/exercise-dictionary";
@@ -2326,11 +2327,13 @@ function TrainerDashboardInner() {
                                       <GripVertical className="h-3 w-3 text-gray-300 cursor-grab shrink-0" />
                                       <div className="relative shrink-0 w-7 h-7 rounded overflow-hidden bg-gray-100 border border-gray-200">
                                         {assignment.video.thumbnailUrl ? (
-                                          // Keep direct R2 thumbnail delivery so previews bypass Vercel.
+                                          // Same-origin proxy avoids r2.dev rate limiting under burst.
                                           <img
-                                            src={assignment.video.thumbnailUrl}
+                                            src={proxiedThumbnailUrl(assignment.video.thumbnailUrl) ?? undefined}
                                             alt={assignment.video.title}
                                             className="w-full h-full object-cover"
+                                            loading="lazy"
+                                            decoding="async"
                                           />
                                         ) : (
                                           <div className="w-full h-full bg-gray-200 flex items-center justify-center">
