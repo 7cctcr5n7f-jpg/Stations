@@ -12,7 +12,7 @@
  *   R2_PUBLIC_URL        — Public bucket URL (e.g. "https://pub-xxx.r2.dev" or custom domain)
  */
 
-import { CopyObjectCommand, DeleteObjectCommand, GetObjectCommand, ListObjectsV2Command, PutObjectCommand, S3Client } from "@aws-sdk/client-s3"
+import { CopyObjectCommand, DeleteObjectCommand, GetObjectCommand, HeadObjectCommand, ListObjectsV2Command, PutObjectCommand, S3Client } from "@aws-sdk/client-s3"
 
 function getR2Client(): S3Client {
   const accountId = process.env.R2_ACCOUNT_ID
@@ -97,6 +97,49 @@ export async function deleteFromR2ByPublicUrl(url: string | null | undefined): P
       Key: key,
     })
   )
+}
+
+export interface R2HeadResult {
+  exists: boolean
+  key: string | null
+  size: number | null
+  contentType: string | null
+  lastModified: string | null
+  cacheControl: string | null
+  error: string | null
+}
+
+/**
+ * Authoritative existence/metadata check for an object, given its public URL.
+ * Uses the S3 HeadObject API (the account endpoint, which is NOT the
+ * rate-limited public `*.r2.dev` endpoint), so it reports ground truth about
+ * whether a file actually exists in the bucket regardless of any edge rate
+ * limiting seen by browsers.
+ */
+export async function headR2ByPublicUrl(url: string | null | undefined): Promise<R2HeadResult> {
+  const base: R2HeadResult = { exists: false, key: null, size: null, contentType: null, lastModified: null, cacheControl: null, error: null }
+  if (!url) return { ...base, error: "no url" }
+
+  const key = getR2KeyFromPublicUrl(url)
+  if (!key) return { ...base, error: "url not on bucket public host" }
+
+  const { bucket } = getBucketAndPublicUrl()
+  const client = getR2Client()
+  try {
+    const resp = await client.send(new HeadObjectCommand({ Bucket: bucket, Key: key }))
+    return {
+      exists: true,
+      key,
+      size: typeof resp.ContentLength === "number" ? resp.ContentLength : null,
+      contentType: resp.ContentType ?? null,
+      lastModified: resp.LastModified ? resp.LastModified.toISOString() : null,
+      cacheControl: resp.CacheControl ?? null,
+      error: null,
+    }
+  } catch (e: any) {
+    const status = e?.$metadata?.httpStatusCode
+    return { ...base, key, error: status ? `${status} ${e?.name ?? "error"}` : (e?.name ?? "error") }
+  }
 }
 
 /**

@@ -10,6 +10,9 @@ const PUBLIC_API_GET_PATTERNS = [
   // Room displays stream videos through the same-origin proxy (public R2 has no
   // CORS), so it must be reachable without admin auth like the schedule API.
   /^\/api\/video-proxy$/,
+  // Thumbnails are served through a same-origin proxy to avoid Cloudflare's
+  // rate-limited public r2.dev endpoint; non-sensitive images, public GET.
+  /^\/api\/thumbnail-proxy$/,
 ]
 
 function isPublicApiRequest(request: NextRequest): boolean {

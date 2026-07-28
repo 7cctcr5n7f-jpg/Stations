@@ -3,6 +3,7 @@
 import { useRef, useEffect, useState } from "react"
 import { Play } from "lucide-react"
 import { getCachedVideoObjectURL, evictCachedVideo } from "@/lib/video-blob-cache"
+import { proxiedThumbnailUrl } from "@/lib/thumbnail-url"
 
 interface VideoPlayerProps {
   assignment: {
@@ -49,6 +50,44 @@ const MAX_THUMB_ATTEMPTS = 4;
 // last resort to recover from a poisoned cache entry.
 const MAX_VIDEO_ATTEMPTS = 3;
 
+// --- Room self-healing (non-thumbnail mode only) ---------------------------
+// "Reboot fixes it, page refresh doesn't" points at a wedged native video
+// decoder in the Android TV WebView: a refresh reuses the same WebView process
+// (decoder stays stuck), only a reboot resets the media stack. So after the
+// in-place reloads are exhausted we RECREATE the <video> element (fresh decoder
+// session) and, as a bounded last resort, reload the page — all event-driven,
+// no server polling.
+const MAX_MEDIA_GENERATIONS = 2;      // <video> element recreations before page reload
+const STALL_RECOVERY_MS = 12000;      // a waiting/stalled that never clears → recover
+const LIVENESS_INTERVAL_MS = 5000;    // local (offline) progress watchdog tick
+const FREEZE_CHECKS = 3;              // consecutive ticks with no playback progress → recover
+const RELOAD_COOLDOWN_MS = 5 * 60 * 1000; // min gap between last-resort page reloads
+const RELOAD_STAMP_KEY = "stations:roomReloadTs";
+
+const detectDebugMedia = () => {
+  if (typeof window === "undefined") return false;
+  return /[?&]debug=(1|media|true)/i.test(window.location.search);
+};
+
+const canReloadNow = () => {
+  if (typeof window === "undefined") return false;
+  try {
+    const prev = Number(window.sessionStorage.getItem(RELOAD_STAMP_KEY) || "0");
+    return !prev || Date.now() - prev > RELOAD_COOLDOWN_MS;
+  } catch {
+    return false; // storage blocked → don't risk a reload loop
+  }
+};
+
+const markReloadNow = () => {
+  try {
+    window.sessionStorage.setItem(RELOAD_STAMP_KEY, String(Date.now()));
+    return true;
+  } catch {
+    return false; // couldn't persist the cooldown → don't reload (avoid a loop)
+  }
+};
+
 export default function VideoPlayer({ assignment, displayMode = 'single', videoCount = 1, isFullscreen = false, loadDelay = 0, thumbnailMode = false }: VideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [videoLoaded, setVideoLoaded] = useState(false);
@@ -65,6 +104,52 @@ export default function VideoPlayer({ assignment, displayMode = 'single', videoC
   // Holds the current blob object URL (when playing from local cache) so it can
   // be revoked on cleanup / source change to avoid leaking memory on the kiosk.
   const objectUrlRef = useRef<string>("");
+
+  // Room self-healing / instrumentation state (non-thumbnail mode only).
+  const [mediaGeneration, setMediaGeneration] = useState(0); // bump → recreate <video>
+  const [debugMedia] = useState(detectDebugMedia);           // ?debug=1 on-screen media log
+  const [mediaLog, setMediaLog] = useState<string[]>([]);    // recent media events (debug UI)
+  const stallTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const activityRef = useRef(0);        // monotonic timeupdate counter (loop-safe liveness)
+  const lastSeenActivityRef = useRef(0);
+  const frozenChecksRef = useRef(0);
+
+  const logMedia = (name: string, extra?: string) => {
+    const v = videoRef.current;
+    const rs = v?.readyState ?? -1;
+    const ns = v?.networkState ?? -1;
+    const code = v?.error?.code;
+    const line = `${new Date().toLocaleTimeString()} ${name} rs${rs} ns${ns}${code ? ` err${code}` : ""}${extra ? ` ${extra}` : ""}`;
+    console.log(`[room-media #${assignment.video.id} ${assignment.video.title}] ${line}`);
+    if (debugMedia) setMediaLog((l) => [...l.slice(-13), line]);
+  };
+
+  const clearStallTimer = () => {
+    if (stallTimerRef.current) {
+      clearTimeout(stallTimerRef.current);
+      stallTimerRef.current = null;
+    }
+  };
+
+  // Bump loadAttempt to enter the recovery ladder (in-place reload → recreate
+  // element → bounded page reload). Shared by error, stall and freeze paths.
+  const triggerRecovery = (reason: string) => {
+    if (videoError) return;
+    logMedia("recover", reason);
+    setLoadAttempt((a) => a + 1);
+  };
+
+  // A waiting/stalled that doesn't clear within a bounded local window is a
+  // real stall → recover. Cleared as soon as playback resumes (playing/timeupdate).
+  const armStallTimer = (reason: string) => {
+    if (thumbnailMode || videoError || stallTimerRef.current) return;
+    stallTimerRef.current = setTimeout(() => {
+      stallTimerRef.current = null;
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
+      const v = videoRef.current;
+      if (v && !v.paused && !videoError) triggerRecovery(`stall:${reason}`);
+    }, STALL_RECOVERY_MS);
+  };
 
   const withRetryBuster = (url: string, attempt: number) => {
     const separator = url.includes("?") ? "&" : "?";
@@ -88,6 +173,13 @@ export default function VideoPlayer({ assignment, displayMode = 'single', videoC
     setVideoLoaded(false);
     setVideoError(false);
     setIsCached(false);
+    // Reset the self-heal recovery budget for the new video identity/source, so
+    // a clip that previously exhausted its element-recreation budget doesn't
+    // start already-exhausted (e.g. an admin swaps a station's video mid-day).
+    setMediaGeneration(0);
+    frozenChecksRef.current = 0;
+    lastSeenActivityRef.current = activityRef.current;
+    clearStallTimer();
 
     let cancelled = false;
     const controller = new AbortController();
@@ -131,20 +223,24 @@ export default function VideoPlayer({ assignment, displayMode = 'single', videoC
   }, [assignment.video.id, assignment.video.url, loadDelay, thumbnailMode]);
 
   // (Re)load the video element whenever its source changes. Covers the initial
-  // load and same-element video swaps (e.g. an admin edits a station mid-day).
+  // load, same-element video swaps (e.g. an admin edits a station mid-day), and
+  // element recreation (mediaGeneration bump → fresh <video> needs an explicit load).
   useEffect(() => {
     if (thumbnailMode || !videoSrc) return;
     videoRef.current?.load();
-  }, [videoSrc, thumbnailMode]);
+  }, [videoSrc, thumbnailMode, mediaGeneration]);
 
-  // Retry escalation. An error/timeout bumps loadAttempt; we re-attempt the
-  // load IN PLACE on the same url (browser reuses its cache), and only the
-  // final attempt cache-busts. Past the last attempt we hard-fail.
+  // Recovery ladder. An error/stall/freeze bumps loadAttempt; we escalate:
+  //   1. reload the source IN PLACE on the same element (reuses HTTP/blob cache);
+  //   2. if a cached blob proved unusable, evict it and stream directly;
+  //   3. recreate the <video> element (fresh native decoder — the fix a page
+  //      refresh can't achieve because it reuses the wedged WebView decoder);
+  //   4. as a bounded last resort, reload the whole page (cooldown-guarded);
+  //   5. give up and show the manual-reload error UI.
   useEffect(() => {
-    if (thumbnailMode || loadAttempt === 0) return;
+    if (thumbnailMode || videoError || loadAttempt === 0) return;
     if (loadAttempt > MAX_VIDEO_ATTEMPTS) {
-      // If we were playing a cached blob that turned out to be unusable, drop it
-      // and fall back to streaming directly before giving up entirely.
+      // (2) A cached blob turned out unusable → drop it and stream directly.
       if (isCached) {
         const direct = assignment.video.url?.trim() || "";
         void evictCachedVideo(direct);
@@ -159,11 +255,35 @@ export default function VideoPlayer({ assignment, displayMode = 'single', videoC
         if (direct) setVideoSrc(direct);
         return;
       }
+      // (3) In-place reloads exhausted → recreate the element to release a
+      // possibly-wedged decoder (what a reboot does, without a reboot).
+      if (mediaGeneration < MAX_MEDIA_GENERATIONS) {
+        logMedia("recreate-element", `gen${mediaGeneration + 1}`);
+        clearStallTimer();
+        frozenChecksRef.current = 0;
+        setMediaGeneration((g) => g + 1);
+        setVideoLoaded(false);
+        setVideoError(false);
+        setLoadAttempt(0);
+        return;
+      }
+      // (4) Last resort: one bounded full-page reload (clears JS/app state).
+      // Only reload if we actually persisted the cooldown stamp, so a
+      // read-ok/write-fails sessionStorage can't cause a reload loop.
+      if (canReloadNow() && markReloadNow()) {
+        logMedia("page-reload");
+        window.location.reload();
+        return;
+      }
+      // (5) Out of options — surface the manual reload control.
+      logMedia("give-up");
       setVideoError(true);
       return;
     }
     videoRef.current?.load();
-  }, [loadAttempt, thumbnailMode, isCached, assignment.video.url]);
+    // logMedia is a stable per-render logger; intentionally not a dep.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loadAttempt, thumbnailMode, isCached, assignment.video.url, mediaGeneration, videoError]);
 
   useEffect(() => {
     if (thumbnailMode) return; // no video timeout logic in thumbnail mode
@@ -202,6 +322,40 @@ export default function VideoPlayer({ assignment, displayMode = 'single', videoC
     }
   }, [videoLoaded, videoError, loadAttempt, thumbnailMode]);
 
+  // Post-load freeze watchdog (offline, no server polling). A wedged decoder
+  // often stops advancing WITHOUT firing any media event, so we watch the
+  // monotonic timeupdate activity counter: if it doesn't change across several
+  // ticks while the video should be looping, treat it as frozen and recover.
+  // Loop-safe (uses activity count, not currentTime which wraps on loop).
+  useEffect(() => {
+    if (thumbnailMode || !videoLoaded || videoError) return;
+    lastSeenActivityRef.current = activityRef.current;
+    frozenChecksRef.current = 0;
+    const id = setInterval(() => {
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
+      const v = videoRef.current;
+      if (!v || v.paused || v.ended) return; // not expected to be progressing
+      if (activityRef.current !== lastSeenActivityRef.current) {
+        lastSeenActivityRef.current = activityRef.current;
+        frozenChecksRef.current = 0;
+        return;
+      }
+      frozenChecksRef.current += 1;
+      logMedia("freeze-check", `n${frozenChecksRef.current}`);
+      if (frozenChecksRef.current >= FREEZE_CHECKS) {
+        frozenChecksRef.current = 0;
+        triggerRecovery("freeze");
+      }
+    }, LIVENESS_INTERVAL_MS);
+    return () => clearInterval(id);
+    // logMedia/triggerRecovery are stable helpers; the watchdog is intentionally
+    // (re)armed only on load/error/mode changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [videoLoaded, videoError, thumbnailMode]);
+
+  // Always clear a pending stall timer on unmount.
+  useEffect(() => () => clearStallTimer(), []);
+
   // On first user interaction anywhere in the document, attempt to play
   // all paused videos. Required for TV boxes and iOS that block autoplay
   // until a user gesture occurs.
@@ -238,6 +392,12 @@ export default function VideoPlayer({ assignment, displayMode = 'single', videoC
   const handlePlayable = () => {
     if (videoError) return;
 
+    logMedia("playable");
+    clearStallTimer();
+    activityRef.current += 1;
+    lastSeenActivityRef.current = activityRef.current;
+    frozenChecksRef.current = 0;
+
     setVideoLoaded(true);
     const video = videoRef.current;
     if (!video) return;
@@ -259,6 +419,7 @@ export default function VideoPlayer({ assignment, displayMode = 'single', videoC
   };
 
   const handleVideoError = () => {
+    logMedia("error");
     if (videoError) return; // already failed — don't loop on repeated error events
     const v = videoRef.current;
     // If usable data is already available despite the error event, use it.
@@ -270,6 +431,56 @@ export default function VideoPlayer({ assignment, displayMode = 'single', videoC
     // Retry in place; the retry effect escalates and only hard-fails after the
     // final attempt (so transient blips don't kill playback).
     setLoadAttempt((a) => a + 1);
+  };
+
+  // --- Instrumentation + self-heal media handlers (room / video mode) ------
+  const handlePlaying = () => {
+    logMedia("playing");
+    clearStallTimer();
+    setAutoplayBlocked(false);
+    activityRef.current += 1;
+    lastSeenActivityRef.current = activityRef.current;
+    frozenChecksRef.current = 0;
+  };
+
+  // timeupdate fires ~4x/s during healthy playback — used purely as a loop-safe
+  // liveness heartbeat. Do NOT log or setState here (would be far too noisy).
+  const handleTimeUpdate = () => {
+    activityRef.current += 1;
+    if (stallTimerRef.current) clearStallTimer();
+  };
+
+  const handleWaiting = () => {
+    logMedia("waiting");
+    armStallTimer("waiting");
+  };
+
+  const handleStalled = () => {
+    logMedia("stalled");
+    armStallTimer("stalled");
+  };
+
+  const handleSuspend = () => {
+    // Normal after a full buffer — log only, never treat as a stall.
+    logMedia("suspend");
+  };
+
+  const handleEmptied = () => {
+    logMedia("emptied");
+  };
+
+  // A looping video should never fire `ended`; some TV WebViews mishandle loop.
+  // If it does, restart playback in place rather than sitting on a frozen frame.
+  const handleEnded = () => {
+    logMedia("ended");
+    const v = videoRef.current;
+    if (!v || thumbnailMode) return;
+    try {
+      v.currentTime = 0;
+      void v.play().catch(() => {});
+    } catch {
+      triggerRecovery("ended");
+    }
   };
 
   const handleManualReload = () => {
@@ -307,7 +518,7 @@ export default function VideoPlayer({ assignment, displayMode = 'single', videoC
   };
 
   const intensityStyles = getIntensityStyles(assignment.video.intensity);
-  const thumbnailUrl = assignment.video.thumbnailUrl?.trim() || "";
+  const thumbnailUrl = proxiedThumbnailUrl(assignment.video.thumbnailUrl) || "";
 
   return (
     <div className="relative bg-white w-full h-full overflow-hidden">
@@ -352,7 +563,7 @@ export default function VideoPlayer({ assignment, displayMode = 'single', videoC
       ) : (
         videoSrc && (
           <video
-            key={assignment.id}
+            key={`${assignment.id}-g${mediaGeneration}`}
             ref={videoRef}
             src={!isCached && loadAttempt >= MAX_VIDEO_ATTEMPTS ? withRetryBuster(videoSrc, MAX_VIDEO_ATTEMPTS) : videoSrc}
             className="w-full"
@@ -378,8 +589,17 @@ export default function VideoPlayer({ assignment, displayMode = 'single', videoC
             controls={false}
             disablePictureInPicture
             crossOrigin={undefined}
+            onLoadStart={() => logMedia("loadstart")}
+            onLoadedMetadata={() => logMedia("loadedmetadata")}
             onCanPlay={handlePlayable}
             onLoadedData={handlePlayable}
+            onPlaying={handlePlaying}
+            onTimeUpdate={handleTimeUpdate}
+            onWaiting={handleWaiting}
+            onStalled={handleStalled}
+            onSuspend={handleSuspend}
+            onEmptied={handleEmptied}
+            onEnded={handleEnded}
             onError={handleVideoError}
           />
         )
@@ -496,6 +716,20 @@ export default function VideoPlayer({ assignment, displayMode = 'single', videoC
             <Play className="h-12 w-12 text-black" />
           </div>
         </button>
+      )}
+
+      {/* On-screen media event log — opt-in via ?debug=1 (Mi Box has no devtools).
+          Shows the live event trace + recovery-ladder state right on the TV. */}
+      {!thumbnailMode && debugMedia && (
+        <div className="absolute bottom-1 left-1 z-40 max-w-[48%] pointer-events-none rounded bg-black/75 p-1 font-mono text-[10px] leading-tight text-green-300">
+          <div className="text-white">
+            #{assignment.video.id} gen{mediaGeneration} att{loadAttempt}{" "}
+            {videoError ? "ERROR" : videoLoaded ? "ok" : "loading"}
+          </div>
+          {mediaLog.map((l, i) => (
+            <div key={i}>{l}</div>
+          ))}
+        </div>
       )}
     </div>
   );
