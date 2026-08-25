@@ -48,15 +48,15 @@ export function SearchableSelect({
           variant="outline"
           role="combobox"
           aria-expanded={open}
-          className={cn("h-7 text-xs justify-between", className)}
+          className={cn("h-8 min-h-8 text-xs justify-between", className)}
         >
           <span className="truncate">{displayValue}</span>
           <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-[200px] p-0">
+      <PopoverContent className="w-[min(18rem,calc(100vw-2rem))] p-0 max-h-[min(24rem,calc(100svh-8rem))]">
         <Command>
-          <CommandInput placeholder="Search options..." className="h-8" />
+          <CommandInput placeholder="Search options..." className="h-10 text-base" />
           <CommandList>
             <CommandEmpty>No option found.</CommandEmpty>
             <CommandGroup>

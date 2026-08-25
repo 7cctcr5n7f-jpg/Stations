@@ -326,7 +326,7 @@ export default function VideoEditModal({ isOpen, onClose, video }: VideoEditModa
 
   return (
     <Dialog open={isOpen} onOpenChange={handleClose}>
-      <DialogContent className="sm:max-w-[500px] max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-[500px] max-h-[92svh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Edit Video</DialogTitle>
         </DialogHeader>

@@ -115,7 +115,7 @@ export default function RoleSelectionPage() {
               Admin Access
             </DialogTitle>
           </DialogHeader>
-          <div className="space-y-4">
+          <div className="space-y-4 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
             <p className="text-sm text-gray-600">Please enter the admin password to continue.</p>
             <div className="space-y-2">
               <Input
@@ -124,7 +124,7 @@ export default function RoleSelectionPage() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 onKeyPress={handlePasswordKeyPress}
-                className="text-center"
+                className="text-center text-base"
                 autoFocus
               />
               {passwordError && <p className="text-sm text-red-500 text-center">{passwordError}</p>}

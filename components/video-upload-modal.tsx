@@ -455,12 +455,12 @@ export default function VideoUploadModal({ isOpen, onClose }: VideoUploadModalPr
 
   return (
     <Dialog open={isOpen} onOpenChange={handleClose}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="max-w-2xl max-h-[92svh] overflow-hidden flex flex-col">
         <DialogHeader>
           <DialogTitle>Upload New Video</DialogTitle>
         </DialogHeader>
         
-        <div className="space-y-6">
+        <div className="space-y-6 min-h-0 overflow-y-auto pr-1">
           {/* File Upload Area */}
           <div className="space-y-4">
             <Label>Video File</Label>
