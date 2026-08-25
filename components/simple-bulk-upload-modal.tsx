@@ -308,7 +308,7 @@ export function SimpleBulkUploadModal({ isOpen, onClose }: SimpleBulkUploadModal
 
   return (
     <Dialog open={isOpen} onOpenChange={handleClose}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
+      <DialogContent className="max-w-4xl max-h-[92svh] overflow-hidden flex flex-col">
         <DialogHeader>
           <DialogTitle>
             {showSuccessScreen ? "Upload Complete!" : "Individual Video Upload"}
@@ -348,7 +348,7 @@ export function SimpleBulkUploadModal({ isOpen, onClose }: SimpleBulkUploadModal
           </div>
         ) : (
 
-        <div className="flex-1 overflow-y-auto space-y-4">
+        <div className="flex-1 min-h-0 overflow-y-auto space-y-4 pr-1">
           {/* Upload Instructions */}
           <div className="p-4 bg-blue-50 rounded-lg border">
             <p className="text-sm text-blue-800">
@@ -495,7 +495,7 @@ export function SimpleBulkUploadModal({ isOpen, onClose }: SimpleBulkUploadModal
                   </div>
 
                   {/* Individual Metadata Row */}
-                  <div className="grid grid-cols-3 gap-3">
+                  <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
                     <div>
                       <label className="block text-xs font-medium text-gray-700 mb-1">Primary Muscle</label>
                       <EditableSelect

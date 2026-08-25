@@ -1212,7 +1212,7 @@ function TrainerDashboardInner() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-svh bg-gray-50 lg:h-svh lg:overflow-hidden">
       {/* Navigation Header - responsive layout */}
       <header className="bg-white shadow-sm border-b">
         <div className="container mx-auto px-4 py-3 sm:py-4">
@@ -1256,9 +1256,9 @@ function TrainerDashboardInner() {
       </header>
 
       {/* Main Content - responsive padding */}
-      <div className="container mx-auto px-4 py-4 sm:py-6">
-        <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-6">
-          <TabsList className="bg-white shadow-sm overflow-x-auto">
+      <div className="container mx-auto px-3 py-3 sm:px-4 sm:py-4 lg:flex lg:h-[calc(100svh-73px)] lg:flex-col lg:overflow-hidden">
+        <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-4 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col">
+          <TabsList className="bg-white shadow-sm overflow-x-auto overflow-y-hidden whitespace-nowrap shrink-0">
             <TabsTrigger value="liveview" className="flex items-center gap-2 sm:gap-2" title="Live View">
               <Monitor className="h-4 w-4 flex-shrink-0" />
               <span className="hidden sm:inline">Live View</span>
@@ -1293,8 +1293,8 @@ function TrainerDashboardInner() {
 
 
           {/* Video Library Tab */}
-          <TabsContent value="library" className="space-y-6">
-            <Card>
+          <TabsContent value="library" className="space-y-4 lg:min-h-0 lg:flex-1 lg:overflow-hidden">
+            <Card className="lg:flex lg:min-h-0 lg:flex-1 lg:flex-col">
               <CardHeader className="pb-4">
                 <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
                   <CardTitle className="text-lg sm:text-xl font-semibold">Video Library</CardTitle>
@@ -1426,17 +1426,17 @@ function TrainerDashboardInner() {
                   }}
                 />
               )}
-              <CardContent className="space-y-6">
+              <CardContent className="space-y-4 lg:min-h-0 lg:flex-1 lg:overflow-hidden lg:pt-0">
                 {/* Toolbar: search + filters - responsive layout */}
-                <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center gap-2">
-                  <div className="relative flex-1 sm:flex-initial sm:min-w-48 sm:max-w-sm">
+                <div className="flex flex-col gap-2 lg:flex-row lg:items-center">
+                  <div className="relative w-full lg:max-w-sm lg:flex-1">
                     <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400 pointer-events-none" />
                     <Input
                       type="text"
                       placeholder="Search videos..."
                       value={videoFilters.search}
                       onChange={(e) => setVideoFilters(prev => ({ ...prev, search: e.target.value }))}
-                      className="h-9 sm:h-8 pl-8 text-xs"
+                      className="h-10 sm:h-9 pl-8 text-sm"
                     />
                   </div>
                   <button
@@ -1452,14 +1452,14 @@ function TrainerDashboardInner() {
                     <span className="hidden sm:inline">Needs Review</span>
                     <span className="sm:hidden">Review</span>
                   </button>
-                  <span className="text-xs text-gray-400 tabular-nums sm:ml-auto">
+                  <span className="text-xs text-gray-400 tabular-nums lg:ml-auto">
                     {filteredVideos?.length ?? 0} videos
                   </span>
                 </div>
 
                 {/* Video Table - responsive overflow */}
-                <div className="rounded-lg border border-gray-200 overflow-x-auto">
-                  <table className="w-full text-xs">
+                <div className="rounded-lg border border-gray-200 overflow-auto lg:min-h-0 lg:flex-1">
+                  <table className="w-full min-w-[980px] text-xs">
                     <thead>
                       <tr className="border-b border-gray-200 bg-gray-50/80">
                         <th className="w-10 p-2"></th>
@@ -1935,7 +1935,7 @@ function TrainerDashboardInner() {
           </TabsContent>
 
           {/* Schedule Tab */}
-          <TabsContent value="schedule" className="space-y-4">
+          <TabsContent value="schedule" className="space-y-4 lg:min-h-0 lg:flex-1 lg:overflow-hidden">
             {/* ── Week navigator ───────────────────────────────────────────── */}
             {(() => {
               const currentDateObj = new Date(currentDate);
@@ -2444,17 +2444,17 @@ function TrainerDashboardInner() {
           </TabsContent>
 
           {/* Workout Builder Tab */}
-          <TabsContent value="builder" className="space-y-6">
+          <TabsContent value="builder" className="space-y-6 lg:min-h-0 lg:flex-1 lg:overflow-auto">
             <WorkoutBuilder />
           </TabsContent>
 
           {/* Builder Config Tab */}
-          <TabsContent value="builder-config" className="space-y-6">
+          <TabsContent value="builder-config" className="space-y-6 lg:min-h-0 lg:flex-1 lg:overflow-auto">
             <BuilderConfig />
           </TabsContent>
 
           {/* Cache Tab */}
-          <TabsContent value="cache" className="space-y-6">
+          <TabsContent value="cache" className="space-y-6 lg:min-h-0 lg:flex-1 lg:overflow-auto">
             <VideoCompatibilityPanel />
             <IntegrityAuditPanel />
             <EnhancedCacheDashboard />
@@ -2462,7 +2462,7 @@ function TrainerDashboardInner() {
           </TabsContent>
 
           {/* Exercise Dictionary Tab */}
-          <TabsContent value="dictionary" className="space-y-6">
+          <TabsContent value="dictionary" className="space-y-6 lg:min-h-0 lg:flex-1 lg:overflow-auto">
             <Card>
               <CardContent className="pt-6">
                 <ExerciseDictionary />
@@ -2473,7 +2473,7 @@ function TrainerDashboardInner() {
 
 
           {/* Live View Tab */}
-          <TabsContent value="liveview" className="space-y-6">
+          <TabsContent value="liveview" className="space-y-4 lg:min-h-0 lg:flex-1 lg:overflow-auto">
             <Card>
               <CardHeader>
                 <CardTitle className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
@@ -2483,7 +2483,7 @@ function TrainerDashboardInner() {
                   </div>
                   
                   {/* Date Navigation - responsive layout */}
-                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                  <div className="flex flex-col gap-2 xl:flex-row xl:items-center">
                     <Button
                       onClick={() => {
                         const currentDateObj = new Date(currentDate);
@@ -2498,7 +2498,7 @@ function TrainerDashboardInner() {
                       <span className="sm:hidden">Prev</span>
                     </Button>
                     
-                    <div className="flex gap-1 sm:gap-2 overflow-x-auto flex-1">
+                    <div className="flex gap-1 sm:gap-2 overflow-x-auto overflow-y-hidden flex-1 whitespace-nowrap">
                       {(() => {
                         const dates = [];
                         const startDate = new Date(currentDate);
@@ -2574,7 +2574,7 @@ function TrainerDashboardInner() {
               </CardHeader>
               <CardContent>
                 {/* Live View Grid - desktop: flex-wrap natural width; mobile: single column */}
-                <div className="flex flex-col sm:flex-row sm:flex-wrap gap-3">
+                <div className="grid grid-cols-1 gap-3 xl:grid-cols-2 2xl:grid-cols-3">
                   {useMemo(() => {
                     if (!videos || videos.length === 0) {
                       console.warn(`[v0] Videos not loaded yet. Loaded ${videos?.length ?? 0} videos, ${schedules?.length ?? 0} schedules`);
@@ -2586,7 +2586,7 @@ function TrainerDashboardInner() {
                       .filter((s: any) => s.roomId === room.id && s.scheduleDate === currentDate)
                       .sort((a: any, b: any) => a.position - b.position); // Sort by position to maintain consistent order
                     return (
-                      <Card key={room.id} className="border-2" style={{ width: 'fit-content' }}>
+                      <Card key={room.id} className="border-2 min-w-0">
                         <CardHeader className="p-2">
                           <div className="flex items-center justify-between">
                             <div className="flex items-center space-x-2">
