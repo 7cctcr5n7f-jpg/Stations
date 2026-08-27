@@ -1212,7 +1212,7 @@ function TrainerDashboardInner() {
   };
 
   return (
-    <div className="min-h-svh bg-gray-50 lg:h-svh lg:overflow-hidden">
+    <div className="min-h-screen bg-gray-50">
       {/* Navigation Header - responsive layout */}
       <header className="bg-white shadow-sm border-b">
         <div className="container mx-auto px-4 py-3 sm:py-4">
@@ -1256,8 +1256,8 @@ function TrainerDashboardInner() {
       </header>
 
       {/* Main Content - responsive padding */}
-      <div className="container mx-auto px-3 py-3 sm:px-4 sm:py-4 lg:flex lg:h-[calc(100svh-73px)] lg:flex-col lg:overflow-hidden">
-        <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-4 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col">
+      <div className="container mx-auto px-3 py-3 sm:px-4 sm:py-4">
+        <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-4">
           <TabsList className="bg-white shadow-sm overflow-x-auto overflow-y-hidden whitespace-nowrap shrink-0">
             <TabsTrigger value="liveview" className="flex items-center gap-2 sm:gap-2" title="Live View">
               <Monitor className="h-4 w-4 flex-shrink-0" />
@@ -1935,7 +1935,7 @@ function TrainerDashboardInner() {
           </TabsContent>
 
           {/* Schedule Tab */}
-          <TabsContent value="schedule" className="space-y-4 lg:min-h-0 lg:flex-1 lg:overflow-hidden">
+          <TabsContent value="schedule" className="space-y-4">
             {/* ── Week navigator ───────────────────────────────────────────── */}
             {(() => {
               const currentDateObj = new Date(currentDate);
